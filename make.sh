@@ -1,0 +1,1 @@
+pandoc relocation.md --number-sections --include-before-body cover.tex -V geometry:a4paper -V geometry:margin=3cm -V mainfont="DejaVu Sans" -V monofont="DejaVu Sans Mono" --highlight-style pygments.theme --toc --pdf-engine=xelatex --include-in-header header.tex -o relocation.pdf
