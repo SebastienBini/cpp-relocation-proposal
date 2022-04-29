@@ -3,12 +3,113 @@
 | Revision | Data | Changes |
 |--|--|--|
 | 1 | 11/21/2021 | First revision |
+| 2 | 03/16/2022 | The relocation constructor is no longer a destructor |
+
+
+## Changes from the first revision
+
+The relocation constructor still acts as a destructor, but no longer forceably prevents the call to the destructor. This is motivated by the fact that it would lead to object destruction tracking (to ensure object is not destructed twice) across functions which breaks the ABI.
+
+For the same reason, `reloc` no longer guarantees the object destruction but still prevents reuse of the name of the relocated object.
+
+We further added comparison with existing works on the subject.
+
+## Comparison with existing proposals
+
+This proposal introduces the `reloc` operator which, as far as we know, has not been proposed yet. This operator allows users to explicitly and safely relocate local variables in their code base.
+
+This proposal is also one of the few (with P0308R0), to our knowledge, to tackle the case of classes that can only be relocated, but not copied nor moved. The `reloc` operator thus becomes necessary to safely pass around such objects.
+
+Also, all these proposals (but P0308R0) aim to optimize the move and destruct operations into a single memcpy. But there are places where this optimization could not happen, and we are left with an suboptimized move and destruct. This is not tackled by those proposals.
+
+Consider the following:
+```cpp
+void sink(std::list<int> lst_c);
+
+void fwd_to_sink(std::list<int> lst_b)
+{
+	sink(std::move(lst_b));
+}
+
+void bar()
+{
+	std::list<int> lst_a;
+	std::fill_n(std::back_insertor(lst_a), 10, 0); // fill it
+	sink(std::move(lst_a));
+}
+```
+
+In some implementations, `std::list` move constructor makes a memory allocation to give the moved-from instance a new sentinel node. In such cases:
+
+- `lst_a` is emptied and a new sentinel is allocated for it. `lst_a` is then destructed, deleting the previously allocated sentinel. Should `std::list` be trivially relocatable, this move and destruct could be optimized into memcpy, although not all proposals suggest this.
+- Again, `lst_b` is moved to construct `lst_c`. However `fwd_to_sink` cannot make the memcpy optimization, as it cannot prevent the call to the destructor of `lst_b`, which is triggered by `bar`, which itself cannot know whether a memcpy optimization happened (imagine the functions to be in separate translation units).
+
+This point is tackled by this proposal by the relocation constructor and the `reloc` operator.
+
+### P1144R5: Object relocation in terms of move plus destroy by Arthur O'Dwyer
+
+The current proposal is fully compatible with [P1144R5](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1144r5.html). We reuse the `[[trivially_relocatable]]` attribute, the `relocate_at` and `uninitialized_relocate` algorithms. The rules to deduct the trivially_relocatable trait are reused, although slightly modified to account for the new constructor.
+
+However unlike P1144R5, the current proposal does allow users to define their own relocation function, which is done by the relocation constructor.
+
+As we have seen the move constructor performs extra operations to ensure that the moved-from object remains at a valid state. Those operations are wasted if the object is destructed right after. Hence we believe we should allow users to provide their own relocation function (the relocation constructor) so that relocation and destruction can be better optimized than "move" and destruction.
+
+### P0023R0: Relocator: Efficiently moving objects by Denis Bider
+
+The relocator introduced into [P0023R0](http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf) is somewhat similar to the proposed relocation constructor.
+
+P0023R0 allows optimizations in containers with trivial relocation, which the current proposal also does.
+
+The key difference is that objects passed to the relocator must not be destructed. In fact the relocator can be viewed as a custom memmove operation.
+
+In container implementations, the current proposal does not allow to customize the memmove operation like a relocator does. Instead the relocation constructor allows for a custom relocation function but the destructor of the relocated object must still be called. However the current proposal also enables the trivial relocation optimization, in which the call to the move (or relocation) constructor and destructor can be optimized into a single memcpy operation.
+
+In contrast to P0023R0, the current proposal allows to pass variables around by relocation. This is not possible in P0023R0 in the general case (P0023R0 suggests the compiler may use it as its own discretion when a code flow analysis shows it's possible).
+
+### N4158: Destructive Move by Pablo Halpern
+
+[N4158](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf) proposes a customizable function `std::uninitialized_destructive_move`. 
+
+- relocation can only happen if this function is called. Typically this function would be called in container implementation. We cannot relocate local variables with this.
+- users can write their own `uninitialized_destructive_move` overload, but it looks more obscure than writing a relocation constructor.
+- classes that have non-static data-member or inherit from classes that have a specialized overload of `uninitialized_destructive_move` do not get it for free. It is likely that writers of such classes will simply forget to write the overload.
+
+For instance, although `std::list` may have an `uninitialized_destructive_move` overload, `struct S { std::list<int> _mylist; };` does not.
+
+### P1029R3: move = bitcopies by Niall Douglas
+
+[P1029R3](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf) provides a special bitcopies move constructor.
+
+The current proposal allows the same set of optimizations with trivial relocation.
+
+Besides we feel that P1029R3 forces too strong constraints on the default and move constructors to enable this optimization. Indeed, classes that have a bitcopies move constructor are no longer allowed to have a non-constexpr default constructor or a move constructor with side effects, which may be useful on cases where the bitcopies optimization cannot happen.
+
+P1029R3 could be made compatible with the current proposal with a bitcopies relocation constructor, but we feel that will miss some optimization cases.
+
+Consider the `std::list` case:
+
+- In some implementations, `std::list` move constructor makes a memory allocation to give the moved-from instance a new sentinel node. In those implementations, `std::list` could be trivially relocatable as the first and last node store no pointer back to the list itself (only to the sentinel node, which does not reside in `std::list` memory as it is heap-allocated) ;
+- However `std::list` constructor is not constexpr so it cannot benefit from P1029R3 ;
+- Even so if the constructor were to be marked constexpr, and if the move constructor could be defaulted to bitcopies, and in places where the second memcpy (`memcpy(&src, &T{}, sizeof(T))`) and destructor call cannot be alleviated,  then the move constructor would still perform a memory allocation to put back a sentinel node.
+
+The current proposal allows to reuse P1144R5 `[[trivially_relocatable]]` attribute. Hence library vendors can mark `std::list` with `[[trivially_relocatable]]` if it applies. If the `std::list` cannot be `[[trivially_relocatable]]`, **or in places where the trivial relocation optimization cannot apply**, then the proposal allows to write a new relocation constructor so that relocation can happen in a more optimized manner than with the move constructor.
+
+### P0308R0: Valueless Variants Considered Harmful by Peter Dimov
+
+In [P0308R0](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html), we only look at the "pilfering" proposition. P0308R0's pilfering shares some similarities with the current proposal. P0308R0 is a pure library solution to relocation while this proposal provides a language solution.
+
+We believe a language solution is better suited here:
+
+- the `reloc` operator makes sure the relocated object is not reused, while `std::pilfer` does not ;
+- the pilfering constructor is inconvenient to write as we need to unwrap from `std::pilfered` and rewrap to propagate to base classes and data-members ;
+- the pilfering constructor cannot be defaulted ;
+- trivial relocation is not possible with pilfering.
 
 # Motivation
 
 C++11 introduced rvalue-references, and along with it, move constructors and assignment operators. Although this comes with many advantages, it also comes with the burden of handling a new "moved-from" state in classes that can be moved.
 
-## Case 1: Classes that own system (or otherwise expensive) resources
+## Case 1: Classes broken by move constructor
 
 Take the following class for instance:
 ```cpp
@@ -41,85 +142,50 @@ We have two common solutions:
 
 ### Make a move constructor
 
-The first solution is to write a move constructor to `TempDir`. This can be done in two ways:
+The first solution is to write a move constructor to `TempDir`. This can be done in several ways, none of which are satisfying:
 
 1. **The move constructor allocates new resources for the moved-from instance.** In our case it means that the moved-from instance: (a) transfers the ownership of its directory to the newly constructed instance, and (b) creates a new temporary directory for itself. This leads to wasted resources in our example, as `dir` will be destructed just after the move call, and hence the directory will be created needlessly.
 2. **The move constructor modifies the moved-from instance to indicate that it has lost ownership of the resources.** In our example the `TempDir` class then needs a way to remember it has lost the ownership of the directory and at the very least not to destroy it in its destructor. This makes for no wasted resources but breaks the class invariant by introducing the moved-from state. Indeed the class invariant then becomes: ***unless it has been moved-from,** any instance owns a temporary directory, which will only be removed once the instance is destructed*.
+3. **The move constructor modifies the moved-from instance to lazily allocate new resources.** The moved `TempDir` lost its resources but does not break the class invariant. Instead, the first time the resource is queried, the instance will perform the allocation again. This is not a light change however, especially if the resources are accessed from a const method. In that case the resources would need to have the mutable flag and they would need to be allocated in thread-safe way, which is a heavy machinery for a silly case.
 
 ### Use a wrapper
 
 Using a wrapper (like `std::unique_ptr<TempDir>` or `std::optional<TempDir>`) is another alternative. It works without breaking the class invariant, as the wrapper handles the moved-from state for us. But now we need to work with a wrapper (pointer semantics in this case) which is more cumbersome and sometimes error-prone. Besides if we consider the type invariant of `std::unique_ptr<TempDir>` or `std::optional<TempDir>`, then we are no better than with `TempDir` equipped of the move constructor. Indeed the invariant of the wrapped type is: ***unless it is the nullptr/nullopt,** any instance owns a temporary directory, which will only be removed once the instance is destructed*.
 
-## Case 2: The p-impl design pattern
+**This case also highlights that some classes have no room for the moved-from state, it would just break their class design. And those classes still have a legitimate need to be moved around.**
 
-P-impl is a famous design pattern in C++. It consists of hiding all data-members of a class behind a unique data member of opaque type. A typical implementation looks like this:
-```cpp
-// In header file:
-class MyClass
-{
-public:
-	MyClass();
-	// other ctors are omitted for the moment
-	~MyClass() noexcept;
-private:
-	struct Impl;
-	std::unique_ptr<Impl> _d;
-};
+## Case 2: Relocation in a single operation is faster than move and destruct
 
-// In implementation (.cpp) file:
-struct MyClass::Impl
-{
-	// [...] all data members go here
-};
+Many proposals about this topic have already pointed this out. As the move operation leaves the object in a valid state, the moved-from object must still be destructed. This comes at a cost, especially if you look at any `std::vector` implementation.
 
-MyClass::MyClass() : _d{std::make_unique<Impl>()} {}
-MyClass::~MyClass() noexcept {}
-```
+When the vector needs to grow, it will move (if possible) all its elements into a new larger vector. This requires a first iteration over all items. The previous vector is then destructed, triggering the destruction over all moved-from elements, which cause a second iteration over all items. While this could be optimized into a single large `memcpy` in many cases.
 
-What if we need to put instances of `MyClass` into a vector?
-```cpp
-MyClass Make();
+This proposal enables several optimizations:
 
-void foo()
-{
-	std::vector<MyClass> vec;
-	for (int i = 0; i  != 10; ++i)
-		vec.push_back(Make());
-}
-```
-We will need to make a move constructor. We have two choices here:
-```cpp
-// First implementation:
-MyClass::MyClass(MyClass&& other) : _d{std::make_unique<Impl>(std::move(*other._d))} {}
-// Second implementation:
-MyClass::MyClass(MyClass&& other) : _d{std::move(other._d)} {}
-```
-
-1. The first implementation makes a new allocation of `Impl` and delegates to `Impl` move constructor. It also guarantees that `other` is left in a correct state (i.e. `other._d` is not null). However we could argue that it is sub-optimal as the move constructor needs to perform a memory allocation.
-2. The second implementation directly takes the `Impl` from `other`. It does not perform any memory allocation but it is leaving `other` is a somewhat invalid state (`other._d` is the nullptr). This new state (`_d == nullptr`) now needs to be properly handled by every public function of `MyClass`.
-
-In our case the moved-from instance will be destructed right after being moved. Hence in this scenario (which is common), none of these two implementations are satisfying (one makes an unnecessary memory allocation, the other adds unnecessary checks in the public API).
+- If the elements are "trivially relocatable" then they can be simply "memcpy-ed" into the new vector, and the old vector can simply drop its items without triggering their destruction.
+- If the elements are relocatable, but the operation is not trivial, then we leave the chance to the user to implement its own relocation method so that relocation and destruction can be better optimized than move and destruction.
 
 ## Drawbacks of the move constructor and rvalue-references
-
-We showed through those examples that move constructors and rvalue-references have some drawbacks, notably because of the introduction of the "moved-from" state. The legitimate fact that a moved-from object must remain in a valid state may introduce either some extra house-keeping, or extra allocated resources that will likely be wasted (destructed right away). We argue that in a fair amount of cases, this moved-from state is unnecessary as the moved-from objects will be disposed of right away.
 
 In addition, the move constructor and rvalue-references have extra drawbacks:
 
 - C++ programmers find the notion of moved-from state confusing. Moved-from state in classes are often not properly implemented. See also https://herbsutter.com/2020/02/17/move-simply/
-- We cannot efficiently move `const` variables. In our `createTask` function, `dir` is created and never modified, except when being moved to the `Task` object right before its destructor is called. We could have been tempted to mark `dir` as `const`, but the move prevents us.
+- We cannot efficiently move `const` variables. In our `createTask` function, `dir` is created and never modified, except when being moved to the `Task` object right before its destructor is called. We could have been tempted to mark `dir` as `const`, but `std::move` prevents us.
 
 ## Solution discussed in this paper
 
 This paper introduces the notion of relocation as an attempt to fix this. Class instances can be relocated without the added burden of the moved-from state. This proposed relocation mechanism is similar to the move semantics introduced in C++11, but with the extra warranty that "relocated-from" objects are disposed of right-away, and hence alleviate the need to implement support for the "relocated-from" state in class designs.
+
+**Note:** Several proposals about relocation put the emphasis on performance optimization. While this is a fair point, we fear that some aspects are left short, especially class design. Notably **we argue that some classes could benefit from not being copyable, nor movable, but only relocatable**. This is the case of classes that guarantee the ownership of some resources (like a wrapper around an open socket, or a non-null pointer, etc...) or other cases where the moved-from state would simply break the class design.
 
 **Note:** This paper does not propose a replacement to move semantics. Relocation can live along with move semantics, and move semantics cover use cases that relocation does not.
 
 This paper introduces:
 
 1. a new `reloc` operator that can be used to relocate local complete named objects.
-2. a new constructor: the relocation constructor. This constructor also acts as a destructor for the relocated object.
+2. a new constructor: the relocation constructor.
 3. a new kind of reference: the relocation reference. A relocation reference on a type `T` is denoted by: `T~`
+4. a new attribute: `trivially_relocatable`, which allows compiler to optimize relocation + destruction into a single memcpy (like in [p1144r5](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1144r5.html#wording-uninit-relocate)).
 
 The solution to our problem just becomes:
 
@@ -132,14 +198,19 @@ public:
 	 * we just add the new relocation constructor: */
 
 	/* \brief relocation constructor
-	 * \param[in] other TempDir instance to build *this from
+	 * \param[in] rhs TempDir instance to build *this from
 	 *
-	 * other can be left in a dirty state as it will be disposed of right after
-	 * (this constructor serves as its destructor)
+	 * The new instance is built by stealing the resources from rhs.
+	 * rhs is left in a dirty state and cannot be reused after this call.
 	 *
 	 * TempDir~ is a relocation reference on a TempDir object.
 	 */
-	TempDir(TempDir~ other) noexcept = default;
+	TempDir(TempDir~ rhs) noexcept;
+
+	/* The destructor must detect if the instance has been relocated, in which case
+	 * it will likely do nothing. 
+	 */
+	~TempDir() noexcept;
 };
 
 class Task
@@ -158,42 +229,119 @@ Task createTask()
 		relocates it at a new address. */
 }
 ```
-And:
-```cpp
-MyClass::MyClass(MyClass~ other) noexcept : _d{other._d} {}
-//                                                   ^
-//                  calls std::unique_ptr(unique_ptr~)
-//
-// or MyClass::MyClass(MyClass~ other) noexcept = default; does the same thing
 
-void foo()
+# Relocation constructor
+
+The new relocation constructor is written as follows:
+
+```cpp
+class T
 {
-	std::vector<MyClass> vec;
-	for (int i = 0; i  != 10; ++i)
-		vec.push_back(std::relocate, Make()); /*
-			suggested new std::vector API to insert items by value so that
-			they are relocated directly into the vector memory. */
-}
+public:
+	T(T~ rhs) noexcept;
+};
 ```
+
+The relocation constructor creates a new instance by stealing the resources from `rhs`, and leaving it into a dirty invalid state. `rhs` can no longer be used, except when passed to its destructor. As `rhs` was emptied from its resources, its destructor is most likely a no-op. In fact, one could view the relocation constructor as a destructor for `rhs`. This is just a thought experiment, however, as the language still requires `rhs` to be passed to its destructor.
+
+The relocation constructor leaves the object `rhs` in a dirty state. The only operation that is permitted on `rhs` after it was passed to the relocation constructor is its destructor call. Any other use of `rhs` is an undefined behavior.
+
+The relocation constructor signature must be `T::T(T~)` (`noexcept` is optional). `noexcept` is recommended as it is for regular destructors. Throwing from a relocation constructor is an undefined behavior.
+
+**Note:** The relocation constructor is not intended to be directly called by users. Instead relocation must happen through the new `reloc` operator. The `reloc` operator ensures that:
+
+- no object slicing will occur (e.g. if we were to relocate a derived class to a base class) ;
+- the relocated object cannot be reused.
+
+However it remains permitted to manually call the relocation constructor (given that it is accessible and not deleted) as useful on some cases, like manual memory management (e.g. `std::vector` implementation).
+
+## Trivially relocatable
+
+The class definition or the relocation constructor can be accompanied by the `[[trivially_relocatable]]` attribute (taken from p1144r5). Like in p1144r5, the attribute may also be conditioned by a boolean parameter: `[[trivially_relocatable(bool)]]`.
+
+```cpp
+class [[trivially_relocatable]] T
+{
+	// ...
+};
+// OR
+class [[trivially_relocatable(some_constexpr_cond())]] T
+{
+public:
+	// ...
+};
+// OR
+class T
+{
+public:
+	[[trivially_relocatable]] T(T~ other) noexcept = default;
+};
+// OR
+class T
+{
+public:
+	[[trivially_relocatable(some_constexpr_cond())]] T(T~ other) noexcept = default;
+};
+```
+
+It is an error to set the attribute on both the class and the relocation constructor.
+
+The trivially relocatable attribute gives the guarantee that both relocation and destruction operations can be safely optimized into a single `memcpy` operation. This optimization is not required to happen and is left at compiler vendors' discretion.
+
+### Trivially relocatable type deduction rules
+
+As in p1144r5, the trivially relocatable attribute is deducted if not specified. We suggest to follow the deduction rules from p1144r5, slightly rephrased to account for the relocation constructor. This gives (changes from p1144r5 are written in italic):
+
+A *relocation-constructible or* move-constructible, destructible object type T is a trivially relocatable type if it is:
+
+- a trivially copyable type, or
+- an array of trivially relocatable type, or
+- a (possibly cv-qualified) class type declared with a [[trivially_relocatable]] attribute with value true, or
+- a (possibly cv-qualified) class type which:
+  - *has no user-provided relocation constructors,*
+  - has no user-provided move constructors or move assignment operators,
+  - has no user-provided copy constructors or copy assignment operators,
+  - has no user-provided destructors,
+  - has no virtual member functions,
+  - has no virtual base classes,
+  - all of whose members *(cv-qualifiers ignored)* are either of reference type or of trivially relocatable type, and
+  - all of whose base classes are trivially relocatable.
+
+
+## Mixed-type relocation
+
+Relocation from an object of another type is not permitted:
+```cpp
+class T
+{
+public:
+	T(U~ other) noexcept; // with U different from T;
+		// ERROR: T::T(U~) is not a valid relocation constructor
+};
+```
+
+## Implicit, defaulted or deleted relocation constructor
+
+The relocation constructor may be implicitly-declared, implicitly-defined, defaulted, or deleted just as any other constructor. The rules to define that follow the same logic as those of the move constructor.
 
 # reloc operator
 
-This paper suggests to introduce a new operator, named `reloc`. `reloc` is a unary operator that can be applied to named local complete objects (understand, variables that will be destructed in the same function `reloc` is used from, and whose destructor call may be discarded). This operator aims to clearly indicate that a variable will be relocated and must not be reused within its scope.
+This paper suggests to introduce a new operator, named `reloc`. `reloc` is a unary operator that can be applied to named local complete objects (understand, local not ref-qualified variables). This operator aims to clearly indicate that a variable will be relocated and must not be reused within its scope.
 
 `reloc obj` constructs a new instance from `obj` and marks the "early" end of scope of `obj`. Unless otherwise specified, `reloc obj` returns the freshly built instance as a temporary. We rely on mechanisms similar to copy elision to elude this temporary object in most cases.
 
-In addition `reloc obj` relocates the object in a safe way; it guarantees that no object slicing will occur, proper destruction of the relocated object, and prevents programming errors where the relocated variable is reused.
+In addition `reloc obj` relocates the object in a safe way; it guarantees that no object slicing will occur and prevents programming errors where the relocated variable is reused.
 
 ## unrelocatable objects
 
 An object is said to be *unrelocatable* (with regards to a function `f`) if any of the following is true:
 
 - the object is not a *[complete object](https://en.cppreference.com/w/cpp/language/object)* ;
-- the object does not have local storage with regards to `f` ;
+- the object does not have local storage with regards to `f` and it is not a parameter of `f` ;
 - the object is ref-qualified or is a pointer dereference ;
 - the object is anonymous ;
 - the object is a structured binding ;
-- the object has no relocation constructor, move constructor or copy constructor.
+- the object has no relocation constructor, move constructor or copy constructor (all of those are undefined, unaccessible or deleted).
 
 ### reloc on unrelocatables is an error
 
@@ -221,16 +369,16 @@ void bar(void)
 
 	foo(reloc get_string()); // ERROR: reloc on anonymous object
 	foo(reloc get_strings().first); // ERROR: not a complete object
-		// and is not anonymous
+		// and is anonymous
 }
 
 void foobar(const std::string& str)
 {
-	foo(reloc str); // ERROR: str does not have local storage
+	foo(reloc str); // ERROR: str is ref-qualified
 }
 void foobar(std::string* str)
 {
-	foo(reloc *str); // ERROR: *str does not have local storage
+	foo(reloc *str); // ERROR: *str is a pointer dereference
 }
 void foobar2(std::string* str)
 {
@@ -250,35 +398,28 @@ public:
 
 ## reloc stages
 
-`reloc obj` (with `obj` of type `T`) acts in three stages:
+`reloc obj` (with `obj` of type `T`) acts in two stages:
 
 1. Constructs a new object from `obj` using the relocation constructor (if available), the move constructor (if available) or the copy constructor.
-2. Ensures the destruction of `obj`.
-3. Mark the end of scope of the name `obj`. Any further instruction using `obj` up to today's-end-of-scope of `obj` is an error. Any pointer or reference on the relocated object becomes dangling once the instruction containing `reloc` is completed.
+2. Mark the end of scope of the name `obj`. Any further instruction using `obj` up to today's-end-of-scope of `obj` is an error. Any pointer or reference on the relocated object becomes dangling once the instruction containing `reloc` is completed.
 
 ### Stage 1: construct a new instance
 
 `reloc obj` will use the following rules to construct the new instance:
 
-1. If `T` defines a relocation constructor, then does: `T{const_cast<T~>(obj)}`.
-2. Otherwise if `T` defines a move constructor, then does: `T{static_cast<T&&>(obj)}`.
+1. If `T` defines a relocation constructor that is accessible and not deleted, then does: `T{const_cast<T~>(obj)}`.
+2. Otherwise if `T` defines a move constructor that is accessible and not deleted, then does: `T{const_cast<T&&>(std::move(obj))}`. `const_cast` is used to discard any cv-qualifiers ; as `obj` reached its end of life, we no longer care about those. In addition, this allows to use `reloc` on a const variable that have no relocation constructor defined.
 3. Otherwise does: `T{obj}`.
 
-If `T` defines a relocation constructor then `obj` will be considered destructed after the relocation constructor. In which case, in the expression evaluation, `obj` is marked as destructed right after the relocation constructor call.
+**Note:** This stage can be optionally optimized. If `T` is trivially relocatable and that the call to the destructor of `obj` can be avoided entirely, then both this stage and the destructor call can be replaced by a simple `memcpy` operation. This optimization is left at the discretion of compiler vendors and is not enforced by the proposal. This proposal merely authorizes the optimization.
 
-### Stage 2: post-evaluation
-
-At the end of the evaluation of an instruction containing `reloc`, the relocated objects must be destructed. As such, if `obj` isn't marked as destructed then its destructor is called. `obj` is then marked as as destructed.
-
-The destructor calls for undestructed relocated objects happen at the end of the expression evaluation, similar to when temporary objects of an expression are destructed.
-
-### Stage 3: early end of scope
+### Stage 2: early end of scope
 
 `reloc obj` simulates an early end-of-scope of `obj`. To do so, it forbids any further mention of the name `obj`.
 
 Any mention of the name `obj` which resolves to the object that was relocated, **in all code paths** from after the instruction that contained `reloc obj` up to its end of scope, will then yield a compilation error.
 
-This further implies that any extra mention of `obj` in an instruction containing `reloc obj` is a compile-time error. For instance `foo(x, func(reloc x));` and `bar(reloc y, reloc y);` both yield an error.
+This further implies that any extra mention of `obj` in an instruction branch containing `reloc obj` is a compile-time error. For instance `foo(x, func(reloc x));` and `bar(reloc y, reloc y);` both yield an error, but `foo(test() ? reloc x : std::move(x));` does not.
 
 Consider the following examples:
 ```cpp
@@ -467,34 +608,9 @@ from:
 ```
 In this scenario `goto` is placed in a way that does not trigger the reuse of relocated `var`.
 
-#### Tracking object destruction
-
-In certain situations some extra hidden booleans need to be introduced to track the destruction state of relocated objects.
-
-Consider the following instruction: `foo(reloc p1, bar(), reloc p2);`. `bar()` may throw and interrupt the normal code path. In such cases the program must obviously still call the destructors of `p1` and `p2` if they are not marked as destructed. In this case the extra flags may only pertain to the instruction.
-
-Another example is the following code:
-```cpp
-bool foo()
-{
-	const T var;
-	if (sometest(var))
-		bar(reloc var);
-	else
-		do_smth_else(var);
-	return true;
-}
-```
-Here var is either destructed by the reloc operator, or when the control flow reaches the return statement. Some flag may be introduced so that, at scope exit, the destructor of var is not called if it was passed to the reloc operator.
-
-In a general case, the use of these flags may be needed when two code paths (one where a variable is passed to reloc, another when not) join. Then these flags can be used at scope exit to know whether to call the destructor.
-
-This is an implementation detail. We suggest leaving this out of the language specification and for compiler vendors' discretion only.
-
 ## Reloc initialization
 
-If a `reloc` statement is used to initialize an object (like in `auto y = reloc x;`), that the object to initialize and the object to relocate have the same type (cv-qualifiers ignored), and that the object to initilize is not ref-qualified, then
-`reloc` constructs the new instance into the object to initialize directly instead of returning a temporary.
+If a `reloc` statement is used to initialize an object (like in `auto y = reloc x;`), that the object to initialize and the object to relocate have the same type (cv-qualifiers ignored), and that the object to initilize is not ref-qualified, then `reloc` constructs the new instance into the object to initialize directly instead of returning a temporary.
 
 Consider the following:
 ```cpp
@@ -527,11 +643,15 @@ public:
 
 In all those cases `reloc` constructs the new instance into `a` directly (even when `a` is the parameter of `foobar`).
 
+**Note:** if the object is trivially relocatable then this operation can optimized into a memcpy. In which case the destructor of the relocated object must not be called. This optimization is authorized by the proposal but left at compiler vendors' discretion.
+
 ## Initialization from a temporary
 
-If an object is initialized from a temporary object of the same type (cv-qualifiers ignored), and that that type is relocation constructible, then the object is initialized from its relocation constructor and the destructor of the temporary is not called (because destructed by the relocation constructor).
+If an object is initialized from a temporary object of the same type (cv-qualifiers ignored), and that that type is relocation constructible, then the object is initialized from its relocation constructor.
 
 **Note:** this only applies if copy elision could not happen.
+
+**Note:** this operation could also be optimized into a memcpy, given that the object is trivially relocatable. In which case the destructor of the temporary must not be called. This optimization is authorized by the proposal but left at compiler vendors' discretion.
 
 For instance:
 ```cpp
@@ -581,6 +701,8 @@ public:
 };
 ```
 
+**Note:** if `obj` is trivially relocatable and that its destructor call can be avoided, then placement reloc can be optimized into a single memcpy operation. This optimization is authorized by the proposal but left at compiler vendors' discretion.
+
 ## Relocation of C-array
 
 C-arrays can be relocated as long as they are not *unrelocatable* and the size of the array is known. `reloc` called on a C-array returns a new C-array of the same size, where each element has been relocated.
@@ -589,11 +711,11 @@ See also:
 ```cpp
 void foo(int (&x)[])
 {
-	int y[] = reloc x; // ERROR: x does not have local storage
+	int y[] = reloc x; // ERROR: x is ref-qualified
 }
 void foo2(int (&x)[N])
 {
-	int y[N] = reloc x; // ERROR: x does not have local storage
+	int y[N] = reloc x; // ERROR: x is ref-qualified
 }
 void foo3()
 {
@@ -604,101 +726,7 @@ void foo3()
 
 While relocation of a C array might not seem beneficial, it enables relocation of `std::array` or any class using `std::array`.
 
-# Relocation constructor
-
-The new relocation constructor is written as follows:
-
-```cpp
-class T
-{
-public:
-	T(T~ other) noexcept;
-};
-```
-
-*The relocation constructor acts as a destructor for the relocated object.* The relocation constructor is in fact a second destructor. **The regular destructor of an object must not be called if said object was passed to a relocation constructor.**
-
-The relocation constructor signature must be `T::T(T~)` (`noexcept` is optional). `noexcept` is recommended as it is for regular destructors. Throwing from a relocation constructor is an UB.
-
-Relocation constructors can also be defaulted:
-```cpp
-class T
-{
-public:
-	T(T~ other) noexcept = default;
-};
-```
-
-**Note:** The relocation constructor can be called manually by programmers, but at their own risk. If the relocation constructor is called manually without using `reloc`:
-
-- object slicing may occur (e.g. if we are relocating a derived class to a base class) ;
-- the language won't discard the call to the destructor of the relocated object ;
-- the language won't offer any protection against reuse of the relocated object.
-
-However this remains permitted as useful on some cases, like manual memory management (e.g. `std::vector` implementation).
-
-## Mixed-type relocation
-
-Relocation from an object of another type is not permitted:
-```cpp
-class T
-{
-public:
-	T(U~ other) noexcept; // with U different from T;
-		// ERROR: T::T(U~) is not a valid relocation constructor
-};
-```
-Since the destructor of a class can only be defined in that class, the same goes for the relocation constructor.
-
-## Implicit declaration
-
-### Implicitly-declared relocation constructor
-
-If no user-defined relocation constructors are provided for a class type (struct, class, or union), and all of the following is true:
-
--   there is no user-declared copy constructor
--   there is no user-declared move constructor
--   there is no user-declared destructor
-
-then the compiler will declare a relocation constructor as an inline public member of its class with the signature `T::T(T~) noexcept`.
-
-Rules for implicit declaration of copy constructor and move constructor are also changed to take the relocation constructor into account, but this change will be detailed in a future revision.
-
-### Deleted implicitly-declared relocation constructor
-
-The implicitly-declared or defaulted relocation constructor for class `T` is defined as _deleted_ if any of the following is true:
-
--   `T` has non-static data members that cannot be relocated (have deleted, inaccessible, or ambiguous relocation constructors)
--   `T` has direct or virtual base class that cannot be relocated (has deleted, inaccessible, or ambiguous relocation constructors)
--   `T` has direct or virtual base class with a deleted or inaccessible destructor
--   `T` is a union-like class and has a variant member with non-trivial relocation constructor.
-
-A defaulted relocation constructor that is deleted is ignored by overload resolution.
-
-Rules for deleted implicitly-declarated copy constructor and move constructor are also changed to take the relocation constructor into account, but this change will be detailed in a future revision.
-
-## Trivial relocation constructor
-
-The relocation constructor for class `T` is *trivial* if all of the following is true:
-
-- it is not user-provided (meaning, it is implicitly-defined or defaulted);
-- `T` has no virtual member functions;
-- `T` has no virtual base classes;
-- `T` has no non-static data members of volatile-qualified type;
-- the relocation constructor selected for every direct base of `T` is *trivial*;
-- the relocation constructor selected for every non-static class type (or array of class type) member of `T` is *trivial*.
-
-A trivial relocation constructor is a constructor that performs the same action as the trivial copy constructor, that is, makes a copy of the object representation as if by `std::memmove`. All data types compatible with the C language (POD types) are trivially relocation constructible.
-
-### Optimization with trivially relocation constructible objects
-
-Data structures are encouraged to check whether the objects they handle have a trivial relocation constructor. If that is the case, then the call to the relocation constructor can be completely shortcut by a mere memmove.
-
-`std::vector` is a good candidate for such optimizations. Each time it needs to move its data to a new memory chunk, it can make a simple `std::memmove` call instead of calling some constructor and destructor on all its items. See also `std::uninitialized_reloc` and `std::relocate_at`.
-
-## Implicitly-defined relocation constructor
-
-If the implicitly-declared relocation constructor is neither deleted nor trivial, it is defined (that is, a function body is generated and compiled) by the compiler if odr-used or needed for constant evaluation. For union types, the implicitly-defined relocation constructor copies the object representation (as by `std::memmove`). For non-union class types (class and struct), the relocation constructor performs full member-wise relocation of the object's bases and non-static members, in their initialization order, using direct initialization with a relocation reference argument. If this satisfies the requirements of a constexpr constructor, the generated relocation constructor is `constexpr`.
+**Note:** if the element type of the array is trivially relocatable and that the array destructor call can be avoided, then the array relocation can be optimized into a single large memcpy operation over all its elements in one go. This optimization is authorized by the proposal but left at compiler vendors' discretion.
 
 # Relocation reference
 
@@ -772,7 +800,9 @@ T::T(T~ t) noexcept
 
 ## cv-qualifiers
 
-The relocation reference discards any `const` and `volatile` qualifiers (i.e. `T~` is the same type as `const T~`, `volatile T~`, and `const volatile T~`). The incentive is that a relocation reference denotes an object that is being destructed (consequence of the relocation). Destruction will happen the same way regardless of the cv-qualifiers it had before. C++ destructors work this way: the same destructor is called regardless of the cv-qualifiers of the object.
+The relocation reference discards any `const` and `volatile` qualifiers (i.e. `T~` is the same type as `const T~`, `volatile T~`, and `const volatile T~`). The incentive is that a relocation reference denotes an object that reached its end of life (consequence of the relocation), and which can then (after the relocation happened) only be destructed. Destruction will happen the same way regardless of the cv-qualifiers it had before. C++ destructors work this way: the same destructor is called regardless of the cv-qualifiers of the object.
+
+This point enables the relocation of const objects.
 
 ## Propagation on data members
 
@@ -808,7 +838,7 @@ public:
 
 Structured binding is a language feature that enables to split an object into parts and to initialize name aliases that refer to each part: `auto&& [x,y] = foo();`. Here `x` and `y` are the new identifiers that reference each one part of the object returned by `foo()` (the initializer).
 
-Structured relocation is a suggested variant to structured binding. Structured relocation enables to split a complete object (the initializer) into parts, and each part is relocated into new complete objects. The initializer is fully relocated at the end of the expression as we expect each of its part to form a partition of the object. Unlike in structured bindings, the newly introduced names are not aliases but complete objects on their own.
+Structured relocation is a suggested variant to structured binding. Structured relocation enables to split a complete object (the initializer) into parts, and each part is relocated into new complete objects. The initializer is fully relocated at the end of the expression as we expect each of its parts to form a partition of the object. Unlike in structured bindings, the newly introduced names are not aliases but complete objects on their own.
 
 A structure binding declaration is upgraded to a structured relocation declaration if all the following conditions are met:
 
@@ -840,10 +870,10 @@ Structured relocation is enabled if and only if `U` is relocation constructible.
 
 The initializer for the I-th variable is:
 
-- `const_cast<T~>(t).get<I>()`, if lookup for the identifier `get` in the scope of `T` by class member access lookup finds at least one declaration that is a function template whose first template parameter is a non-type parameter and is specialized for a relocation reference on *this ;
+- `const_cast<T~>(t).get<I>()`, if lookup for the identifier `get` in the scope of `T` by class member access lookup finds at least one declaration that is a function template whose first template parameter is a non-type parameter and is specialized for a relocation reference on `*this` ;
 - Otherwise, `get<I>(const_cast<T~>(t))`, where `get` is looked up by argument-dependent lookup only, ignoring non-ADL lookup, and its only parameter is of type `T~`.
 
-Structured relocation is enabled if and only if such a `get<I>` function (`I` of type `std::size_t`) is found for all introduced objects.
+Structured relocation is enabled if and only if such a `get<I>` function (`I` of type `std::size_t`) is found for all introduced objects, and that each I-th object can be constructed from the returned value of the selected `get<I>` function.
 
 The I-th object is then constructed from the result of the selected `get<I>` function.
 
@@ -851,7 +881,7 @@ The I-th object is then constructed from the result of the selected `get<I>` fun
 
 The constraints specified in C++ standard that apply on `T` for this structured binding declaration case apply.
 
-In addition, structured relocation is enabled if and only if `T` is *triavially relocation constructible* and only have public data-members.
+In addition, structured relocation is enabled if and only if `T` is *triavially relocatable* and only have public data-members (static data-members are ignored).
 
 The I-th object is then constructed by its relocation constructor, whose parameter is a relocation reference on the corresponding I-th non-static data-member, using the same data-member selection rules as in structured binding.
 
@@ -883,23 +913,14 @@ using add_relocation_reference_t = typename add_relocation_reference<T>::type;
 template<class T>
 struct is_relocation_constructible;
 template<class T>
-struct is_trivially_relocation_constructible;
-
-/* Possible implementation:
-template<class T>
-struct is_relocation_constructible; :
-    std::is_constructible<T, typename std::add_relocation_reference<T>::type> {};
-template<class T>
-struct is_trivially_relocation_constructible :
-    std::is_trivially_constructible<T, typename std::add_relocation_reference<T>::type> {};
-*/
+struct is_trivially_relocatable;
 
 template<class T>
 inline constexpr bool is_relocation_constructible_v =
 	is_relocation_constructible<T>::value;
 template<class T>
-inline constexpr bool is_trivially_relocation_constructible_v =
-	is_trivially_relocation_constructible<T>::value;
+inline constexpr bool is_trivially_relocatable_v =
+	is_trivially_relocatable<T>::value;
 }
 ```
 
@@ -911,79 +932,68 @@ inline constexpr bool is_trivially_relocation_constructible_v =
 namespace std
 {
 template <class T>
-void relocate_at(T* src, void* dst);
+T* relocate_at(const T* src, T* dst);
 }
 ```
 
-Relocates `src` into `dst`. `src` will be destructed at the end of the call. `src` and `dst` must not be the nullptr, or it otherwise results in UB.
+Relocates `src` into `dst`. `src` will be destructed at the end of the call. `src` and `dst` must not be the nullptr, or it otherwise results in UB. Returns the address of the new instance (i.e. `dst`).
 
-If `T` is trivially relocation constructible, it behaves as if by:
+If `T` is trivially relocatable, it behaves as if by:
 ```cpp
 template <class T>
-void relocate_at(T* src, void* dst)
+T* relocate_at(const T* src, T* dst)
 {
 	memmove(dst, src, sizeof(T));
+	return std::launder(dest);
 }
 ```
 
 Otherwise if `T` is relocation constructible, it behaves as if by:
 ```cpp
 template <class T>
-void relocate_at(T* src, void* dst)
+T* relocate_at(const T* src, T* dst)
 {
-	new (dst) T{const_cast<T~>(*src)};
+	T* res = std::construct_at(dst, const_cast<T~>(*src));
+	std::destroy_at(src);
+	return res;
 }
 ```
 Note that this version does not check for exceptions as it an UB to throw from a relocation constructor.
 
-Otherwise if `T` is move constructible, it behaves as if by:
-```cpp
-template <class T>
-void relocate_at(T* src, void* dst)
-{
-	try {
-		new (dst) T{static_cast<T&&>(*src)};
-		src->~T();
-	} catch (...) {
-		src->~T();
-		throw;
-	}
-}
-```
-
 Otherwise it behaves as if by:
 ```cpp
 template <class T>
-void relocate_at(T* src, void* dst)
+T* relocate_at(const T* src, T* dst)
 {
 	try {
-		new (dst) T{*src};
-		src->~T();
+		T* res = std::construct_at(dst, consts_cast<T&&>(std::move(*src)));
+		std::destroy_at(src);
+		return res;
 	} catch (...) {
-		src->~T();
+		std::destroy_at(src);
 		throw;
 	}
 }
 ```
 
-### uninitialized_reloc
+### uninitialized_relocate
 
 ```cpp
 namespace std
 {
 template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first);
+ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first);
 
 template<class ExecutionPolicy, class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(ExecutionPolicy&& policy, InputIt first, InputIt last,
+ForwardIt uninitialized_relocate(ExecutionPolicy&& policy, InputIt first, InputIt last,
 	ForwardIt d_first) ;
 
 template<class InputIt, class Size, class ForwardIt>
-std::pair<InputIt, ForwardIt> uninitialized_reloc_n(InputIt first, Size count,
+std::pair<InputIt, ForwardIt> uninitialized_relocate_n(InputIt first, Size count,
 	ForwardIt d_first) ;
 
 template<class ExecutionPolicy, class InputIt, class Size, class ForwardIt>
-std::pair<InputIt, ForwardIt> uninitialized_reloc_n(
+std::pair<InputIt, ForwardIt> uninitialized_relocate_n(
 	ExecutionPolicy&& policy, InputIt first, Size count, ForwardIt d_first);
 }
 ```
@@ -992,35 +1002,37 @@ Relocates elements from the range `[first, last)` to an uninitialized memory are
 
 Returns:
 
-- `uninitialized_reloc`: an iterator to the element past the last element relocated;
-- `uninitialized_reloc_n`: a pair whose first element is an iterator to the element past the last element relocated in the source range, and whose second element is an iterator to the element past the last element relocated in the destination range.
+- `uninitialized_relocate`: an iterator to the element past the last element relocated;
+- `uninitialized_relocate_n`: a pair whose first element is an iterator to the element past the last element relocated in the source range, and whose second element is an iterator to the element past the last element relocated in the destination range.
 
-If the type to relocate is trivially relocation constructible and both iterator types are contiguous, it behaves as if by:
+If the type to relocate is trivially relocatable and both iterator types are contiguous, it behaves as if by:
 ```cpp
 template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
+ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first)
 {
 	using value_type = typename std::iterator_traits<ForwardIt>::value_type;
 
-	std::memmove(static_cast<void*>(std::addressof(*d_first)),
-		static_cast<void*>(std::addressof(*first)),
-		std::distance(first, last)*sizeof(value_type));
+	if (last != first)
+		std::memmove(std::addressof(*d_first),
+			std::addressof(*first),
+			std::distance(first, last)*sizeof(value_type));
 
 	return d_first + std::distance(first, last);
 }
 ```
 
-If the type to relocate is trivially relocation constructible and one of the iterator type is not contiguous, it behaves as if by:
+If the type to relocate is trivially relocatable and one of the iterator type is not contiguous, it behaves as if by:
 ```cpp
 template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
+ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first)
 {
 	using value_type = typename std::iterator_traits<ForwardIt>::value_type;
 
 	for (; first != last; ++d_first, (void) ++first)
-		std::memmove(static_cast<void*>(std::addressof(*d_first)),
-			static_cast<void*>(std::addressof(*first)),
-			sizeof(value_type));
+	{
+		std::memmove(std::addressof(*d_first),
+			std::addressof(*first), sizeof(value_type));
+	}
 
 	return d_first;
 }
@@ -1029,57 +1041,33 @@ ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
 If the type to relocate is relocation constructible (not trivially), it behaves as if by:
 ```cpp
 template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
+ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first)
 {
 	using value_type = typename std::iterator_traits<ForwardIt>::value_type;
 
 	for (; first != last; ++d_first, (void) ++first)
-		::new (static_cast<void*>(std::addressof(*d_first)))
-			value_type{const_cast<value_type~>(*first)};
+	{
+		std::construct_at(std::addressof(*d_first), const_cast<value_type~>(*first));
+		std::destroy_at(std::addressof(*first));
+	}
 
 	return d_first;
 }
 ```
 Note that this version does not check for exceptions as it an UB to throw from a relocation constructor.
 
-If the type to relocate is move constructible, it behaves as if by:
+Last it behaves as if by:
 ```cpp
 template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
+ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first)
 {
-	using value_type = typename std::iterator_traits<ForwardIt>::value_type;
-
 	try {
 		for (; first != last; ++d_first, (void) ++first) {
-			::new (static_cast<void*>(std::addressof(*d_first)))
-				value_type{static_cast<value_type&&>(*first)};
-			first->~value_type();
+			std::construct_at(std::addressof(*d_first), std::move(*first));
+			std::destroy_at(std::addressof(*first));
 		}
 	} catch (...) {
-		for (; first != last; ++first)
-			first->~value_type();
-		throw;
-	}
-
-	return d_first;
-}
-```
-
-Last, if the type to relocate is only copy constructible, it behaves as if by:
-```cpp
-template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_reloc(InputIt first, InputIt last, ForwardIt d_first)
-{
-	using value_type = typename std::iterator_traits<ForwardIt>::value_type;
-
-	try {
-		for (; first != last; ++d_first, (void) ++first) {
-			::new (static_cast<void*>(std::addressof(*d_first))) value_type{*first};
-			first->~value_type();
-		}
-	} catch (...) {
-		for (; first != last; ++first)
-			first->~value_type();
+		std::destroy(first, last);
 		throw;
 	}
 
@@ -1132,9 +1120,9 @@ public:
 	/**
 	 * returns the value, relocated from the contained value.
 	 * throws a new exception (bad_reloc_access, derived from std::logic_error)
-	 * if extract was already called.
+	 * if pilfer was already called.
 	 */
-	T extract();
+	T pilfer();
 };
 }
 ```
@@ -1155,7 +1143,7 @@ template< class... Types >
 constexpr tuple<VTypes...> make_tuple( Types&&... args );
 ```
 
-If `std::decay_t<U1>` (resp. `std::decay_t<U2>`) results in `std::reloc_wrapper<X>` for some `X` then the pair data member is initialized with `x.extract()` (resp. `y.extract()`).
+If `std::decay_t<U1>` (resp. `std::decay_t<U2>`) results in `std::reloc_wrapper<X>` for some `X` then the pair data member is initialized with `x.pilfer()` (resp. `y.pilfer()`).
 
 Today's rule for `V1` and `V2` is: The deduced types `V1` and `V2` are `std::decay<T1>::type` and `std::decay<T2>::type` (the usual type transformations applied to arguments of functions passed by value) unless application of `std::decay` results in `std::reference_wrapper<X>` for some type `X`, in which case the deduced type is `X&`.
 *We suggest in addition:* if `std::decay` results in `std::reloc_wrapper<X>` for some type `X`, in which case the deduced type is `X`.
@@ -1206,7 +1194,7 @@ optional<T>::optional(std::relocate_t, T val);
  * \throws std::bad_optional_access if the optional did not contain any value.
  */
 template <class T>
-T optional<T>::extract();
+T optional<T>::pilfer();
 ```
 
 ### std::variant
@@ -1223,7 +1211,7 @@ template <class T>
 constexpr variant(std::relocate_t, T val);
 
 /**
- * \brief does the same as calling *this = t
+ * \brief does the same as calling: *this = std::forward<T>(t)
  */
 template <class T>
 void assign(T&& t);
@@ -1255,13 +1243,13 @@ All containers should provide a way to insert and remove data by relocation.
 
 Unfortunately existing APIs cannot fulfill this need. They mostly take references of some kind as parameter, while relocation requires to pass items by value.
 
-As such we suggest adding overloads to all insertion functions. These shall take an `std::relocate_t` as parameter and the item to add as next parameter (taken by value).
+As such we suggest adding overloads to all insertion functions. These shall take an `std::relocate_t` as a parameter and the item to insert as next parameter (taken by value).
 
-`std::relocate_t` is here to help distinguish from otherwise ambiguous overloads. Indeed `vec.push_back(reloc a);` will call `vector::push_back(T&&)` and the item `a` won't be relocated inside the vector. If we add `void vector::push_back(T val)` as overload then the previous call will become ambiguous.
+`std::relocate_t` is here to help distinguish from otherwise ambiguous overloads. Indeed `vec.push_back(reloc a);` would call `vector::push_back(T&&)` and the item `a` won't be relocated inside the vector. If we added `void vector::push_back(T val)` as overload then the previous call would become ambiguous.
 
 We want to avoid the use of `std::reloc_wrapper` because of the extra relocation it incurs (the value needs to be relocated into the wrapper first).
 
-In addition we add various "extract" function to remove values from the container.
+In addition we add various "pilfer" function to remove values from the container.
 
 ### std::vector
 ```cpp
@@ -1275,17 +1263,17 @@ iterator vector<T, Alloc>::insert(const_iterator pos, std::relocate_t, T value);
 
 // removes the last item from the vector and returns it
 template <class T, class Alloc>
-T vector<T, Alloc>::extract_back();
+T vector<T, Alloc>::pilfer_back();
 
 // removes the item from the vector and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, const_iterator> vector<T, Alloc>::extract(const_iterator pos);
+std::pair<T, const_iterator> vector<T, Alloc>::pilfer(const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator vector<T, Alloc>::relocate(
+OutputIterator vector<T, Alloc>::relocate_out(
 	iterator from, iterator to, OutputIterator out);
 ```
 
@@ -1303,19 +1291,19 @@ iterator deque<T, Alloc>::insert(const_iterator pos, std::relocate_t, T value);
 
 // removes the last item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::extract_back();
+T deque<T, Alloc>::pilfer_back();
 // removes the first item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::extract_front();
+T deque<T, Alloc>::pilfer_front();
 // removes the item from the queue and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, const_iterator> deque<T, Alloc>::extract(const_iterator pos);
+std::pair<T, const_iterator> deque<T, Alloc>::pilfer(const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator deque<T, Alloc>::relocate(
+OutputIterator deque<T, Alloc>::relocate_out(
 	iterator from, iterator to, OutputIterator out);
 ```
 
@@ -1333,19 +1321,19 @@ iterator list<T, Alloc>::insert(const_iterator pos, std::relocate_t, T value);
 
 // removes the last item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::extract_back();
+T list<T, Alloc>::pilfer_back();
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::extract_front();
+T list<T, Alloc>::pilfer_front();
 // removes the item from the list and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, const_iterator> list<T, Alloc>::extract(const_iterator pos);
+std::pair<T, const_iterator> list<T, Alloc>::pilfer(const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator list<T, Alloc>::relocate(
+OutputIterator list<T, Alloc>::relocate_out(
 	iterator from, iterator to, OutputIterator out);
 ```
 
@@ -1360,10 +1348,10 @@ void forward_list<T, Alloc>::push_front(std::relocate_t, T value);
 
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T forward_list<T, Alloc>::extract_front();
+T forward_list<T, Alloc>::pilfer_front();
 // removes the item after pos from the list and returns it with the iterator following pos
 template <class T, class Alloc>
-std::pair<T, const_iterator> forward_list<T, Alloc>::extract_after(const_iterator pos);
+std::pair<T, const_iterator> forward_list<T, Alloc>::pilfer_after(const_iterator pos);
 
 // relocates items in ]from, to[ into out. 
 // items within range are removed from *this.
@@ -1382,7 +1370,7 @@ std::pair<iterator, bool> map::insert(std::relocate_t, value_type value);
 iterator map::insert(const_iterator hint, std::relocate_t, value_type value);
 
 // extract the stored value from the container
-std::pair<value_type, const_iterator> map::extract_value(const_iterator position);
+std::pair<value_type, const_iterator> map::pilfer(const_iterator position);
 ```
 
 ### queues
@@ -1391,40 +1379,30 @@ std::pair<value_type, const_iterator> map::extract_value(const_iterator position
 void queue::push(std::relocate_t, T value);
 
 // removes the next element from the queue
-T queue::extract();
+T queue::pilfer();
 ```
 
 ## Iterator library
 
-### back_reloc_iterator
+### reloc_insert_iterator
 
-`std::back_reloc_iterator` is an OutputIterator that appends to a container for which it was constructed. The container's push_back(std::relocate overload) member function is called whenever the iterator (whether dereferenced or not) is assigned to. Incrementing the std::back_reloc_iterator is a no-op.
-
-```cpp
-template< class Container >
-std::back_reloc_iterator<Container> back_relocator( Container& c );
-```
-`back_relocator` is a convenience function template that constructs a `std::back_reloc_iterator` for the container c with the type deduced from the type of the argument.
-
-### front_reloc_iterator
-
-`std::front_reloc_iterator` is an OutputIterator that appends to a container for which it was constructed. The container's push_front(std::relocate overload) member function is called whenever the iterator (whether dereferenced or not) is assigned to. Incrementing the std::front_reloc_iterator is a no-op.
+`std::reloc_insert_iterator` is an OutputIterator that appends to a container for which it was constructed. The container's insert(std::relocate overload) member function is called whenever the iterator (whether dereferenced or not) is assigned to. Incrementing the `std::reloc_insert_iterator` is a no-op.
 
 ```cpp
 template< class Container >
-std::front_reloc_iterator<Container> front_relocator( Container& c );
+std::reloc_insert_iterator<Container> reloc_inserter( Container& c, typename Container::iterator it );
 ```
-`front_relocator` is a convenience function template that constructs a `std::front_reloc_iterator` for the container c with the type deduced from the type of the argument.
+`reloc_inserter` is a convenience function template that constructs a `std::reloc_insert_iterator` for the container `c` and its iterator `i` with the type deduced from the type of the argument.
 
-### insert_reloc_iterator
+We also suggest adding alternatives for `push_back` and `push_front` (replace xxx respectively by back and front):
 
-`std::insert_reloc_iterator` is an OutputIterator that appends to a container for which it was constructed. The container's insert(std::relocate overload) member function is called whenever the iterator (whether dereferenced or not) is assigned to. Incrementing the std::insert_reloc_iterator is a no-op.
+`std::reloc_xxx_iterator` is an OutputIterator that appends to a container for which it was constructed. The container's push_xxx(std::relocate overload) member function is called whenever the iterator (whether dereferenced or not) is assigned to. Incrementing the `std::reloc_xxx_iterator` is a no-op.
 
 ```cpp
 template< class Container >
-std::insert_reloc_iterator<Container> insert_relocator( Container& c, typename Container::iterator it );
+std::reloc_xxx_iterator<Container> reloc_xxx_inserter( Container& c );
 ```
-`insert_relocator` is a convenience function template that constructs a `std::insert_reloc_iterator` for the container c and its iterator i with the type deduced from the type of the argument.
+`reloc_xxx_inserter` is a convenience function template that constructs a `std::reloc_xxx_iterator` for the container `c` with the type deduced from the type of the argument.
 
 ## Concept
 
@@ -1434,7 +1412,7 @@ The TriviallyCopyable has a new requirement: Every relocation constructor is tri
 
 ## New constructors
 
-Relocation constructors (with signature `T::T(T~) noexcept`) should be added *as defaulted* to the following classes of the standard library:
+Relocation constructors (with signature `T::T(T~) noexcept`) should be added to the following classes of the standard library:
 
 | Library | Classes |
 |--|--|
@@ -1445,7 +1423,7 @@ Relocation constructors (with signature `T::T(T~) noexcept`) should be added *as
 | **Thread support** | `std::thread`, `std::lock_guard`, `std::unique_lock`, `std::scoped_lock`, `std::shared_lock`, `std::promise`, `std::future`, `std::shared_future`, `std::packaged_task` |
 | **Filesystem** | `std::filesystem::path` |
 
-All classes that have at least one virtual function are not good candidates for relocation, and are such not listed here. Indeed, such objects are polymorphic by design, and should not be copied around by value as object slicing may occur.
+All classes that have at least one virtual function are not good candidates for relocation, and are as such not listed here. Indeed, such objects are polymorphic by design, and should not be copied around by value as object slicing may occur.
 
 # Discussions
 
@@ -1459,32 +1437,23 @@ We don't intend developers:
 
 - to write other types of functions that consume relocation references, i.e. `void foo(T~) noexcept;`;
 - to cast an lvalue reference to a relocation reference without knowing what it does;
-- to take the address of relocation reference and play with relocation pointers.
+- to take the address of a relocation reference and play with relocation pointers.
 
 ## Why not a library solution?
 
-To ensure proper relocation, we need to make sure that the destructor of the relocated value is not called, or rather, to consider the relocation constructor to be a destructor on its own. Otherwise things would not be much different from the move constructor. This requires changes in the language.
+To ensure proper relocation, we need to make sure that the relocated value is not reused. Otherwise things would not be much different from the move constructor. This is the role of the `reloc` operator.
+
+Also, we believe that trivial relocation is better achieved with language support (as claimed in P1144R5) than with a library solution.
 
 ## Why doesn't reloc return a relocation reference instead?
 
 It may seem counter-intuitive that reloc returns the constructed object. It could have returned a relocation reference, which would trigger a relocation constructor call when used to initialize a new object.
 
-But this wouldn't be safe. The relocation reference needs to reach a relocation constructor to ensure that the relocated object is destructed. Anything can happen from the `reloc` call and the moment the relocation constructor is reached (exceptions can be thrown, the reference forwarded to functions that simply discard it, etc...). Such a code would then be open to leaks.
-
-Instead, the first version of this paper worked in a way similar to this suggestion. The `reloc` operator would not return a new instance, but some wrapper object. If the wrapper object made its way to a relocation constructor, then the wrapper would mark the object as destructed and the call site would not destruct the object.
-
-We got everything together but we felt that the proposal was way more complicated than it ought to be, because of the new rules we had to add:
-
-- have a convenient wrapper type that was handy to manipulate;
-- subobjects (e.g. non-static data members) would have to be wrapped as well;
-- make the relocation constructor have a special mechanic so it marks the destruction of the object...
-- ... however other functions that would simply forward the wrapper would not mark the object as destructed.
-
-In the end, stating that `reloc` returns a newly built instance allowed for many simplifications.
+But this wouldn't be safe. It would allow to write code such as `T& y = reloc x;` (the relocation reference can be implictly cast to any reference), where `x` is no longer reachable after this call yet we allowed to bind a reference to it at the same time. It would also favor codes like `void foo(T~); void bar() { T x; foo(reloc x); }`. Although it might seem like a good idea, it also inhibits the trivial relocation optimization (x in bar cannot be memcpyed to foo, since foo expects a reference).
 
 ## Why a new operator?
 
-When a variable was relocated it can no longer be used. The reloc operator emphasizes that point. `reloc` stands out in the code (we can easily see it), and it guarantees the early end of scope of the relocated variable.
+A relocated variable can no longer be used. The reloc operator emphasizes that point. `reloc` stands out in the code (we can easily see it), and it guarantees the early end of scope of the relocated variable. It also conveys the clear intent of the developper.
 
 ## Why a new type of reference?
 
@@ -1503,17 +1472,55 @@ For all those reasons we found that using a dedicated type of reference was a be
 
 We also decided to denote it by `T~` to better emphasize its relationship with object destruction.
 
-## Why use const_cast to cast into a relocation reference?
-
-We have no strong opinion on which type of cast to use. We hesitated between `static_cast` and `const_cast`.
-
-On one hand, `static_cast` seems to be semantically the more correct choice, although it does not convey this sense of caution a `const_cast` does. On the other hand, casting to a relocation reference does not deal with cv-qualifiers (even though a relocation reference discards them), so `const_cast` feels a bit out of place.
-
-We favored the sense of caution raised by `const_cast`, that's why we picked it.
-
 ## Can reloc operator be overloaded?
 
-No, we found no good use of this. We may add this in a future extension if a convincing use-case appears.
+We also considered the operator reloc overload in place of the relocation constructor. We considered the following code:
+```cpp
+class T
+{
+public:
+	operator reloc(T&& rhs) noexcept = default;
+};
+```
+
+operator reloc would return a new instance of T, so its return type is omitted. This looks nice when defaulted, but it becomes tedious to write an implementation. 
+
+- operator reloc would somehow need to construct the object it will return. How to do this in an optimized way other than calling a constructor dedicated to relocation? This would force the user to write their own unofficial relocation constructor that reloc would simply call.
+- if operator reloc always needs to call some constructor, why not give it the right to construct the object on its own, with delegating constructor and initialization list? Then reloc could be written as:
+
+```cpp
+class T : public Base
+{
+	U a;
+public:
+	operator reloc(T&& rhs) noexcept : Base{std::move(rhs)}, a{std::move(rhs.a)} {}
+};
+```
+
+But this calls the move constructor of `Base` and `a` which may not be what we want. We came up with this new syntax:
+
+```cpp
+class T : public Base
+{
+	U a;
+public:
+	operator reloc(T&& rhs) noexcept : Base reloc{std::move(rhs)}, 
+		a reloc{std::move(rhs.a)} {}
+	// Base reloc{std::move(rhs)} would construct Base from its own reloc operator
+};
+```
+
+This has the benefit of introducing no new constructor (even though this reloc operator could be considered as one), and no new type of reference. But:
+
+- it provides a new syntax to call a specific constructor: `T reloc{some_ref}`. This clashes with C++ style that relies on overload resolution to select the right constructor.
+- it allows for weird code: `T x; T y reloc{std::move(x)};` here `y` is created by relocation but `x` has not been relocated by `reloc`, so it can still be used.
+- such unsafe code can be written with the current proposal with: `T x; T y{const_cast<T~>(x)};` but at least the `const_cast` call makes it obvious that this is unsafe.
+
+For all these reasons, we decided to go with the relocation constructor and relocation reference. The reloc operator cannot be overloaded.
+
+## Why use const_cast to cast into a relocation reference?
+
+Casting to a relocation reference discards any cv-qualifiers so `const_cast` feels appropriate. Also `const_cast` gives a sense of caution that's needed when handling a relocation reference.
 
 ## Will we see reloc used only to trigger early end of scope of variables?
 
@@ -1531,13 +1538,11 @@ void foo()
 }
 ```
 
-This code could be used instead of introducing an extra scope in `foo`. We personally feel that adding extra scopes is more readable than using reloc in such a way. This could be avoided by adding `[[no_discard]]` to `reloc`, but we have no strong opinion about this.
+This code could be used instead of introducing an extra scope in `foo` to limit the lifetime of `b`. We personally feel that adding extra scopes is more readable than using reloc in such a way. This could be avoided by adding `[[no_discard]]` to `reloc`, but we have no strong opinion about this.
 
-## Why reuse extract in STL containers and extract_value in set and map containers?
+## Why name the extract functions pilfer and not extract in STL containers?
 
-`std::set` and `std::map` already have their `extract` function, which don't do exactly what we want, so that's why we introduced `extract_value` instead.
-
-We thought of names that could be identical across all STL containers. Another one we considered is `relocate` (and `relocate_back`, `relocate_front`). However this doesn't say if we intend to relocate a value inside or outside the container. Then this would become `relocate_out`, `relocate_back_out` and `relocate_front_out`, which is too verbose in our opinion. We could also use `extract_value` in every container. This point is left for further discussion.
+`std::set` and `std::map` already have their `extract` function, which don't do exactly what we want, so that's why we introduced `pilfer` instead. We prefer to have the same API across all containers to make it easier to write generic code.
 
 ## Will it make C++ easier?
 
@@ -1546,3 +1551,17 @@ Even though it does come with new rules, we argue that it mostly removes the mov
 On one hand, if a introducing a "moved-from" state in a class feels out of place, then it's best to remove the move constructor and only use the relocation constructor.
 
 On the other hand, if there is a use case where it makes sense to still use the value after moving it (like for an `std::vector` or `std::unique_ptr`) then the moved-from state makes sense and its implementation should be intuitive (empty vector or null pointer).
+
+# References
+
+- https://herbsutter.com/2020/02/17/move-simply/
+- [P1144R5](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1144r5.html): Object relocation in terms of move plus destroy by Arthur O'Dwyer 
+  - http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1144r5.html
+- [P0023R0](http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf): Relocator: Efficiently moving objects by Denis Bider 
+  - http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf
+- [N4158](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf): Destructive Move by Pablo Halpern 
+  - http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf
+- [P1029R3](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf): move = bitcopies by Niall Douglas 
+  - http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf
+- [P0308R0](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html): Valueless Variants Considered Harmful by Peter Dimov
+  - http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html
