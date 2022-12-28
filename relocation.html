@@ -1563,7 +1563,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 44af0bf3e, updated Fri Jul 29 17:05:16 2022 -0700" name="generator">
   <link href="https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="f55b8d557e7edb8ae399d45030cf41b8bdc2d02d" name="document-revision">
+  <meta content="42466b05e34707534648d894d6f32fd9e79c82b7" name="document-revision">
 <style>/* style-autolinks */
 
 .css.css, .property.property, .descriptor.descriptor {
@@ -4027,26 +4027,108 @@ to all the following classes:</p>
 a new keyword, like: <code class="highlight"><c- o>&lt;~&lt;</c-> <c- n>obj</c-></code> or <code class="highlight"><c- o>&amp;&lt;</c-> <c- n>obj</c-></code> in place of <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-></code>.
 However, we feel like <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-></code> better conveys the intent, and has better 
 readibility.</p>
-   <p><strong>TODO:</strong> Provide hit ratios in large C++ repos (boost, Qt, abseil, llvm, gcc, etc);
-and mention migration strategies;</p>
-   <p>The introduction of a new keyword might break existing codebases.
-We quickly looked at:</p>
+   <p>The introduction of a new keyword may always break existing codebases. We had a
+look at several well-known open source C++ projects to analyse what volume of code
+would break if <code class="highlight"><c- n>reloc</c-></code> were a keyword.</p>
+   <p>For each of the following repositories, we searched for the <code class="highlight"><c- n>reloc</c-></code> string,
+at word boundaries, with case-sensitivity, in all C++ source files and headers
+(<code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>cc</c-></code>, <code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>cpp</c-></code>, <code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>cxx</c-></code>, <code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>h</c-></code>, <code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>hpp</c-></code>, <code class="highlight"><c- o>*</c-><c- p>.</c-><c- n>hh</c-></code>).
+We manually discarded matches that
+were not code (comments or strings). And we put that in perspective with the
+total number of files, lines and words of the repository.</p>
    <ul>
     <li data-md>
-     <p>our personal projects and those of Stormshield, <code class="highlight"><c- n>reloc</c-></code> is never used at all.</p>
+     <p><a href="https://github.com/qt/qtbase">Qt</a>: 0 hits; files:  7,586 ; lines:  2,794,607 ;
+words:  98,635,622; commit: 040b4a4b21b3</p>
     <li data-md>
-     <p>llvm has less than a hundred hits where <code class="highlight"><c- n>reloc</c-></code> is used outside comments and
-strings (counting uses, not variable declaration), and <code class="highlight"><c- n>reloc</c-></code> is never used 
-to name a type, only variables. They mostly come from the ELF module.</p>
+     <p><a href="https://github.com/boostorg/boost">boost</a> (with all submodules): 0 hits;
+files:  23,726 ; lines:  4,133,844 ; 
+words:  180,808,943; commit: 86733163a3c6</p>
     <li data-md>
-     <p>FreeBSD. It’s mainly C but also has some contribs in C++. We could argue that
-if <code class="highlight"><c- n>reloc</c-></code> is not seen in a C codebase, chances are it is not used that much 
-as well in C++. It has a bit more than a hundred hits. They mostly come from 
-llvm (FreeBSD has less than a dozen hits if we exclude llvm from the count, 
-and they equally come from C and C++ contribs.)</p>
+     <p><a href="https://github.com/godotengine/godot">godot</a>: 0 hits; files:  5,068 ;
+lines:  2,545,299 ; 
+words:  99,389,743; commit: b6e06038f8a3</p>
+    <li data-md>
+     <p><a href="https://github.com/abseil/abseil-cpp">abseil-cpp</a>: 0 hits; files:  766 ;
+lines:  247,441 ; 
+words:  9,028,820; commit: de6fca2110e7</p>
+    <li data-md>
+     <p><a href="https://github.com/facebook/folly">folly</a>: 0 hits; files:  1,861 ;
+lines:  532,918 ; 
+words:  16,669,085; commit: cde9d22e8614</p>
+    <li data-md>
+     <p><a href="https://github.com/llvm/llvm-project">llvm-project</a>: <strong>124 hits in 11 files</strong> (<code class="highlight"><c- n>reloc</c-></code> only used as local variable or 
+data-member, counting all uses); files:  39,048 ; lines:  9,760,587 ; 
+words:  385,429,611; commit: 9816c1912d56</p>
+    <li data-md>
+     <p><a href="https://github.com/gcc-mirror/gcc">gcc</a>: <strong>244 hits in 31 files</strong> (<code class="highlight"><c- n>reloc</c-></code> only used as local variable or 
+data-member, counting all uses); files:  15,337 ; lines:  4,616,875 ; 
+words:  146,146,684; commit: ee6f262b87fe</p>
+    <li data-md>
+     <p><a href="https://github.com/Tencent/rapidjson">rapidjson</a>: 0 hits; files:  96 ;
+lines:  39,828 ; words:  1,492,060; 
+commit: a98e99992bd6</p>
+    <li data-md>
+     <p><a href="https://github.com/google/googletest">googletest</a>: 0 hits; files:  155 ;
+lines:  85,703 ; words:  3,104,817; 
+commit: 71140c3ca7a8</p>
+    <li data-md>
+     <p><a href="https://github.com/jbeder/yaml-cpp">yaml-cpp</a>: 0 hits; files:  259 ;
+lines:  112,513 ; words:  3,784,676; 
+commit: 1b50109f7bea</p>
+    <li data-md>
+     <p><a href="https://github.com/google/flatbuffers">flatbuffers</a>: 0 hits; files:  175 ;
+lines:  98,163 ; words:  3,851,726; 
+commit: e0d68bdda2f6</p>
+    <li data-md>
+     <p><a href="https://github.com/mongodb/mongo">MongoDB</a>: <strong>22 hits in 6 files</strong> (<code class="highlight"><c- n>reloc</c-></code> only used as local variable, 
+counting all uses); files:  20,054 ; lines:  6,439,465 ; words:  265,329,429; 
+commit: 73b7a22328c7</p>
+    <li data-md>
+     <p><a href="https://github.com/opencv/opencv">OpenCV</a>: 0 hits; files:  3,315 ;
+lines:  1,556,606 ; words:  58,339,686; 
+commit: 9627ab9462a4</p>
+    <li data-md>
+     <p><a href="https://github.com/electron/electron">electron</a>: 0 hits; files:  698 ;
+lines:  99,717 ; words:  3,431,787; 
+commit: 644243efd61b</p>
+    <li data-md>
+     <p><a href="https://github.com/rui314/mold">mold</a>: 0 hits; files:  813 ; lines:  262,560 ;
+words:  9,992,769; commit: a45f97b47430</p>
+    <li data-md>
+     <p><a href="https://github.com/ClickHouse/ClickHouse">ClickHouse</a>: 0 hits; files:  5,566 ;
+lines:  1,128,735 ; words:  68,112,047; commit: d42d9f70c812;</p>
+    <li data-md>
+     <p><a href="https://github.com/davisking/dlib">Dlib</a>: 0 hits; files:  1,421 ;
+lines:  533,513 ; words:  19,080,728; commit: a12824d42584</p>
+    <li data-md>
+     <p><a href="https://github.com/SFML/SFML">SFML</a>: 0 hits; files:  532 ; lines:  168,787 ;
+words:  7,272,946; commit: 9bdf20781819</p>
+    <li data-md>
+     <p><a href="https://github.com/xbmc/xbmc">Kodi</a>: 0 hits; files:  4,360 ; lines:  1,008,255 ;
+words:  34,114,229; commit: b228c778668f</p>
+    <li data-md>
+     <p><a href="https://github.com/boostorg/beast">Beast</a>: 0 hits; files:  473 ;
+lines:  145,193 ; words:  4,768,152; commit: 334b9871bed6</p>
+    <li data-md>
+     <p><a href="https://github.com/nlohmann/json">JSON for modern C++</a>: 0 hits; files:  450 ;
+lines:  137,679 ; words:  5,210,982; commit: 4c6cde72e533</p>
+    <li data-md>
+     <p><a href="https://github.com/includeos/IncludeOS">IncludeOS</a>: 0 hits; files:  841 ;
+lines:  107,582 ; words:  2,903,698; commit: 99b60c782161</p>
+    <li data-md>
+     <p><a href="https://github.com/SerenityOS/serenity">SerenityOS</a>: <strong>15 hits in 2 files</strong> (<code class="highlight"><c- n>reloc</c-></code> only used as local variable, counting all uses); files:  5,538 ; 
+lines:  887,768 ; words:  31,766,641; commit: 97dde51a9b3f</p>
    </ul>
-   <p>This research needs to be backed by more data, but it gives us a hint that code
-breaks should be rare and easily fixed.</p>
+   <p>Repository statistics are computed with the following command:</p>
+<pre class="language-bash highlight">find -type f <c- se>\(</c-> -name <c- t>'*.h'</c-> -or -name <c- t>'*.hh'</c-> -or -name <c- t>'*.hpp'</c-> -or -name <c- t>'*.cc'</c-> <c- se>\</c->
+    -or -name <c- t>'*.cpp'</c-> -or -name <c- t>'*.cxx'</c-> <c- se>\)</c-> -exec wc -l -c <c- o>{}</c-> <c- se>\;</c-> <c- se>\</c->
+    <c- p>|</c-> awk <c- t>'{ f+=1 } { l += $1 } { w += $2 } END { print "files: ", f, "; lines: ", l, "; words: ", w }'</c->
+</pre>
+   <p>As you can see, in the vast majority of cases, <code class="highlight"><c- n>reloc</c-></code> is not used at all.
+The impact seems to be minimal, where only a few files might need to be fixed 
+here and there. To smooth the transition, compilers may also warn that existing 
+code will break as <code class="highlight"><c- n>reloc</c-></code> will become a keyword in a next C++ version.</p>
    <h3 class="heading settled" data-level="7.2" id="pilfer-vs-extract"><span class="secno">7.2. </span><span class="content">Why name the extract functions pilfer and not extract in STL containers?</span><a class="self-link" href="#pilfer-vs-extract"></a></h3>
    <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>set</c-></code> and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>map</c-></code> already have their <code class="highlight"><c- n>extract</c-></code> function, which don’t do
 exactly what we want, so that’s why we introduced <code class="highlight"><c- n>pilfer</c-></code> instead. We prefer to 

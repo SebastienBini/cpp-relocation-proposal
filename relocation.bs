@@ -2000,24 +2000,92 @@ a new keyword, like: `<~< obj` or `&< obj` in place of `reloc obj`.
 However, we feel like `reloc obj` better conveys the intent, and has better 
 readibility.
 
-**TODO:** Provide hit ratios in large C++ repos (boost, Qt, abseil, llvm, gcc, etc);
-and mention migration strategies;
+The introduction of a new keyword may always break existing codebases. We had a
+look at several well-known open source C++ projects to analyse what volume of code
+would break if `reloc` were a keyword.
 
-The introduction of a new keyword might break existing codebases. 
-We quickly looked at:
+For each of the following repositories, we searched for the `reloc` string, 
+at word boundaries, with case-sensitivity, in all C++ source files and headers
+(`*.cc`, `*.cpp`, `*.cxx`, `*.h`, `*.hpp`, `*.hh`).
+We manually discarded matches that
+were not code (comments or strings). And we put that in perspective with the
+total number of files, lines and words of the repository.
 
-- our personal projects and those of Stormshield, `reloc` is never used at all.
-- llvm has less than a hundred hits where `reloc` is used outside comments and 
-    strings (counting uses, not variable declaration), and `reloc` is never used 
-    to name a type, only variables. They mostly come from the ELF module.
-- FreeBSD. It's mainly C but also has some contribs in C++. We could argue that 
-    if `reloc` is not seen in a C codebase, chances are it is not used that much 
-    as well in C++. It has a bit more than a hundred hits. They mostly come from 
-    llvm (FreeBSD has less than a dozen hits if we exclude llvm from the count, 
-    and they equally come from C and C++ contribs.)
+- [Qt](https://github.com/qt/qtbase): 0 hits; files:  7,586 ; lines:  2,794,607 ; 
+    words:  98,635,622; commit: 040b4a4b21b3
+- [boost](https://github.com/boostorg/boost) (with all submodules): 0 hits; 
+    files:  23,726 ; lines:  4,133,844 ; 
+    words:  180,808,943; commit: 86733163a3c6
+- [godot](https://github.com/godotengine/godot): 0 hits; files:  5,068 ; 
+    lines:  2,545,299 ; 
+    words:  99,389,743; commit: b6e06038f8a3
+- [abseil-cpp](https://github.com/abseil/abseil-cpp): 0 hits; files:  766 ; 
+    lines:  247,441 ; 
+    words:  9,028,820; commit: de6fca2110e7
+- [folly](https://github.com/facebook/folly): 0 hits; files:  1,861 ; 
+    lines:  532,918 ; 
+    words:  16,669,085; commit: cde9d22e8614
+- [llvm-project](https://github.com/llvm/llvm-project): **124 hits in 11 files** 
+    (`reloc` only used as local variable or 
+    data-member, counting all uses); files:  39,048 ; lines:  9,760,587 ; 
+    words:  385,429,611; commit: 9816c1912d56
+- [gcc](https://github.com/gcc-mirror/gcc): **244 hits in 31 files** 
+    (`reloc` only used as local variable or 
+    data-member, counting all uses); files:  15,337 ; lines:  4,616,875 ; 
+    words:  146,146,684; commit: ee6f262b87fe
+- [rapidjson](https://github.com/Tencent/rapidjson): 0 hits; files:  96 ; 
+    lines:  39,828 ; words:  1,492,060; 
+    commit: a98e99992bd6
+- [googletest](https://github.com/google/googletest): 0 hits; files:  155 ; 
+    lines:  85,703 ; words:  3,104,817; 
+    commit: 71140c3ca7a8
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp): 0 hits; files:  259 ; 
+    lines:  112,513 ; words:  3,784,676; 
+    commit: 1b50109f7bea
+- [flatbuffers](https://github.com/google/flatbuffers): 0 hits; files:  175 ; 
+    lines:  98,163 ; words:  3,851,726; 
+    commit: e0d68bdda2f6
+- [MongoDB](https://github.com/mongodb/mongo): **22 hits in 6 files** 
+    (`reloc` only used as local variable, 
+    counting all uses); files:  20,054 ; lines:  6,439,465 ; words:  265,329,429; 
+    commit: 73b7a22328c7
+- [OpenCV](https://github.com/opencv/opencv): 0 hits; files:  3,315 ; 
+    lines:  1,556,606 ; words:  58,339,686; 
+    commit: 9627ab9462a4
+- [electron](https://github.com/electron/electron): 0 hits; files:  698 ; 
+    lines:  99,717 ; words:  3,431,787; 
+    commit: 644243efd61b
+- [mold](https://github.com/rui314/mold): 0 hits; files:  813 ; lines:  262,560 ; 
+    words:  9,992,769; commit: a45f97b47430
+- [ClickHouse](https://github.com/ClickHouse/ClickHouse): 0 hits; files:  5,566 ; 
+    lines:  1,128,735 ; words:  68,112,047; commit: d42d9f70c812;
+- [Dlib](https://github.com/davisking/dlib): 0 hits; files:  1,421 ; 
+    lines:  533,513 ; words:  19,080,728; commit: a12824d42584
+- [&#83FML](https://github.com/SFML/SFML): 0 hits; files:  532 ; lines:  168,787 ; 
+    words:  7,272,946; commit: 9bdf20781819
+- [Kodi](https://github.com/xbmc/xbmc): 0 hits; files:  4,360 ; lines:  1,008,255 ; 
+    words:  34,114,229; commit: b228c778668f
+- [Beast](https://github.com/boostorg/beast): 0 hits; files:  473 ; 
+    lines:  145,193 ; words:  4,768,152; commit: 334b9871bed6
+- [JSON for modern C++](https://github.com/nlohmann/json): 0 hits; files:  450 ; 
+    lines:  137,679 ; words:  5,210,982; commit: 4c6cde72e533
+- [IncludeOS](https://github.com/includeos/IncludeOS): 0 hits; files:  841 ; 
+    lines:  107,582 ; words:  2,903,698; commit: 99b60c782161
+- [SerenityOS](https://github.com/SerenityOS/serenity): **15 hits in 2 files** 
+    (`reloc` only used as local variable, counting all uses); files:  5,538 ; 
+    lines:  887,768 ; words:  31,766,641; commit: 97dde51a9b3f
 
-This research needs to be backed by more data, but it gives us a hint that code 
-breaks should be rare and easily fixed.
+Repository statistics are computed with the following command:
+```bash
+find -type f \( -name '*.h' -or -name '*.hh' -or -name '*.hpp' -or -name '*.cc' \
+    -or -name '*.cpp' -or -name '*.cxx' \) -exec wc -l -c {} \; \
+    | awk '{ f+=1 } { l += $1 } { w += $2 } END { print "files: ", f, "; lines: ", l, "; words: ", w }'
+```
+
+As you can see, in the vast majority of cases, `reloc` is not used at all.
+The impact seems to be minimal, where only a few files might need to be fixed 
+here and there. To smooth the transition, compilers may also warn that existing 
+code will break as `reloc` will become a keyword in a next C++ version.
 
 ## Why name the extract functions pilfer and not extract in STL containers? ## {#pilfer-vs-extract}
 
