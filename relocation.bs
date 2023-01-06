@@ -733,6 +733,23 @@ void do_something_03(std::mutex& m)
 }
 ```
 
+### Relocation elision ### {#reloc-elision}
+
+The above elision is a specific case of a more general rule, which is that
+relocation (whether performed by relocation or move constructor)
+may be elided if the compiler can ensure that the source object is created at
+the address to be occuped by the target object.
+This is intended to work in much the same way as the named return value optimization;
+for example:
+
+```c+
+void f(std::string s);
+void g() {
+    std::string s;  // may be created in f's argument slot
+    f(reloc s);  // relocation may be elided
+}
+```
+
 ## Relocation constructor ## {#reloc-ctor}
 
 We introduce the relocation constructor. As relocation happens from prvalues, 
