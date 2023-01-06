@@ -61,7 +61,8 @@ and in particular, the source object's destructor is not called).
 Another place where C++ falls short is with constant objects. As of today, constant
 objects cannot be moved in C++ as the move constructor cannot steal the resources
 of a constant object. As such, never-modified objects that
-end their life by being moved (via `std::move`) cannot be marked as `const`. 
+end their life by being moved (e.g. via `std::move`, or implicitly by return-value optimization
+where complete elision is not viable) cannot be marked as `const`. 
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.
