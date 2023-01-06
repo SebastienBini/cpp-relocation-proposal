@@ -79,41 +79,39 @@ and code size gains from functions that use `std::swap`.
 
 # Nomenclature # {#nomenclature}
 
+We refer to the <a href="https://wg21.link/intro.defs">Terms and definitions</a> of the C++ Standard,
+and to nomenclature introduced therein,
+in particular the <a href="https://wg21.link/intro.object">object model</a>.
+In addition, we define:
+
 ## Source and target objects ## {#src-and-target}
 
-Relocation is the act of constructing a new instance by destructively stealing
-the resources of an existing one.
+Relocation is the act of constructing a new instance while ending the lifetime of an existing one.
+This allows destructively stealing its resources, if any.
 
-The new instance is called the *target object*. The existing instance whose resources
+The new instance is called the *target object*.
+The existing instance whose lifetime is ended and whose resources
 are stolen is called the *source object*.
-
-## Subobject ## {#subobject}
-
-We define the subobjects of a type `T` as all bases classes of `T`, 
-and all non-static data members of `T`. 
-Alternatively, if `T` is an array type, then its subobjects are
-its array elements.
-
-## Complete object ## {#complete-object}
-
-We call a *complete object* an object that is not the subobject of another object.
 
 ## Destructed state ## {#dtor-state}
 
-An object is to be in a *destructed state* if:
+An object is to be in a *destructed state* if its lifetime has ended because:
 
-- its destructor was called ;
+- its destructor was called, or ;
 - it was passed to as source object to its relocation constructor.
 
-Unless the object type is trivial (its destructor is a no-op), it is a 
+It is a 
 programming error to call the destructor of an object if it is already in a 
 *destructed state*.
+As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
+this has undefined behavior unless the object type is trivial, in which case its destructor
+or pseudo-destructor is a no-op.
 
 ## Unowned parameter ## {#unowned-parameter}
 
 An object is said to be an *unowned parameter* with regards to a function `f` 
 if the object is a parameter of the function, passed by value, but the
-function `f` has no control over its lifetime.
+function `f` does not have control over its lifetime.
 
 The lifetime of function parameters is implementation-defined in C++, but it 
 is of most importance with relocation. Depending on the function call convention
