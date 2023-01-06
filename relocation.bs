@@ -287,7 +287,8 @@ We believe a language solution is best suited here:
 
 This paper suggests to introduce a new keyword, named `reloc`. `reloc` acts as a
 unary operator that can be applied to named, local, complete objects (in other
-words: local function variables).
+words: function-local non-static variables and, with some restrictions,
+parameters and structured bindings).
 
 `reloc obj` does the following:
 
@@ -325,7 +326,7 @@ If materialized, then the temporary is initialized as follows:
         source object is considered to be in a *destructed state*.
     - otherwise, either the move or copy constructor is called, ignoring the 
         cv-qualifiers on the source object. The destructor of the source object 
-        is then called at the end of the expression evaluation.
+        is then called at the end of the full-expression evaluation.
     - In all cases, the destructor of the source object is no longer called when
         its end of scope is reached.
 - otherwise (the source object is an *unowned parameter*), then the temporary is 
@@ -336,7 +337,7 @@ If materialized, then the temporary is initialized as follows:
 
 If the temporary is not materialized and that the source object is not an 
 *unowned parameter*, then the destructor of the source object is called at the 
-end of the expression evaluation, at the same time as temporary objects are destroyed.
+end of the full-expression evaluation, at the same time as temporary objects are destroyed.
 See [Discarded reloc expressions](#discarded-reloc-expr) for more details on 
 unmaterialized temporaries from `reloc` statements.
 
@@ -355,7 +356,6 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
     move, or copy constructor ;
-- the source object is a structured binding ;
 
 For instance:
 ```cpp
@@ -367,24 +367,25 @@ std::string gStr = "static string";
 
 void bar(void)
 {
-	std::string str = "test string";
-	foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
-	foo(reloc gStr); // ill-formed: gStr does not have local storage
+    std::string str = "test string";
+    foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
+    foo(reloc gStr); // ill-formed: gStr does not have local storage
 
-	std::pair p{std::string{}, std::string{}};
-	foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
+    std::pair p{std::string{}, std::string{}};
+    foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
 
-	foo(reloc get_string()); // ill-formed: not the name of variable
-	foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
+    foo(reloc get_string()); // ill-formed: not the name of variable
+    foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
 }
 
 void foobar(const std::string& str)
 {
-	foo(reloc str); // OK: str is passed by reference.
+    foo(reloc str); // OK: str is passed by reference.
+    // Note that the lifetime of the referent of str is unaffected.
 }
 void foobar(std::string* str)
 {
-	foo(reloc *str); // ill-formed: *str is not the name of variable
+    foo(reloc *str); // ill-formed: *str is not the name of variable
 }
 void foobar2(std::string* str)
 {
@@ -393,12 +394,12 @@ void foobar2(std::string* str)
 
 class A
 {
-	std::string _str;
+    std::string _str;
 public:
-	void bar()
-	{
-		foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
-	}
+    void bar()
+    {
+        foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
+    }
 };
 ```
 
