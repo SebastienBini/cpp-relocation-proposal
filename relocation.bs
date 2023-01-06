@@ -213,6 +213,32 @@ void sink(T);
 void foo(T x) { sink(reloc x); /* x can no longer be used. */ }
 ```
 
+Moreover, the proposed syntax for invoking [[P0023R0]]'s relocator is low-level and
+prone to error:
+
+```c++
+T x;
+alignas(T) char buf[sizeof(T)];
+T* y = new (buf) >>T(x);
+```
+
+Here the lifetime of `x` has been ended as if by a destructor call, but the language
+is not aware of this,
+so firstly the user may erreoneously refer to `x` as if it was within its lifetime,
+and secondly if an object is not recreated in `x` by the time the block
+exits, the behavior is undefined by <a href="https://eel.is/c++draft/basic.life#9">[basic.life]/9</a>.
+Likewise, the language is not aware of the existence of `*y` so will not call its
+destructor; the behavior is then possibly undefined under <a href="https://eel.is/c++draft/basic.life#5">[basic.life]/5</a>.
+In contrast, the present proposal would write the above as:
+
+```c++
+T x;
+T y = reloc x;
+```
+
+Here the use of the `reloc` keyword ensures that the language is aware that the lifetime
+of `x` has finished, so the destructor only of `y` is called at scope exit.
+
 ## N4158: Destructive Move by Pablo Halpern ## {#compare-N4158}
 
 [[N4158]] proposes a customizable function `std::uninitialized_destructive_move`, 
