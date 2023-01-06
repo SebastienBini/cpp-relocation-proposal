@@ -153,11 +153,12 @@ mark a type as trivially relocatable.
 The current proposal has its own take on trivial relocatability that does not 
 rely on a class attribute. Instead the trivial relocatability
 trait flows naturally from the new relocation constructor that we introduce. In short:
-if a type has a defaulted relocation constructor in its declaration, and all of 
-its subobjects recursively declare a defaulted relocation constructor, then the type
+if a class type has a relocation constructor that is (explicitly) declared as defaulted or
+is implicitly defined and not defaulted as deleted, and all of 
+its subobjects are trivially relocatable (or fully trivial), then the type
 is trivially relocatable.
 
-This is approach is not prone to errors when compared to a class attribute, 
+This approach is not prone to errors when compared to a class attribute, 
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.
 
