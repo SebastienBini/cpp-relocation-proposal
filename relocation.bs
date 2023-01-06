@@ -4,7 +4,7 @@ Revision: 1
 Audience: LEWG, EWG
 Status: D
 Group: WG21
-ED: https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf
+ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
 Shortname: DXXXX
 Editor: Sébastien Bini, Stormshield, sebastien.bini@gmail.com
 Markup Shorthands: markdown yes, biblio yes, markup yes
