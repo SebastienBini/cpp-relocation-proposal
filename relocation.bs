@@ -367,39 +367,39 @@ std::string gStr = "static string";
 
 void bar(void)
 {
-    std::string str = "test string";
-    foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
-    foo(reloc gStr); // ill-formed: gStr does not have local storage
+	std::string str = "test string";
+	foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
+	foo(reloc gStr); // ill-formed: gStr does not have local storage
 
-    std::pair p{std::string{}, std::string{}};
-    foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
+	std::pair p{std::string{}, std::string{}};
+	foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
 
-    foo(reloc get_string()); // ill-formed: not the name of variable
-    foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
+	foo(reloc get_string()); // ill-formed: not the name of variable
+	foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
 }
 
 void foobar(const std::string& str)
 {
-    foo(reloc str); // OK: str is passed by reference.
-    // Note that the lifetime of the referent of str is unaffected.
+	foo(reloc str); // OK: str is passed by reference.
+	// Note that the lifetime of the referent of str is unaffected.
 }
 void foobar(std::string* str)
 {
-    foo(reloc *str); // ill-formed: *str is not the name of variable
+	foo(reloc *str); // ill-formed: *str is not the name of variable
 }
 void foobar2(std::string* str)
 {
-    foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
+	foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
 } 
 
 class A
 {
-    std::string _str;
+	std::string _str;
 public:
-    void bar()
-    {
-        foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
-    }
+	void bar()
+	{
+		foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
+	}
 };
 ```
 
