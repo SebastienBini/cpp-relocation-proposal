@@ -1267,7 +1267,7 @@ T& operator=(T src)
 **destroy-and-construct**
 
 ```c++
-T& operator=(T src) noexcept
+constexpr T& operator=(T src) noexcept
 {
     static_assert(std::is_nothrow_destructible_v<T> && 
         std::is_nothrow_relocatable_v<T>);
