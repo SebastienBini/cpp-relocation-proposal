@@ -1536,6 +1536,11 @@ the recursion stops and the *data member* protocol is used.
 
 ## ABI changes ## {#abi}
 
+As noted above ([[#unowned-parameter]]), some platforms have a *caller-destroy* ABI
+where the *calling* function expects to destroy nontrivial parameters passed by
+value. This poses a problem for functions that wish to relocate from such
+parameters, and a potential ABI break.
+
 ### relocate-only function parameters ### {#callee-destroy-abi}
 
 We propose the following requirement on functions: 
