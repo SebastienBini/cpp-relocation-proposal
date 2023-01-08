@@ -1081,18 +1081,18 @@ appropriate address.
 In particular, code of the form `T x = reloc y;` is *highly* likely to be a
 no-op, simply renaming an existing object. This is however likely to find use
 for "sealing" objects with complex initialization, replacing the idiom of
-immediately-invoked function expressions (IIFEs):
+immediately-invoked function expressions (IIFEs, [[IIFE]]):
 
 <table>
 <tr><th>Before</th><th>After</th></tr>
 <tr>
 <td valign="top"><pre lang="cpp">
-T const x = [&]
+T const x = std::invoke([&]
 {
     T x;
     x.modify(y, z);
     return x;
-}();
+});
 </pre></td>
 <td valign="top"><pre lang="cpp">
 T x_mut;
@@ -2392,6 +2392,12 @@ moved-from state understanding problem, as well as used-after-move errors
     "title": "Valueless Variants Considered Harmful",
     "href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html",
     "date": "March 2016"
+  },
+  "IIFE": {
+    "authors": [ "Bartlomiej Filipek" ],
+    "title": "IIFE for Complex Initialization - C++ Stories",
+    "href": "https://www.cppstories.com/2016/11/iife-for-complex-initialization/",
+    "date": "October 2016"
   }
 }
 </pre>
