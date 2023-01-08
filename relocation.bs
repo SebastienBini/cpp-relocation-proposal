@@ -772,21 +772,36 @@ This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor 
 from an xvalue, and then the relocation constructor from a prvalue.
 
-Despite what its signature suggests, the constructor does not take a copy of the
-source object as parameter. In fact, the constructor benefits from a special 
-aliasing to ensure that the address of its parameter is the same as the source
-object that is being relocated (as if the parameter was captured by reference).
-It is fine for the relocation constructor to provide such aliasing as constructors
-are special functions, which we cannot take the address of.
+Note: a further benefit of this syntax is that it is currently ill-formed, and
+thus available for extension.
+
+A point of confusion may be that the syntax implies an infinite regression: the
+parameter must be constructed, which requires a prior call to the relocation
+constructor, and so on. This is not the case; if the source object was previously
+a glvalue the operand of the `reloc` operator, it was transformed into a prvalue
+immediately before entering the relocation constructor, and the parameter of the
+relocation constructor is that same prvalue. (If the source object was already a
+prvalue, there is no issue; the parameter is that prvalue.)
+
+An attractive intuition is that the parameter aliases the source object in the
+same way as a reference or a structured binding declaration.
+However, this is misleading; the lifetime of a source object glvalue has already
+ended and so use of a reference referring to the source object has undefined
+behavior. This intuition is only useful in so far as the ABI for a relocation
+constructor prvalue parameter is likely to be the same as that for a copy or move
+constructor parameter, since the prvalue parameter may have the same storage
+location as a previously existing glvalue.
 
 The role of the relocation constructor is to construct a new instance by destructively
 stealing the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
-valid state. In fact the source object must simply be considered as uninitialized 
-memory after
+valid state. In fact the lifetime of the source object was ended immediately prior
+to entering the relocation constructor, and thus the source object must simply be
+considered as uninitialized memory after
 the relocation constructor terminates. We also say that the source object
 is left in a *destructed state*. This means that the destructor of the source
-object must no longer be called.
+object must no longer be called (and will not be called, assuming the `reloc`
+operator was used).
 
 ### Declaration ### {#reloc-ctor-declaration}
 
@@ -1050,6 +1065,59 @@ is destructor is called and the exception is propagated.
 
 Note that the target object needs not to be destroyed as the delegating 
 constructor already took care of that.
+
+### Invocation
+
+The relocating constructor is invoked *as necessary* to relocate a prvalue
+from one storage location to another. Use of the `reloc` operator does not
+guarantee that the relocation constructor will be called, since it may be elided
+if the compiler can arrange that the source glvalue was constructed at the
+appropriate address.
+
+In particular, code of the form `T x = reloc y;` is *highly* likely to be a
+no-op, simply renaming an existing object. This is however likely to find use
+for "sealing" objects with complex initialization, replacing the idiom of
+immediately-invoked function expressions (IIFEs):
+
+<table>
+<tr><th>Before</th><th>After</th></tr>
+<tr>
+<td valign="top"><pre lang="cpp">
+T const x = [&]
+{
+    T x;
+    x.modify(y, z);
+}();
+</pre></td>
+<td valign="top"><pre lang="cpp">
+T x;
+x.modify(y, z);
+T const x = reloc x;
+</pre></td>
+</tr></table>
+
+Or, consider:
+
+```c++
+C f(int i) {
+    C c1, c2;
+    if (i == 0)
+        [[likely]] return reloc c1;  // #1
+    else if (i == 1)
+        [[likely]] return c1;  // #2
+    else
+        [[unlikely]] return c2;  // #3
+}
+```
+
+At `#1` the `reloc` is largely redundant; the end-of-life optimization means
+the compiler is entitled to treat `c1` as a prvalue anyway, as in `#2`. Indeed,
+the likelihood annotation encourages the compiler to construct `c1` in the
+return slot, such that both `#1` and `#2` are a no-op. It is only `#3` that is
+likely to invoke the relocation constructor.
+
+The relocation constructor may also be invoked by library functions, for example
+[[#std-destroy_relocate]].
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
