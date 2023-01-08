@@ -762,6 +762,10 @@ constructor prvalue parameter is likely to be the same as that for a copy or mov
 constructor parameter, since the prvalue parameter may have the same storage
 location as a previously existing glvalue.
 
+Note: it does not matter that the ABI for the relocation constructor parameter
+differs from that for a prvalue parameter in normal functions, since it is not
+possible to take the address of a constructor.
+
 The role of the relocation constructor is to construct a new instance by destructively
 stealing the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
@@ -1057,12 +1061,13 @@ T const x = [&]
 {
     T x;
     x.modify(y, z);
+    return x;
 }();
 </pre></td>
 <td valign="top"><pre lang="cpp">
-T x;
-x.modify(y, z);
-T const x = reloc x;
+T x_mut;
+x_mut.modify(y, z);
+T const x = reloc x_mut;
 </pre></td>
 </tr></table>
 
@@ -1124,85 +1129,89 @@ The implicitly-declared or defaulted relocation assignment operator for class `T
 A defaulted relocation assignment operator that is deleted is ignored by overload 
 resolution.
 
-### Aliased relocation assignment operator ### {#aliased-reloc-assign}
+### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
 
-The relocation assignment operator may benefit from the same aliasing as the 
-relocation constructor: when aliased the input parameter is passed by reference
-instead of by value.
-
-Aliasing may be enabled at declaration level or at definition level, or completely
-disabled:
-
-- If the class-type (may be implicitly) declares a non-deleted relocation constructor, 
-    or declares a defaulted relocation assignment operator, then aliasing is 
-    enabled at declaration level ;
-- Otherwise, if the class-type defines a relocation assignment operator as 
-    defaulted, then aliasing is enabled at definition level ;
-- Otherwise no aliasing happens.
-
-Aliasing is important for the default definition of the operator. 
-As you might suspect, it performs memberwise calls to other relocation assignment operators.
-With no aliasing, that would imply recursive copies of each subobject, down to
+As with the relocation constructor, it is desirable that the parameter should be
+the source object *converted to* a prvalue, and not a temporary prvalue relocated
+*from* the source object. This is particularly critical for
+the default definition of the operator, which
+(as you might suspect) performs memberwise calls to other relocation assignment operators.
+Without elision, that would imply recursive relocation of each subobject, down to
 their smallest unbreakable parts.
 
-Aliasing is done so that it introduces no ABI break (more on that on the [ABI 
+This, however, poses a problem, since it is possible to take the address of a
+relocation assignment operator, yielding a pointer (or reference) with (typical)
+signature `T& (T::)(T)`, implying that the source object must occupy a parameter slot,
+which may not find it possible to have the same storage address as the source object,
+and/or which the caller may expect to destroy (see [[#abi]]).
+
+Nevertheless, we mandate elision where possible:
+
+- If the class-type (possibly implicitly) declares a non-deleted relocation constructor, 
+    or declares a defaulted relocation assignment operator, then elision is 
+    mandated at declaration level ;
+- Otherwise, if the class-type defines a relocation assignment operator as 
+    defaulted, then elision is mandated at definition level ;
+- Otherwise elision is not mandated.
+
+Elision is performed in such a way as to avoid ABI break (more on that on the [ABI 
 section](#prvalue-assign-op-abi)).
 
-#### Aliased at declaration level #### {#aliased-reloc-assign-declaration}
+#### Elision at declaration level #### {#aliased-reloc-assign-declaration}
 
-If aliasing is enabled at declaration level, then the assignment operator 
+If elision is mandated at declaration level, then the assignment operator 
 declaration actually declares two member functions:
 
-- the unaliased one, which takes its input parameter by value. 
+- the non-eliding one, which takes its input parameter by value. 
     This is the function that will get called when user-code calls the 
     assignment operator. It is the prvalue-assignment operator as we know it 
     today ;
-- the aliased one, which takes its input parameter by reference, and has the 
-    same return type as the unaliased one. The aliased 
+- the eliding one, which takes its input parameter as if by reference, and has the 
+    same return type as the non-eliding one. The eliding 
     function has no identifier and does not participate in overload resolution.
     Users cannot take its address and this function cannot be called directly in
     user-code.
-    The aliased operator is in charge of destructing its source object, by 
+    The eliding operator is in charge of destructing its source object, by 
     relocation or destructor call.
 
 The definition of the assignment operator (which is user-provided or 
-defaulted) will serve as the definition of the aliased operator.
+defaulted) will serve as the definition of the eliding operator.
 
-The unaliased operator definition is generated by the compiler, and merely wraps 
-the call to the aliased one:
+The non-eliding operator definition is generated by the compiler, and merely wraps 
+the call to the eliding one:
 
-- If the source object passed to the unaliased operator is not an *unowned parameter*, 
+- If the source object passed to the non-eliding operator is not an *unowned parameter*, 
     then the operator:
-    1.  Calls the aliased operator, passing the source object by reference.
-    2.  It forwards as return value whatever the aliased operator returns.
+    1.  Calls the eliding operator, passing the source object as if by reference.
+    2.  It forwards as return value whatever the eliding operator returns.
     3.  Upon function exit, it does not destroy the source object as it is 
         already in a *destructed state*.
 - Otherwise (the source object is an *unowned parameter*), then the operator:
     1.  Creates a copy of the source object, using move or copy constructor.
-    2.  Calls the aliased operator, passing that copy by reference.
-    3.  It forwards as return value whatever the aliased operator returns.
+    2.  Calls the eliding operator, passing that copy by reference.
+    3.  It forwards as return value whatever the eliding operator returns.
     4.  Upon function exit, it does not destroy the copy as it is 
         already in a *destructed state*.
 
 If the address of the assignment operator is queried, then the address of the 
-unaliased version is returned. If the assignment operator is virtual, then only
-the unaliased version is considered to be `virtual` and is added to the vtable entry.
+non-eliding version is returned. If the assignment operator is virtual, then only
+the non-eliding version is considered to be `virtual` and is added to the vtable entry.
 
-#### Aliased at definition level #### {#aliased-reloc-assign-definition}
+#### Elision at definition level #### {#aliased-reloc-assign-definition}
 
-If aliasing is enabled at definition level, then the two versions of the operator
-are generated (aliased and unaliased) in the translation unit where the operator
-is defined. The visibility of the aliased operator symbol to other translation
+If elision is mandated at definition level, then the two versions of the operator
+are generated (eliding and non-eliding) in the translation unit where the operator
+is defined. The visibility of the eliding operator symbol to other translation
 units is implementation-defined.
 
-The definition of the two functions are the same as if aliasing was enabled at 
+The definition of the two functions are the same as if elision was mandated at 
 declaration level.
 
 ### Definition ### {#reloc-assign-definition}
 
 #### Default definition #### {#reloc-assign-default-definition}
 
-The default definition of the operator is forcibly aliased. In 
+The default definition of the operator mandates elision. In 
 particular, the default definition is responsible for the destruction of its
 source object.
 
@@ -1211,15 +1220,14 @@ assignment operator of all its subobjects.
 
 In `T`'s default assignment operator, for all subobjects `s` of `T` of type `S`:
 
-- If `S`'s relocation assignment operator is aliased at declaration level, 
-    then call it with `src.s` as parameter (passed by reference thanks to the aliasing). 
+- If `S`'s relocation assignment operator mandates relocation elision at declaration level, 
+    then call it with `src.s` as parameter (passed as if by reference thanks to elision). 
     The source subobject is then left in a *destructed state*.
-- Otherwise if `S` provides an unaliased relocation assignment operator but
+- Otherwise if `S` provides an non-eliding relocation assignment operator but
     has an accessible relocation constructor,
-    then call the operator by passing a copy of `src.s`, which was constructed 
-    by relocation.
+    then call the operator, if necessary relocating `src.s` into the parameter slot.
     The source subobject is then left in a *destructed state*.
-- Otherwise if `S` provides an unaliased relocation assignment operator 
+- Otherwise if `S` provides an non-eliding relocation assignment operator 
     and no accessible relocation constructor, then 
     call the operator by passing a temporary copy of `src.s`. This temporary is 
     move-or-copy-constructed, ignoring the potential cv-qualifiers on `s`.
@@ -1264,25 +1272,25 @@ T& operator=(T src) noexcept
     static_assert(std::is_nothrow_destructible_v<T> && 
         std::is_nothrow_relocatable_v<T>);
 
-    this->~T();
-    return *new (this) T{reloc src};
+    std::destroy_at(this);
+    return *std::construct_at(this, reloc src);
 }
 ```
 
 Let's have a look at what happens in this function:
 
 - The static assertion makes sure we have a relocation constructor. Hence,
-    the relocation assignment operator comes with an aliased and an unaliased
+    the relocation assignment operator comes with an eliding and a non-eliding
     version ;
-- The provided definition will be used for the aliased version of the operator ;
-- As it is aliased, `src` is not an unowned parameter. As a consequence, `reloc src`
+- The provided definition will be used for the eliding version of the operator ;
+- As its relocation is elided, `src` is not an unowned parameter. As a consequence, `reloc src`
     will effectively call the relocation constructor, as it is able to elide 
     the destructor call of `src` ;
-- The `src` parameter may be provided by the unaliased version. This `src` 
+- The `src` parameter may be provided by the non-eliding version. This `src` 
     may be a copy of the actual source object that was originally passed to the
     assignment operator in user code. Whether a copy is made depends on whether
-    the unaliased version is in charge of destroying its parameter. If not 
-    (`src` is an *unowned parameter* with regards to the unaliased operator) then
+    the non-eliding version is in charge of destroying its parameter. If not 
+    (`src` is an *unowned parameter* with regards to the non-eliding operator) then
     a copy is made, and the destructor of the source object is called at 
     call-site, after the assignment operator returns.
 
@@ -1311,16 +1319,22 @@ T& operator=(T src)
 
 ### Invocation ### {#reloc-assign-invoke}
 
+```c++
+T x, y;
+x = reloc y;
+```
+
 Every call to the relocation assignment operator follows normal rules.
 
-If the call site detects that an aliased version of the operator is available 
-(either because the aliasing happened at declaration level, or because it
+If the call site detects that an eliding version of the operator is available 
+(either because the eliding happened at declaration level, or because it
 happened at definition level and the call site is in the same 
-translation unit as the definition), then which version of the operator
+translation unit as the definition, or through link-time optimization),
+then which version of the operator
 is called is implementation-defined.
 
-The nominal case is to call the unaliased version. The implementation is allowed
-to call the aliased version instead, as long as it can elide the call to the 
+The nominal case is to call the non-eliding version. The implementation is allowed
+to call the eliding version instead, as long as it can elide the call to the 
 destructor on the source object.
 
 ## Overload resolution ## {#overload-resolution}
