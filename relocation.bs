@@ -1604,6 +1604,10 @@ constexpr T* construct_at( T* p, T src );
 Which would be equivalent to `::new (p) T{reloc src}`, except that it may be 
 used in constant expression evaluations.
 
+Note: this overload would be unnecessary if the [[#future-capture-value]]
+direction were to be adopted; instead the existing signature should be
+altered to use the `decltype(auto)` placeholder.
+
 ### std::destroy_relocate ### {#std-destroy_relocate}
 
 We propose to add the following function in the `std` namespace in the `memory` 
@@ -1703,16 +1707,20 @@ all constructed objects in the output iterator.
 ### std::relocate ### {#std-relocate}
 
 We propose to add the following tag type in the `std` namespace in the `utility` 
-header (mainly usefull with templates):
+header (mainly useful with templates):
 
 ```cpp
 namespace std
 {
-// tag type to indicate that the parameters are captured by value
+// tag type to indicate that the parameters are passed by value
 struct relocate_t {};
 inline constexpr relocate_t relocate = {};
 }
 ```
+
+Note: this facility would be unnecessary if the [[#future-capture-value]]
+direction were to be adopted; instead the existing signatures should be
+altered to use the `decltype(auto)` placeholder.
 
 ### std::decompose ### {#std-decompose}
 
@@ -2099,28 +2107,46 @@ We removed some of the changes we initilialy had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for 
 relocate-only types.
 
-### Capture by value in template functions ### {#future-capture-value}
+### More perfect forwarding ### {#future-capture-value}
 
-In the following signature:
-```c+++
+Currently, "perfect forwarding" is built on top of *universal references*, requiring
+an understanding of reference-collapsing and the use of `std::forward`. The present
+proposal improves on this by incidentally replacing `std::forward` with `reloc`, but
+at the same time the situation is worsened by making relocate-only types viable;
+such types cannot be relocated when passed by universal reference.
+
+<table>
+<tr><th>Before</th><th>After</th><th>Future</th></tr>
+<tr>
+<td><pre lang="c++">
 template <class... Args>
 void fwd(Args&&... args)
 {
     do_stuff(std::forward<Args>(args)...);
 }
-```
-
-We can call `fwd` with both lvalue and rvalue references. However, `fwd` cannot
-capture any of its parameters by value, which inhibit relocation.
-
-We could have a new syntax that would capture parameters by lvalue, xvalue or prvalue:
-```c+++
+</pre></td>
+<td><pre lang="c++">
+template <class... Args>
+void fwd(Args&&... args)
+{
+    do_stuff(reloc args...);
+}
+</pre></td>
+<td><pre lang="c++">
 void fwd(decltype(auto)... args)
 {
     do_stuff(reloc args...);
 }
-```
-with `reloc` effectively perfectly forwarding lvalues, xvalues and prvalues.
+</pre></td>
+</tr>
+</table>
+
+By allowing `decltype(auto)` as a *placeholder-type-specifier* in a
+*parameter-declaration*
+(i.e. relaxing <a href="http://wg21.link/dcl.fct#22.sentence-6">[dcl.fct] paragraph 22</a>)
+it would become possible to deduce each parameter to value, lvalue
+reference or rvalue reference according to whether the argument is of
+value category prvalue, lvalue or xvalue, and forward by relocation.
 
 ### discarded reloc expression ### {#solve-discarded-reloc-expr}
 
