@@ -289,7 +289,7 @@ This paper suggests to introduce a new keyword, named `reloc`. `reloc` acts as a
 unary operator that can be applied to named, local, complete objects (in other
 words: function-local non-static variables and, with some restrictions,
 function parameters and
-identifiers introduced through structured binding declarations).
+identifiers introduced through the syntax of structured binding declarations).
 
 `reloc obj` does the following:
 
