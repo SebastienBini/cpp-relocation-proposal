@@ -357,6 +357,8 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
     move, or copy constructor ;
+- the source object is a structured binding (and not an identifier introduced in a
+    <a href="#structured-reloc">structured relocation declaration</a>) ;
 
 For instance:
 ```cpp
