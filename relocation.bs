@@ -771,7 +771,7 @@ from an xvalue, and then the relocation constructor from a prvalue.
 Note: a further benefit of this syntax is that it is currently ill-formed, and
 thus available for extension.
 
-A point of confusion may be that the syntax implies an infinite regression: the
+A point of confusion may be that the syntax implies an infinite regress: the
 parameter must be constructed, which requires a prior call to the relocation
 constructor, and so on. This is not the case; if the source object was previously
 a glvalue the operand of the `reloc` operator, it was transformed into a prvalue
