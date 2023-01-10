@@ -1243,7 +1243,7 @@ declaration level.
 
 #### Default definition #### {#reloc-assign-default-definition}
 
-The default definition of the operator mandates elision. In 
+The default definition of the operator, given the rules above, benefits from elision. In
 particular, the default definition is responsible for the destruction of its
 source object.
 
