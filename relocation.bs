@@ -762,7 +762,7 @@ void do_something_03(std::mutex& m)
 ### Relocation elision ### {#reloc-elision}
 
 The above elision is a specific case of a more general rule, which is that
-relocation (whether performed by relocation or move constructor)
+relocation (whether performed by relocation, move or copy constructor)
 may be elided if the compiler can ensure that the source object is created at
 the address to be occuped by the target object.
 This is intended to work in much the same way as the named return value optimization;
