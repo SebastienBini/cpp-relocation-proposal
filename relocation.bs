@@ -786,8 +786,13 @@ prvalue, there is no issue; the parameter is that prvalue.)
 An attractive intuition is that the parameter aliases the source object in the
 same way as a reference or a structured binding declaration.
 However, this is misleading; the lifetime of a source object glvalue has already
-ended and so use of a reference referring to the source object has undefined
-behavior. This intuition is only useful in so far as the ABI for a relocation
+ended and so use of a pointer or reference referring to the source object has
+undefined behavior, except as provided by [basic.life] and [class.cdtor].
+
+Note: this behavior matches that for the destructor of a class type; see
+<a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1. 
+
+This intuition is only useful in so far as the ABI for a relocation
 constructor prvalue parameter is likely to be the same as that for a copy or move
 constructor parameter, since the prvalue parameter may have the same storage
 location as a previously existing glvalue.
