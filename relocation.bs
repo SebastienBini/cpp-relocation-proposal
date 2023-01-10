@@ -1073,9 +1073,10 @@ constructor already took care of that.
 
 ### Invocation
 
-The relocating constructor is invoked *as necessary* to relocate a prvalue
+The relocation constructor is invoked *as necessary* to relocate a prvalue
 from one storage location to another. Use of the `reloc` operator does not
-guarantee that the relocation constructor will be called, since it may be elided
+guarantee that a relocation constructor (if present) will be called,
+since it may be elided
 if the compiler can arrange that the source glvalue was constructed at the
 appropriate address.
 
