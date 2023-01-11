@@ -287,7 +287,9 @@ We believe a language solution is best suited here:
 
 This paper suggests to introduce a new keyword, named `reloc`. `reloc` acts as a
 unary operator that can be applied to named, local, complete objects (in other
-words: local function variables).
+words: function-local non-static variables and, with some restrictions,
+function parameters and
+identifiers introduced through the syntax of structured binding declarations).
 
 `reloc obj` does the following:
 
@@ -325,7 +327,7 @@ If materialized, then the temporary is initialized as follows:
         source object is considered to be in a *destructed state*.
     - otherwise, either the move or copy constructor is called, ignoring the 
         cv-qualifiers on the source object. The destructor of the source object 
-        is then called at the end of the expression evaluation.
+        is then called at the end of the full-expression evaluation.
     - In all cases, the destructor of the source object is no longer called when
         its end of scope is reached.
 - otherwise (the source object is an *unowned parameter*), then the temporary is 
@@ -336,7 +338,7 @@ If materialized, then the temporary is initialized as follows:
 
 If the temporary is not materialized and that the source object is not an 
 *unowned parameter*, then the destructor of the source object is called at the 
-end of the expression evaluation, at the same time as temporary objects are destroyed.
+end of the full-expression evaluation, at the same time as temporary objects are destroyed.
 See [Discarded reloc expressions](#discarded-reloc-expr) for more details on 
 unmaterialized temporaries from `reloc` statements.
 
@@ -355,7 +357,8 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
     move, or copy constructor ;
-- the source object is a structured binding ;
+- the source object is a structured binding (and not an identifier introduced in a
+    <a href="#structured-reloc">structured relocation declaration</a>) ;
 
 For instance:
 ```cpp
@@ -381,6 +384,7 @@ void bar(void)
 void foobar(const std::string& str)
 {
 	foo(reloc str); // OK: str is passed by reference.
+	// Note that the lifetime of the referent of str is unaffected.
 }
 void foobar(std::string* str)
 {
@@ -388,7 +392,7 @@ void foobar(std::string* str)
 }
 void foobar2(std::string* str)
 {
-    foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
+	foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
 } 
 
 class A
@@ -836,6 +840,10 @@ The implicitly-declared or defaulted relocation constructor for class `T` is def
 As for move constructors, a defaulted relocation constructor that is deleted is 
 ignored by overload resolution.
 
+Note: this means that a class with an explictly deleted relocation constructor
+will still be relocated if necessary, but through the move (or copy) constructor
+and destructor.
+
 #### Trivial relocation #### {#trivial-relocation}
 
 A class-type `T` is trivially relocatable if all the following is true:
@@ -875,10 +883,6 @@ of `T`, in declaration order:
 When all target subobjects have been constructed, the destructors all of 
 source subobjects are called, in reversed declaration order, omitting those 
 that are already in a *destructed state*.
-
-Alternatively, if synthesized relocation should happen for all subobjects of `T` and 
-that `T` provides a move constructor, then the relocation constructor delegates 
-to the move constructor and calls its destructor on the source object right after.
 
 #### User-provided definition #### {#reloc-ctor-user-definition}
 
@@ -1873,18 +1877,80 @@ any& any::operator=(T);
 
 ## Containers ## {#lib-change-containers}
 
-All containers should provide a way to insert and remove elements by relocation.
-
-Unfortunately existing APIs cannot fulfill this need. They mostly take references 
-of some kind as parameter, while relocation requires to pass elements by value.
-
-As such we suggest adding overloads to all insertion functions. 
-These shall capture the element to insert by value.
-
-In addition we add various "pilfer" functions to remove elements from containers.
-
-Finally, all containers must provide a relocation constructor and a 
+All containers must provide a relocation constructor and a
 relocation assignment operator.
+
+Also, in order to fully support relocate-only types, containers should provide
+a way to insert and remove elements by relocation.
+
+### Insertion overloads ### {#lib-insertion-overloads}
+
+Existing APIs cannot fulfill this need. They all take the element
+to insert as a reference parameter, while relocation requires to pass elements
+by value.
+
+As such we suggest adding overloads to all insertion functions, where the
+element to insert is passed by value.
+
+### Pilfer functions ### {#lib-pilfer-functions}
+
+The STL does not provide any function to erase an element
+from a container and return it as return value.
+
+Consider a container of relocate-only types. If an element of that container is to be
+"moved out" of it, it could only happen through relocation as it is
+the only operation supported by the type. Hence the relocated element must
+necessarily be simultaneously erased from the container as its lifetime ended.
+
+This is why we propose to add various "pilfer" functions to existing containers,
+that erase an element and return it. The return value will be constructed by
+relocation (likely thanks to `std::destroy_relocate`).
+
+All pilfer functions will operate the same way. First, the return value is constructed
+as if by `std::destroy_relocate` from the container element. Second, the container
+adjusts its size and memory to effectively erase the contained element from
+its internal data structures.
+
+If an exception is emitted during the first step, then the container proceeds
+to erase its element nonetheless (as if in the second step) and then propagates
+the exception.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then `std::terminate` is called.
+
+### relocate_out ### {#lib-relocate_out}
+
+We further propose to add a `relocate_out` function to some containers.
+`relocate_out` takes three iterators as parameters. The first two are iterators
+that belong to the container, and define the range to relocate. The last parameter
+is an output iterator where the relocated elements will be constructed.
+This is similar the `erase` functions that take a range of elements, except that
+an extra output iterator is provided.
+
+`relocate_out` is proposed to improve support of relocate-only types. Without this,
+it would not be possible to move a range of relocate-only elements from one container to
+another, without writing complex and inefficient loops calling `pilfer` at
+each iteration.
+
+Note that there is less need for a `relocate_in` function as the `std::insert_iterator`
+family will have an overload to enable relocation.
+
+`relocate_out` proceeds as follows:
+
+1. relocates the elements within range to the output iterator.
+    The elements within range inside the container are then in a *destructed state*.
+2. The destructed elements are removed from the container. How this is achieved
+    depends on the container. For instance `std::vector` may call
+    `std::uninitialized_relocate` to move the trailing part of the container
+    in the destructed range, and simply reduce its size.
+
+If an exception leaks through the first step, then the second step is run
+to erase from the container all the elements that are in a *destructed state*
+(i.e. those which got succesfully relocated plus the one responsible for the exception)
+, and the exception is propagated.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then `std::terminate` is called.
 
 ### std::vector ### {#std-vector}
 ```cpp
