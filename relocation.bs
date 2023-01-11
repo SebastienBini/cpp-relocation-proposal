@@ -1075,7 +1075,7 @@ is destructor is called and the exception is propagated.
 Note that the target object needs not to be destroyed as the delegating 
 constructor already took care of that.
 
-### Invocation
+### Invocation ### {#reloc-ctor-invoke}
 
 The relocation constructor is invoked *as necessary* to relocate a prvalue
 from one storage location to another. Use of the `reloc` operator does not

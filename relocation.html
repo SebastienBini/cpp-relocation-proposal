@@ -1561,9 +1561,9 @@ Possible extra rowspan handling
     blockquote c-[il] { color: inherit; } /* Literal.Number.Integer.Long */
   </style>
   <meta content="Bikeshed version 44af0bf3e, updated Fri Jul 29 17:05:16 2022 -0700" name="generator">
-  <link href="https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf" rel="canonical">
+  <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="42466b05e34707534648d894d6f32fd9e79c82b7" name="document-revision">
+  <meta content="e8da54d4e43552ec2f7ced759c5b00d5cc79e7a1" name="document-revision">
 <style>/* style-autolinks */
 
 .css.css, .property.property, .descriptor.descriptor {
@@ -2087,7 +2087,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    <div data-fill-with="spec-metadata">
     <dl>
      <dt>This version:
-     <dd><a class="u-url" href="https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf">https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf</a>
+     <dd><a class="u-url" href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html">https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html</a>
      <dt class="editor">Author:
      <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:sebastien.bini@gmail.com">Sébastien Bini</a> (<span class="p-org org">Stormshield</span>)
      <dt>Audience:
@@ -2115,10 +2115,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <a href="#nomenclature"><span class="secno">3</span> <span class="content">Nomenclature</span></a>
      <ol class="toc">
       <li><a href="#src-and-target"><span class="secno">3.1</span> <span class="content">Source and target objects</span></a>
-      <li><a href="#subobject"><span class="secno">3.2</span> <span class="content">Subobject</span></a>
-      <li><a href="#complete-object"><span class="secno">3.3</span> <span class="content">Complete object</span></a>
-      <li><a href="#dtor-state"><span class="secno">3.4</span> <span class="content">Destructed state</span></a>
-      <li><a href="#unowned-parameter"><span class="secno">3.5</span> <span class="content">Unowned parameter</span></a>
+      <li><a href="#dtor-state"><span class="secno">3.2</span> <span class="content">Destructed state</span></a>
+      <li><a href="#unowned-parameter"><span class="secno">3.3</span> <span class="content">Unowned parameter</span></a>
      </ol>
     <li>
      <a href="#compare"><span class="secno">4</span> <span class="content">Comparison with existing proposals</span></a>
@@ -2160,6 +2158,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
           <li><a href="#reloc-ctor-try-with-init"><span class="secno">5.2.2.3</span> <span class="content">Try-with-init</span></a>
           <li><a href="#reloc-ctor-exceptions"><span class="secno">5.2.2.4</span> <span class="content">Exception handling</span></a>
          </ol>
+        <li><a href="#reloc-ctor-invoke"><span class="secno">5.2.3</span> <span class="content">Invocation</span></a>
        </ol>
       <li>
        <a href="#reloc-assign-operator"><span class="secno">5.3</span> <span class="content">Relocation assignment operator</span></a>
@@ -2171,10 +2170,10 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
           <li><a href="#reloc-assign-declaration-deleted"><span class="secno">5.3.1.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span></a>
          </ol>
         <li>
-         <a href="#aliased-reloc-assign"><span class="secno">5.3.2</span> <span class="content">Aliased relocation assignment operator</span></a>
+         <a href="#aliased-reloc-assign"><span class="secno">5.3.2</span> <span class="content">Relocation assignment operator parameter relocation elision</span></a>
          <ol class="toc">
-          <li><a href="#aliased-reloc-assign-declaration"><span class="secno">5.3.2.1</span> <span class="content">Aliased at declaration level</span></a>
-          <li><a href="#aliased-reloc-assign-definition"><span class="secno">5.3.2.2</span> <span class="content">Aliased at definition level</span></a>
+          <li><a href="#aliased-reloc-assign-declaration"><span class="secno">5.3.2.1</span> <span class="content">Elision at declaration level</span></a>
+          <li><a href="#aliased-reloc-assign-definition"><span class="secno">5.3.2.2</span> <span class="content">Elision at definition level</span></a>
          </ol>
         <li>
          <a href="#reloc-assign-definition"><span class="secno">5.3.3</span> <span class="content">Definition</span></a>
@@ -2237,14 +2236,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <li>
        <a href="#lib-change-containers"><span class="secno">6.4</span> <span class="content">Containers</span></a>
        <ol class="toc">
-        <li><a href="#std-vector"><span class="secno">6.4.1</span> <span class="content">std::vector</span></a>
-        <li><a href="#std-deque"><span class="secno">6.4.2</span> <span class="content">std::deque</span></a>
-        <li><a href="#std-list"><span class="secno">6.4.3</span> <span class="content">std::list</span></a>
-        <li><a href="#std-forward_list"><span class="secno">6.4.4</span> <span class="content">std::forward_list</span></a>
-        <li><a href="#std-set-and-map"><span class="secno">6.4.5</span> <span class="content">set and map containers</span></a>
-        <li><a href="#std-queues"><span class="secno">6.4.6</span> <span class="content">queues</span></a>
-        <li><a href="#std-iterator"><span class="secno">6.4.7</span> <span class="content">Iterator library</span></a>
-        <li><a href="#std-misc-classes"><span class="secno">6.4.8</span> <span class="content">Other STL classes</span></a>
+        <li><a href="#lib-insertion-overloads"><span class="secno">6.4.1</span> <span class="content">Insertion overloads</span></a>
+        <li><a href="#lib-pilfer-functions"><span class="secno">6.4.2</span> <span class="content">Pilfer functions</span></a>
+        <li><a href="#lib-relocate_out"><span class="secno">6.4.3</span> <span class="content">relocate_out</span></a>
+        <li><a href="#std-vector"><span class="secno">6.4.4</span> <span class="content">std::vector</span></a>
+        <li><a href="#std-deque"><span class="secno">6.4.5</span> <span class="content">std::deque</span></a>
+        <li><a href="#std-list"><span class="secno">6.4.6</span> <span class="content">std::list</span></a>
+        <li><a href="#std-forward_list"><span class="secno">6.4.7</span> <span class="content">std::forward_list</span></a>
+        <li><a href="#std-set-and-map"><span class="secno">6.4.8</span> <span class="content">set and map containers</span></a>
+        <li><a href="#std-queues"><span class="secno">6.4.9</span> <span class="content">queues</span></a>
+        <li><a href="#std-iterator"><span class="secno">6.4.10</span> <span class="content">Iterator library</span></a>
+        <li><a href="#std-misc-classes"><span class="secno">6.4.11</span> <span class="content">Other STL classes</span></a>
        </ol>
      </ol>
     <li>
@@ -2255,7 +2257,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
       <li>
        <a href="#future-directions"><span class="secno">7.3</span> <span class="content">Future directions</span></a>
        <ol class="toc">
-        <li><a href="#future-capture-value"><span class="secno">7.3.1</span> <span class="content">Capture by value in template functions</span></a>
+        <li><a href="#future-capture-value"><span class="secno">7.3.1</span> <span class="content">More perfect forwarding</span></a>
         <li><a href="#solve-discarded-reloc-expr"><span class="secno">7.3.2</span> <span class="content">discarded reloc expression</span></a>
        </ol>
       <li><a href="#easier-cpp"><span class="secno">7.4</span> <span class="content">Will it make C++ easier?</span></a>
@@ -2310,7 +2312,8 @@ and in particular, the source object’s destructor is not called).</p>
    <p>Another place where C++ falls short is with constant objects. As of today, constant
 objects cannot be moved in C++ as the move constructor cannot steal the resources
 of a constant object. As such, never-modified objects that
-end their life by being moved (via <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code>) cannot be marked as <code class="highlight"><c- k>const</c-></code>. 
+end their life by being moved (e.g. via <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code>, or implicitly by return-value optimization
+where complete elision is not viable) cannot be marked as <code class="highlight"><c- k>const</c-></code>. 
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.</p>
@@ -2323,31 +2326,32 @@ from trivial relocation (see in particular <a data-link-type="biblio" href="#bib
 are mainly in containers (std::vector::resize and the likes)
 and code size gains from functions that use <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>swap</c-></code>.</p>
    <h2 class="heading settled" data-level="3" id="nomenclature"><span class="secno">3. </span><span class="content">Nomenclature</span><a class="self-link" href="#nomenclature"></a></h2>
+   <p>We refer to the <a href="https://wg21.link/intro.defs">Terms and definitions</a> of the C++ Standard,
+and to nomenclature introduced therein,
+in particular the <a href="https://wg21.link/intro.object">object model</a>.
+In addition, we define:</p>
    <h3 class="heading settled" data-level="3.1" id="src-and-target"><span class="secno">3.1. </span><span class="content">Source and target objects</span><a class="self-link" href="#src-and-target"></a></h3>
-   <p>Relocation is the act of constructing a new instance by destructively stealing
-the resources of an existing one.</p>
-   <p>The new instance is called the <em>target object</em>. The existing instance whose resources
+   <p>Relocation is the act of constructing a new instance while ending the lifetime of an existing one.
+This allows destructively stealing its resources, if any.</p>
+   <p>The new instance is called the <em>target object</em>.
+The existing instance whose lifetime is ended and whose resources
 are stolen is called the <em>source object</em>.</p>
-   <h3 class="heading settled" data-level="3.2" id="subobject"><span class="secno">3.2. </span><span class="content">Subobject</span><a class="self-link" href="#subobject"></a></h3>
-   <p>We define the subobjects of a type <code class="highlight"><c- n>T</c-></code> as all bases classes of <code class="highlight"><c- n>T</c-></code>,
-and all non-static data members of <code class="highlight"><c- n>T</c-></code>. 
-Alternatively, if <code class="highlight"><c- n>T</c-></code> is an array type, then its subobjects are
-its array elements.</p>
-   <h3 class="heading settled" data-level="3.3" id="complete-object"><span class="secno">3.3. </span><span class="content">Complete object</span><a class="self-link" href="#complete-object"></a></h3>
-   <p>We call a <em>complete object</em> an object that is not the subobject of another object.</p>
-   <h3 class="heading settled" data-level="3.4" id="dtor-state"><span class="secno">3.4. </span><span class="content">Destructed state</span><a class="self-link" href="#dtor-state"></a></h3>
-   <p>An object is to be in a <em>destructed state</em> if:</p>
+   <h3 class="heading settled" data-level="3.2" id="dtor-state"><span class="secno">3.2. </span><span class="content">Destructed state</span><a class="self-link" href="#dtor-state"></a></h3>
+   <p>An object is to be in a <em>destructed state</em> if its lifetime has ended because:</p>
    <ul>
     <li data-md>
-     <p>its destructor was called ;</p>
+     <p>its destructor was called, or ;</p>
     <li data-md>
      <p>it was passed to as source object to its relocation constructor.</p>
    </ul>
-   <p>Unless the object type is trivial (its destructor is a no-op), it is a
-programming error to call the destructor of an object if it is already in a <em>destructed state</em>.</p>
-   <h3 class="heading settled" data-level="3.5" id="unowned-parameter"><span class="secno">3.5. </span><span class="content">Unowned parameter</span><a class="self-link" href="#unowned-parameter"></a></h3>
+   <p>It is a
+programming error to call the destructor of an object if it is already in a <em>destructed state</em>.
+As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
+this has undefined behavior unless the object type is trivial, in which case its destructor
+or pseudo-destructor is a no-op.</p>
+   <h3 class="heading settled" data-level="3.3" id="unowned-parameter"><span class="secno">3.3. </span><span class="content">Unowned parameter</span><a class="self-link" href="#unowned-parameter"></a></h3>
    <p>An object is said to be an <em>unowned parameter</em> with regards to a function <code class="highlight"><c- n>f</c-></code> if the object is a parameter of the function, passed by value, but the
-function <code class="highlight"><c- n>f</c-></code> has no control over its lifetime.</p>
+function <code class="highlight"><c- n>f</c-></code> does not have control over its lifetime.</p>
    <p>The lifetime of function parameters is implementation-defined in C++, but it
 is of most importance with relocation. Depending on the function call convention
 or ABI, the function may or may not be in charge of the lifetime of its parameters.</p>
@@ -2381,10 +2385,11 @@ mark a type as trivially relocatable.</p>
    <p>The current proposal has its own take on trivial relocatability that does not
 rely on a class attribute. Instead the trivial relocatability
 trait flows naturally from the new relocation constructor that we introduce. In short:
-if a type has a defaulted relocation constructor in its declaration, and all of 
-its subobjects recursively declare a defaulted relocation constructor, then the type
+if a class type has a relocation constructor that is (explicitly) declared as defaulted or
+is implicitly defined and not defaulted as deleted, and all of 
+its subobjects are trivially relocatable (or fully trivial), then the type
 is trivially relocatable.</p>
-   <p>This is approach is not prone to errors when compared to a class attribute,
+   <p>This approach is not prone to errors when compared to a class attribute,
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.</p>
    <p>Also, <a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a> does not account for relocate-only types. To some extend, trivially
@@ -2428,6 +2433,25 @@ The solution then becomes:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>sink</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>x</c-><c- p>)</c-> <c- p>{</c-> <c- n>sink</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>);</c-> <c- d>/* x can no longer be used. */</c-> <c- p>}</c->
 </pre>
+   <p>Moreover, the proposed syntax for invoking <a data-link-type="biblio" href="#biblio-p0023r0">[P0023R0]</a>'s relocator is low-level and
+prone to error:</p>
+<pre class="language-c++ highlight"><c- n>T</c-> <c- n>x</c-><c- p>;</c->
+<c- k>alignas</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-> <c- b>char</c-> <c- n>buf</c-><c- p>[</c-><c- k>sizeof</c-><c- p>(</c-><c- n>T</c-><c- p>)];</c->
+<c- n>T</c-><c- o>*</c-> <c- n>y</c-> <c- o>=</c-> <c- n>new</c-> <c- p>(</c-><c- n>buf</c-><c- p>)</c-> <c- o>>></c-><c- n>T</c-><c- p>(</c-><c- n>x</c-><c- p>);</c->
+</pre>
+   <p>Here the lifetime of <code class="highlight"><c- n>x</c-></code> has been ended as if by a destructor call, but the language
+is not aware of this,
+so firstly the user may erreoneously refer to <code class="highlight"><c- n>x</c-></code> as if it was within its lifetime,
+and secondly if an object is not recreated in <code class="highlight"><c- n>x</c-></code> by the time the block
+exits, the behavior is undefined by <a href="https://eel.is/c++draft/basic.life#9">[basic.life]/9</a>.
+Likewise, the language is not aware of the existence of <code class="highlight"><c- o>*</c-><c- n>y</c-></code> so will not call its
+destructor; the behavior is then possibly undefined under <a href="https://eel.is/c++draft/basic.life#5">[basic.life]/5</a>.
+In contrast, the present proposal would write the above as:</p>
+<pre class="language-c++ highlight"><c- n>T</c-> <c- n>x</c-><c- p>;</c->
+<c- n>T</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c->
+</pre>
+   <p>Here the use of the <code class="highlight"><c- n>reloc</c-></code> keyword ensures that the language is aware that the lifetime
+of <code class="highlight"><c- n>x</c-></code> has finished, so the destructor only of <code class="highlight"><c- n>y</c-></code> is called at scope exit.</p>
    <h3 class="heading settled" data-level="4.3" id="compare-N4158"><span class="secno">4.3. </span><span class="content">N4158: Destructive Move by Pablo Halpern</span><a class="self-link" href="#compare-N4158"></a></h3>
    <p><a data-link-type="biblio" href="#biblio-n4158">[N4158]</a> proposes a customizable function <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>uninitialized_destructive_move</c-></code>,
 that is somewhat similar to the relocation constructor, but is a pure library solution.</p>
@@ -2473,7 +2497,9 @@ the performance boost that is so longed for.</p>
    <h3 class="heading settled" data-level="5.1" id="reloc-operator"><span class="secno">5.1. </span><span class="content">reloc operator</span><a class="self-link" href="#reloc-operator"></a></h3>
    <p>This paper suggests to introduce a new keyword, named <code class="highlight"><c- n>reloc</c-></code>. <code class="highlight"><c- n>reloc</c-></code> acts as a
 unary operator that can be applied to named, local, complete objects (in other
-words: local function variables).</p>
+words: function-local non-static variables and, with some restrictions,
+function parameters and
+identifiers introduced through the syntax of structured binding declarations).</p>
    <p><code class="highlight"><c- n>reloc</c-> <c- n>obj</c-></code> does the following:</p>
    <ul>
     <li data-md>
@@ -2510,7 +2536,7 @@ source object is considered to be in a <em>destructed state</em>.</p>
       <li data-md>
        <p>otherwise, either the move or copy constructor is called, ignoring the
 cv-qualifiers on the source object. The destructor of the source object 
-is then called at the end of the expression evaluation.</p>
+is then called at the end of the full-expression evaluation.</p>
       <li data-md>
        <p>In all cases, the destructor of the source object is no longer called when
 its end of scope is reached.</p>
@@ -2523,7 +2549,7 @@ source object is deferred until the function returns. Typically we expect
 the source object to be in a "moved-from" state, waiting to be destructed.</p>
    </ul>
    <p>If the temporary is not materialized and that the source object is not an <em>unowned parameter</em>, then the destructor of the source object is called at the 
-end of the expression evaluation, at the same time as temporary objects are destroyed.
+end of the full-expression evaluation, at the same time as temporary objects are destroyed.
 See <a href="#discarded-reloc-expr">Discarded reloc expressions</a> for more details on 
 unmaterialized temporaries from <code class="highlight"><c- n>reloc</c-></code> statements.</p>
    <p>Note that an object passed to <code class="highlight"><c- n>reloc</c-></code> is guaranteed to be either in a <em>destructed state</em> at the end of the expression evaluation if it is not an <em>unowned parameter</em>, 
@@ -2543,7 +2569,7 @@ value) ;</p>
      <p>the source object is not ref-qualified and does not have an accessible relocation,
 move, or copy constructor ;</p>
     <li data-md>
-     <p>the source object is a structured binding ;</p>
+     <p>the source object is a structured binding (and not an identifier introduced in a <a href="#structured-reloc">structured relocation declaration</a>) ;</p>
    </ul>
    <p>For instance:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>str</c-><c- p>);</c->
@@ -2568,6 +2594,7 @@ move, or copy constructor ;</p>
 <c- b>void</c-> <c- nf>foobar</c-><c- p>(</c-><c- k>const</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>&amp;</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
 	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK: str is passed by reference.</c->
+	<c- c1>// Note that the lifetime of the referent of str is unaffected.</c->
 <c- p>}</c->
 <c- b>void</c-> <c- nf>foobar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>*</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
@@ -2575,7 +2602,7 @@ move, or copy constructor ;</p>
 <c- p>}</c->
 <c- b>void</c-> <c- nf>foobar2</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>*</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
-    <c- n>foobar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK, the pointer itself is relocated (not the pointed value)</c->
+	<c- n>foobar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK, the pointer itself is relocated (not the pointed value)</c->
 <c- p>}</c-> 
 
 <c- k>class</c-> <c- nc>A</c->
@@ -2927,20 +2954,37 @@ the constructor takes a prvalue as parameter: <code class="highlight"><c- n>T</c
    <p>This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor 
 from an xvalue, and then the relocation constructor from a prvalue.</p>
-   <p>Despite what its signature suggests, the constructor does not take a copy of the
-source object as parameter. In fact, the constructor benefits from a special 
-aliasing to ensure that the address of its parameter is the same as the source
-object that is being relocated (as if the parameter was captured by reference).
-It is fine for the relocation constructor to provide such aliasing as constructors
-are special functions, which we cannot take the address of.</p>
+   <p class="note" role="note"><span>Note:</span> a further benefit of this syntax is that it is currently ill-formed, and
+thus available for extension.</p>
+   <p>A point of confusion may be that the syntax implies an infinite regress: the
+parameter must be constructed, which requires a prior call to the relocation
+constructor, and so on. This is not the case; if the source object was previously
+a glvalue the operand of the <code class="highlight"><c- n>reloc</c-></code> operator, it was transformed into a prvalue
+immediately before entering the relocation constructor, and the parameter of the
+relocation constructor is that same prvalue. (If the source object was already a
+prvalue, there is no issue; the parameter is that prvalue.)</p>
+   <p>An attractive intuition is that the parameter aliases the source object in the
+same way as a reference or a structured binding declaration.
+However, this is misleading; the lifetime of a source object glvalue has already
+ended and so use of a pointer or reference referring to the source object has
+undefined behavior, except as provided by [basic.life] and [class.cdtor].</p>
+   <p class="note" role="note"><span>Note:</span> this behavior matches that for the destructor of a class type; see <a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1.</p>
+   <p>This intuition is only useful in so far as the ABI for a relocation
+constructor prvalue parameter is likely to be the same as that for a copy or move
+constructor parameter, since the prvalue parameter may have the same storage
+location as a previously existing glvalue.</p>
+   <p class="note" role="note"><span>Note:</span> it does not matter that the ABI for the relocation constructor parameter
+differs from that for a prvalue parameter in normal functions, since it is not
+possible to take the address of a constructor.</p>
    <p>The role of the relocation constructor is to construct a new instance by destructively
 stealing the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
-valid state. In fact the source object must simply be considered as uninitialized 
-memory after
+valid state. In fact the lifetime of the source object was ended immediately prior
+to entering the relocation constructor, and thus the source object must simply be
+considered as uninitialized memory after
 the relocation constructor terminates. We also say that the source object
 is left in a <em>destructed state</em>. This means that the destructor of the source
-object must no longer be called.</p>
+object must no longer be called (and will not be called, assuming the <code class="highlight"><c- n>reloc</c-></code> operator was used).</p>
    <h4 class="heading settled" data-level="5.2.1" id="reloc-ctor-declaration"><span class="secno">5.2.1. </span><span class="content">Declaration</span><a class="self-link" href="#reloc-ctor-declaration"></a></h4>
    <p>The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.</p>
@@ -2974,6 +3018,9 @@ that are deleted, inaccessible, or ambiguous).</p>
    </ul>
    <p>As for move constructors, a defaulted relocation constructor that is deleted is
 ignored by overload resolution.</p>
+   <p class="note" role="note"><span>Note:</span> this means that a class with an explictly deleted relocation constructor
+will still be relocated if necessary, but through the move (or copy) constructor
+and destructor.</p>
    <h5 class="heading settled" data-level="5.2.1.3" id="trivial-relocation"><span class="secno">5.2.1.3. </span><span class="content">Trivial relocation</span><a class="self-link" href="#trivial-relocation"></a></h5>
    <p>A class-type <code class="highlight"><c- n>T</c-></code> is trivially relocatable if all the following is true:</p>
    <ul>
@@ -3008,9 +3055,6 @@ relocation</em>. <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-><
    <p>When all target subobjects have been constructed, the destructors all of
 source subobjects are called, in reversed declaration order, omitting those 
 that are already in a <em>destructed state</em>.</p>
-   <p>Alternatively, if synthesized relocation should happen for all subobjects of <code class="highlight"><c- n>T</c-></code> and
-that <code class="highlight"><c- n>T</c-></code> provides a move constructor, then the relocation constructor delegates 
-to the move constructor and calls its destructor on the source object right after.</p>
    <h5 class="heading settled" data-level="5.2.2.2" id="reloc-ctor-user-definition"><span class="secno">5.2.2.2. </span><span class="content">User-provided definition</span><a class="self-link" href="#reloc-ctor-user-definition"></a></h5>
    <p>Users can provide their own definition of the relocation constructor.
 Special rules apply to the relocation constructor’s member initialization list:
@@ -3174,6 +3218,54 @@ destroyed in reversed declaration order, like it is the case for any constructor
 is destructor is called and the exception is propagated.</p>
    <p>Note that the target object needs not to be destroyed as the delegating
 constructor already took care of that.</p>
+   <h4 class="heading settled" data-level="5.2.3" id="reloc-ctor-invoke"><span class="secno">5.2.3. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-ctor-invoke"></a></h4>
+   <p>The relocation constructor is invoked <em>as necessary</em> to relocate a prvalue
+from one storage location to another. Use of the <code class="highlight"><c- n>reloc</c-></code> operator does not
+guarantee that a relocation constructor (if present) will be called,
+since it may be elided
+if the compiler can arrange that the source glvalue was constructed at the
+appropriate address.</p>
+   <p>In particular, code of the form <code class="highlight"><c- n>T</c-> <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>y</c-><c- p>;</c-></code> is <em>highly</em> likely to be a
+no-op, simply renaming an existing object. This is however likely to find use
+for "sealing" objects with complex initialization, replacing the idiom of
+immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href="#biblio-iife">[IIFE]</a>):</p>
+   <table>
+    <tbody>
+     <tr>
+      <th>Before
+      <th>After
+     <tr>
+      <td valign="top">
+<pre class="highlight" lang="cpp"><c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c->
+<c- p>{</c->
+    <c- n>T</c-> <c- n>x</c-><c- p>;</c->
+    <c- n>x</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
+    <c- k>return</c-> <c- n>x</c-><c- p>;</c->
+<c- p>});</c->
+</pre>
+      <td valign="top">
+<pre class="highlight" lang="cpp"><c- n>T</c-> <c- n>x_mut</c-><c- p>;</c->
+<c- n>x_mut</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
+<c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x_mut</c-><c- p>;</c->
+</pre>
+   </table>
+   <p>Or, consider:</p>
+<pre class="language-c++ highlight"><c- n>C</c-> <c- nf>f</c-><c- p>(</c-><c- b>int</c-> <c- n>i</c-><c- p>)</c-> <c- p>{</c->
+    <c- n>C</c-> <c- n>c1</c-><c- p>,</c-> <c- n>c2</c-><c- p>;</c->
+    <c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>0</c-><c- p>)</c->
+        <c- p>[[</c-><c- n>likely</c-><c- p>]]</c-> <c- k>return</c-> <c- n>reloc</c-> <c- n>c1</c-><c- p>;</c->  <c- c1>// #1</c->
+    <c- k>else</c-> <c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>1</c-><c- p>)</c->
+        <c- p>[[</c-><c- n>likely</c-><c- p>]]</c-> <c- k>return</c-> <c- n>c1</c-><c- p>;</c->  <c- c1>// #2</c->
+    <c- k>else</c->
+        <c- p>[[</c-><c- n>unlikely</c-><c- p>]]</c-> <c- k>return</c-> <c- n>c2</c-><c- p>;</c->  <c- c1>// #3</c->
+<c- p>}</c->
+</pre>
+   <p>At <code class="highlight"><c- cp>#1</c-></code> the <code class="highlight"><c- n>reloc</c-></code> is largely redundant; the end-of-life optimization means
+the compiler is entitled to treat <code class="highlight"><c- n>c1</c-></code> as a prvalue anyway, as in <code class="highlight"><c- cp>#2</c-></code>. Indeed,
+the likelihood annotation encourages the compiler to construct <code class="highlight"><c- n>c1</c-></code> in the
+return slot, such that both <code class="highlight"><c- cp>#1</c-></code> and <code class="highlight"><c- cp>#2</c-></code> are a no-op. It is only <code class="highlight"><c- cp>#3</c-></code> that is
+likely to invoke the relocation constructor.</p>
+   <p>The relocation constructor may also be invoked by library functions, for example <a href="#std-destroy_relocate">§ 6.1.2 std::destroy_relocate</a>.</p>
    <h3 class="heading settled" data-level="5.3" id="reloc-assign-operator"><span class="secno">5.3. </span><span class="content">Relocation assignment operator</span><a class="self-link" href="#reloc-assign-operator"></a></h3>
    <p>We further introduce the relocation assignment operator. Its signature shall be: <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- n>T</c-><c- o>::</c-><c- k>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code>. Such operators may already be defined in existing codebases, 
 but the proposed changes will not interfere with them.</p>
@@ -3202,60 +3294,63 @@ an inline public relocation assignment operator.</p>
    </ul>
    <p>A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.</p>
-   <h4 class="heading settled" data-level="5.3.2" id="aliased-reloc-assign"><span class="secno">5.3.2. </span><span class="content">Aliased relocation assignment operator</span><a class="self-link" href="#aliased-reloc-assign"></a></h4>
-   <p>The relocation assignment operator may benefit from the same aliasing as the
-relocation constructor: when aliased the input parameter is passed by reference
-instead of by value.</p>
-   <p>Aliasing may be enabled at declaration level or at definition level, or completely
-disabled:</p>
+   <h4 class="heading settled" data-level="5.3.2" id="aliased-reloc-assign"><span class="secno">5.3.2. </span><span class="content">Relocation assignment operator parameter relocation elision</span><a class="self-link" href="#aliased-reloc-assign"></a></h4>
+   <p>As with the relocation constructor, it is desirable that the parameter should be
+the source object <em>converted to</em> a prvalue, and not a temporary prvalue relocated <em>from</em> the source object. This is particularly critical for
+the default definition of the operator, which
+(as you might suspect) performs memberwise calls to other relocation assignment operators.
+Without elision, that would imply recursive relocation of each subobject, down to
+their smallest unbreakable parts.</p>
+   <p>This, however, poses a problem, since it is possible to take the address of a
+relocation assignment operator, yielding a pointer (or reference) with (typical)
+signature <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- p>(</c-><c- n>T</c-><c- o>::</c-><c- p>)(</c-><c- n>T</c-><c- p>)</c-></code>, implying that the source object must occupy a parameter slot,
+which may not find it possible to have the same storage address as the source object,
+and/or which the caller may expect to destroy (see <a href="#abi">§ 5.6 ABI changes</a>).</p>
+   <p>Nevertheless, we mandate elision where possible:</p>
    <ul>
     <li data-md>
-     <p>If the class-type (may be implicitly) declares a non-deleted relocation constructor,
-or declares a defaulted relocation assignment operator, then aliasing is 
-enabled at declaration level ;</p>
+     <p>If the class-type (possibly implicitly) declares a non-deleted relocation constructor,
+or declares a defaulted relocation assignment operator, then elision is 
+mandated at declaration level ;</p>
     <li data-md>
      <p>Otherwise, if the class-type defines a relocation assignment operator as
-defaulted, then aliasing is enabled at definition level ;</p>
+defaulted, then elision is mandated at definition level ;</p>
     <li data-md>
-     <p>Otherwise no aliasing happens.</p>
+     <p>Otherwise elision is not mandated.</p>
    </ul>
-   <p>Aliasing is important for the default definition of the operator.
-As you might suspect, it performs memberwise calls to other relocation assignment operators.
-With no aliasing, that would imply recursive copies of each subobject, down to
-their smallest unbreakable parts.</p>
-   <p>Aliasing is done so that it introduces no ABI break (more on that on the <a href="#prvalue-assign-op-abi">ABI
+   <p>Elision is performed in such a way as to avoid ABI break (more on that on the <a href="#prvalue-assign-op-abi">ABI
 section</a>).</p>
-   <h5 class="heading settled" data-level="5.3.2.1" id="aliased-reloc-assign-declaration"><span class="secno">5.3.2.1. </span><span class="content">Aliased at declaration level</span><a class="self-link" href="#aliased-reloc-assign-declaration"></a></h5>
-   <p>If aliasing is enabled at declaration level, then the assignment operator
+   <h5 class="heading settled" data-level="5.3.2.1" id="aliased-reloc-assign-declaration"><span class="secno">5.3.2.1. </span><span class="content">Elision at declaration level</span><a class="self-link" href="#aliased-reloc-assign-declaration"></a></h5>
+   <p>If elision is mandated at declaration level, then the assignment operator
 declaration actually declares two member functions:</p>
    <ul>
     <li data-md>
-     <p>the unaliased one, which takes its input parameter by value.
+     <p>the non-eliding one, which takes its input parameter by value.
 This is the function that will get called when user-code calls the 
 assignment operator. It is the prvalue-assignment operator as we know it 
 today ;</p>
     <li data-md>
-     <p>the aliased one, which takes its input parameter by reference, and has the
-same return type as the unaliased one. The aliased 
+     <p>the eliding one, which takes its input parameter as if by reference, and has the
+same return type as the non-eliding one. The eliding 
 function has no identifier and does not participate in overload resolution.
 Users cannot take its address and this function cannot be called directly in
 user-code.
-The aliased operator is in charge of destructing its source object, by 
+The eliding operator is in charge of destructing its source object, by 
 relocation or destructor call.</p>
    </ul>
    <p>The definition of the assignment operator (which is user-provided or
-defaulted) will serve as the definition of the aliased operator.</p>
-   <p>The unaliased operator definition is generated by the compiler, and merely wraps
-the call to the aliased one:</p>
+defaulted) will serve as the definition of the eliding operator.</p>
+   <p>The non-eliding operator definition is generated by the compiler, and merely wraps
+the call to the eliding one:</p>
    <ul>
     <li data-md>
-     <p>If the source object passed to the unaliased operator is not an <em>unowned parameter</em>,
+     <p>If the source object passed to the non-eliding operator is not an <em>unowned parameter</em>,
 then the operator:</p>
      <ol>
       <li data-md>
-       <p>Calls the aliased operator, passing the source object by reference.</p>
+       <p>Calls the eliding operator, passing the source object as if by reference.</p>
       <li data-md>
-       <p>It forwards as return value whatever the aliased operator returns.</p>
+       <p>It forwards as return value whatever the eliding operator returns.</p>
       <li data-md>
        <p>Upon function exit, it does not destroy the source object as it is
 already in a <em>destructed state</em>.</p>
@@ -3266,27 +3361,27 @@ already in a <em>destructed state</em>.</p>
       <li data-md>
        <p>Creates a copy of the source object, using move or copy constructor.</p>
       <li data-md>
-       <p>Calls the aliased operator, passing that copy by reference.</p>
+       <p>Calls the eliding operator, passing that copy by reference.</p>
       <li data-md>
-       <p>It forwards as return value whatever the aliased operator returns.</p>
+       <p>It forwards as return value whatever the eliding operator returns.</p>
       <li data-md>
        <p>Upon function exit, it does not destroy the copy as it is
 already in a <em>destructed state</em>.</p>
      </ol>
    </ul>
    <p>If the address of the assignment operator is queried, then the address of the
-unaliased version is returned. If the assignment operator is virtual, then only
-the unaliased version is considered to be <code class="highlight"><c- k>virtual</c-></code> and is added to the vtable entry.</p>
-   <h5 class="heading settled" data-level="5.3.2.2" id="aliased-reloc-assign-definition"><span class="secno">5.3.2.2. </span><span class="content">Aliased at definition level</span><a class="self-link" href="#aliased-reloc-assign-definition"></a></h5>
-   <p>If aliasing is enabled at definition level, then the two versions of the operator
-are generated (aliased and unaliased) in the translation unit where the operator
-is defined. The visibility of the aliased operator symbol to other translation
+non-eliding version is returned. If the assignment operator is virtual, then only
+the non-eliding version is considered to be <code class="highlight"><c- k>virtual</c-></code> and is added to the vtable entry.</p>
+   <h5 class="heading settled" data-level="5.3.2.2" id="aliased-reloc-assign-definition"><span class="secno">5.3.2.2. </span><span class="content">Elision at definition level</span><a class="self-link" href="#aliased-reloc-assign-definition"></a></h5>
+   <p>If elision is mandated at definition level, then the two versions of the operator
+are generated (eliding and non-eliding) in the translation unit where the operator
+is defined. The visibility of the eliding operator symbol to other translation
 units is implementation-defined.</p>
-   <p>The definition of the two functions are the same as if aliasing was enabled at
+   <p>The definition of the two functions are the same as if elision was mandated at
 declaration level.</p>
    <h4 class="heading settled" data-level="5.3.3" id="reloc-assign-definition"><span class="secno">5.3.3. </span><span class="content">Definition</span><a class="self-link" href="#reloc-assign-definition"></a></h4>
    <h5 class="heading settled" data-level="5.3.3.1" id="reloc-assign-default-definition"><span class="secno">5.3.3.1. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-assign-default-definition"></a></h5>
-   <p>The default definition of the operator is forcibly aliased. In
+   <p>The default definition of the operator, given the rules above, benefits from elision. In
 particular, the default definition is responsible for the destruction of its
 source object.</p>
    <p>As you would expect, the default definition merely delegates to the relocation
@@ -3294,17 +3389,16 @@ assignment operator of all its subobjects.</p>
    <p>In <code class="highlight"><c- n>T</c-></code>'s default assignment operator, for all subobjects <code class="highlight"><c- n>s</c-></code> of <code class="highlight"><c- n>T</c-></code> of type <code class="highlight"><c- n>S</c-></code>:</p>
    <ul>
     <li data-md>
-     <p>If <code class="highlight"><c- n>S</c-></code>'s relocation assignment operator is aliased at declaration level,
-then call it with <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> as parameter (passed by reference thanks to the aliasing). 
+     <p>If <code class="highlight"><c- n>S</c-></code>'s relocation assignment operator mandates relocation elision at declaration level,
+then call it with <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> as parameter (passed as if by reference thanks to elision). 
 The source subobject is then left in a <em>destructed state</em>.</p>
     <li data-md>
-     <p>Otherwise if <code class="highlight"><c- n>S</c-></code> provides an unaliased relocation assignment operator but
+     <p>Otherwise if <code class="highlight"><c- n>S</c-></code> provides an non-eliding relocation assignment operator but
 has an accessible relocation constructor,
-then call the operator by passing a copy of <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code>, which was constructed 
-by relocation.
+then call the operator, if necessary relocating <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> into the parameter slot.
 The source subobject is then left in a <em>destructed state</em>.</p>
     <li data-md>
-     <p>Otherwise if <code class="highlight"><c- n>S</c-></code> provides an unaliased relocation assignment operator
+     <p>Otherwise if <code class="highlight"><c- n>S</c-></code> provides an non-eliding relocation assignment operator
 and no accessible relocation constructor, then 
 call the operator by passing a temporary copy of <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code>. This temporary is 
 move-or-copy-constructed, ignoring the potential cv-qualifiers on <code class="highlight"><c- n>s</c-></code>.
@@ -3334,31 +3428,31 @@ as expected.</p>
 <c- p>}</c->
 </pre>
    <p><strong>destroy-and-construct</strong></p>
-<pre class="language-c++ highlight"><c- n>T</c-><c- o>&amp;</c-> <c- n>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-> <c- n>noexcept</c->
+<pre class="language-c++ highlight"><c- n>constexpr</c-> <c- n>T</c-><c- o>&amp;</c-> <c- n>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-> <c- n>noexcept</c->
 <c- p>{</c->
     <c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_nothrow_destructible_v</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-> <c- o>&amp;&amp;</c-> 
         <c- n>std</c-><c- o>::</c-><c- n>is_nothrow_relocatable_v</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-><c- p>);</c->
 
-    <c- n>this</c-><c- o>->~</c-><c- n>T</c-><c- p>();</c->
-    <c- k>return</c-> <c- o>*</c-><c- n>new</c-> <c- p>(</c-><c- n>this</c-><c- p>)</c-> <c- n>T</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>};</c->
+    <c- n>std</c-><c- o>::</c-><c- n>destroy_at</c-><c- p>(</c-><c- n>this</c-><c- p>);</c->
+    <c- k>return</c-> <c- o>*</c-><c- n>std</c-><c- o>::</c-><c- n>construct_at</c-><c- p>(</c-><c- n>this</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>src</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
    <p>Let’s have a look at what happens in this function:</p>
    <ul>
     <li data-md>
      <p>The static assertion makes sure we have a relocation constructor. Hence,
-the relocation assignment operator comes with an aliased and an unaliased
+the relocation assignment operator comes with an eliding and a non-eliding
 version ;</p>
     <li data-md>
-     <p>The provided definition will be used for the aliased version of the operator ;</p>
+     <p>The provided definition will be used for the eliding version of the operator ;</p>
     <li data-md>
-     <p>As it is aliased, <code class="highlight"><c- n>src</c-></code> is not an unowned parameter. As a consequence, <code class="highlight"><c- n>reloc</c-> <c- n>src</c-></code> will effectively call the relocation constructor, as it is able to elide 
+     <p>As its relocation is elided, <code class="highlight"><c- n>src</c-></code> is not an unowned parameter. As a consequence, <code class="highlight"><c- n>reloc</c-> <c- n>src</c-></code> will effectively call the relocation constructor, as it is able to elide 
 the destructor call of <code class="highlight"><c- n>src</c-></code> ;</p>
     <li data-md>
-     <p>The <code class="highlight"><c- n>src</c-></code> parameter may be provided by the unaliased version. This <code class="highlight"><c- n>src</c-></code> may be a copy of the actual source object that was originally passed to the
+     <p>The <code class="highlight"><c- n>src</c-></code> parameter may be provided by the non-eliding version. This <code class="highlight"><c- n>src</c-></code> may be a copy of the actual source object that was originally passed to the
 assignment operator in user code. Whether a copy is made depends on whether
-the unaliased version is in charge of destroying its parameter. If not 
-(<code class="highlight"><c- n>src</c-></code> is an <em>unowned parameter</em> with regards to the unaliased operator) then
+the non-eliding version is in charge of destroying its parameter. If not 
+(<code class="highlight"><c- n>src</c-></code> is an <em>unowned parameter</em> with regards to the non-eliding operator) then
 a copy is made, and the destructor of the source object is called at 
 call-site, after the assignment operator returns.</p>
    </ul>
@@ -3380,14 +3474,18 @@ on the source object, it is still possible to perform the "union trick":</p>
 <c- p>}</c->
 </pre>
    <h4 class="heading settled" data-level="5.3.4" id="reloc-assign-invoke"><span class="secno">5.3.4. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-assign-invoke"></a></h4>
+<pre class="language-c++ highlight"><c- n>T</c-> <c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>;</c->
+<c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>y</c-><c- p>;</c->
+</pre>
    <p>Every call to the relocation assignment operator follows normal rules.</p>
-   <p>If the call site detects that an aliased version of the operator is available
-(either because the aliasing happened at declaration level, or because it
+   <p>If the call site detects that an eliding version of the operator is available
+(either because the eliding happened at declaration level, or because it
 happened at definition level and the call site is in the same 
-translation unit as the definition), then which version of the operator
+translation unit as the definition, or through link-time optimization),
+then which version of the operator
 is called is implementation-defined.</p>
-   <p>The nominal case is to call the unaliased version. The implementation is allowed
-to call the aliased version instead, as long as it can elide the call to the 
+   <p>The nominal case is to call the non-eliding version. The implementation is allowed
+to call the eliding version instead, as long as it can elide the call to the 
 destructor on the source object.</p>
    <h3 class="heading settled" data-level="5.4" id="overload-resolution"><span class="secno">5.4. </span><span class="content">Overload resolution</span><a class="self-link" href="#overload-resolution"></a></h3>
    <p>The current overload resolution rules are not suitable for relocation by prvalue.</p>
@@ -3609,6 +3707,10 @@ a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom 
 it is called again. The second return type won’t have a <code class="highlight"><c- n>get_all</c-></code> defined, hence
 the recursion stops and the <em>data member</em> protocol is used.</p>
    <h3 class="heading settled" data-level="5.6" id="abi"><span class="secno">5.6. </span><span class="content">ABI changes</span><a class="self-link" href="#abi"></a></h3>
+   <p>As noted above (<a href="#unowned-parameter">§ 3.3 Unowned parameter</a>), some platforms have a <em>caller-destroy</em> ABI
+where the <em>calling</em> function expects to destroy nontrivial parameters passed by
+value. This poses a problem for functions that wish to relocate from such
+parameters, and a potential ABI break.</p>
    <h4 class="heading settled" data-level="5.6.1" id="callee-destroy-abi"><span class="secno">5.6.1. </span><span class="content">relocate-only function parameters</span><a class="self-link" href="#callee-destroy-abi"></a></h4>
    <p>We propose the following requirement on functions:
 if a function takes a parameter by value, whose type is relocate-only, then
@@ -3698,6 +3800,8 @@ remains visible nonetheless, then no ABI breaks are introduced ;</p>
 </pre>
    <p>Which would be equivalent to <code class="highlight"><c- o>::</c-><c- k>new</c-> <c- p>(</c-><c- n>p</c-><c- p>)</c-> <c- n>T</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>}</c-></code>, except that it may be
 used in constant expression evaluations.</p>
+   <p class="note" role="note"><span>Note:</span> this overload would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signature should be
+altered to use the <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> placeholder.</p>
    <h4 class="heading settled" data-level="6.1.2" id="std-destroy_relocate"><span class="secno">6.1.2. </span><span class="content">std::destroy_relocate</span><a class="self-link" href="#std-destroy_relocate"></a></h4>
    <p>We propose to add the following function in the <code class="highlight"><c- n>std</c-></code> namespace in the <code class="highlight"><c- n>memory</c-></code> header to perform relocation through a pointer:</p>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- o>></c->
@@ -3775,14 +3879,16 @@ remaining elements in the source range is called, as well as the destructor of
 all constructed objects in the output iterator.</p>
    <h3 class="heading settled" data-level="6.2" id="std-utility-header"><span class="secno">6.2. </span><span class="content">Utility header</span><a class="self-link" href="#std-utility-header"></a></h3>
    <h4 class="heading settled" data-level="6.2.1" id="std-relocate"><span class="secno">6.2.1. </span><span class="content">std::relocate</span><a class="self-link" href="#std-relocate"></a></h4>
-   <p>We propose to add the following tag type in the <code class="highlight"><c- n>std</c-></code> namespace in the <code class="highlight"><c- n>utility</c-></code> header (mainly usefull with templates):</p>
+   <p>We propose to add the following tag type in the <code class="highlight"><c- n>std</c-></code> namespace in the <code class="highlight"><c- n>utility</c-></code> header (mainly useful with templates):</p>
 <pre class="language-cpp highlight"><c- k>namespace</c-> <c- nn>std</c->
 <c- p>{</c->
-<c- c1>// tag type to indicate that the parameters are captured by value</c->
+<c- c1>// tag type to indicate that the parameters are passed by value</c->
 <c- k>struct</c-> <c- nc>relocate_t</c-> <c- p>{};</c->
 <c- kr>inline</c-> <c- k>constexpr</c-> <c- n>relocate_t</c-> <c- n>relocate</c-> <c- o>=</c-> <c- p>{};</c->
 <c- p>}</c->
 </pre>
+   <p class="note" role="note"><span>Note:</span> this facility would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signatures should be
+altered to use the <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> placeholder.</p>
    <h4 class="heading settled" data-level="6.2.2" id="std-decompose"><span class="secno">6.2.2. </span><span class="content">std::decompose</span><a class="self-link" href="#std-decompose"></a></h4>
    <p>See description of the function <a href="#structured-reloc-decompose">here</a>.</p>
    <h3 class="heading settled" data-level="6.3" id="stl-relocate-only"><span class="secno">6.3. </span><span class="content">Bring relocate-only type support to the STL</span><a class="self-link" href="#stl-relocate-only"></a></h3>
@@ -3867,15 +3973,64 @@ relocation can only happen from matching types.</p>
 <c- n>any</c-><c- o>&amp;</c-> <c- n>any</c-><c- o>::</c-><c- n>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 </pre>
    <h3 class="heading settled" data-level="6.4" id="lib-change-containers"><span class="secno">6.4. </span><span class="content">Containers</span><a class="self-link" href="#lib-change-containers"></a></h3>
-   <p>All containers should provide a way to insert and remove elements by relocation.</p>
-   <p>Unfortunately existing APIs cannot fulfill this need. They mostly take references
-of some kind as parameter, while relocation requires to pass elements by value.</p>
-   <p>As such we suggest adding overloads to all insertion functions.
-These shall capture the element to insert by value.</p>
-   <p>In addition we add various "pilfer" functions to remove elements from containers.</p>
-   <p>Finally, all containers must provide a relocation constructor and a
+   <p>All containers must provide a relocation constructor and a
 relocation assignment operator.</p>
-   <h4 class="heading settled" data-level="6.4.1" id="std-vector"><span class="secno">6.4.1. </span><span class="content">std::vector</span><a class="self-link" href="#std-vector"></a></h4>
+   <p>Also, in order to fully support relocate-only types, containers should provide
+a way to insert and remove elements by relocation.</p>
+   <h4 class="heading settled" data-level="6.4.1" id="lib-insertion-overloads"><span class="secno">6.4.1. </span><span class="content">Insertion overloads</span><a class="self-link" href="#lib-insertion-overloads"></a></h4>
+   <p>Existing APIs cannot fulfill this need. They all take the element
+to insert as a reference parameter, while relocation requires to pass elements
+by value.</p>
+   <p>As such we suggest adding overloads to all insertion functions, where the
+element to insert is passed by value.</p>
+   <h4 class="heading settled" data-level="6.4.2" id="lib-pilfer-functions"><span class="secno">6.4.2. </span><span class="content">Pilfer functions</span><a class="self-link" href="#lib-pilfer-functions"></a></h4>
+   <p>The STL does not provide any function to erase an element
+from a container and return it as return value.</p>
+   <p>Consider a container of relocate-only types. If an element of that container is to be
+"moved out" of it, it could only happen through relocation as it is
+the only operation supported by the type. Hence the relocated element must
+necessarily be simultaneously erased from the container as its lifetime ended.</p>
+   <p>This is why we propose to add various "pilfer" functions to existing containers,
+that erase an element and return it. The return value will be constructed by
+relocation (likely thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code>).</p>
+   <p>All pilfer functions will operate the same way. First, the return value is constructed
+as if by <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code> from the container element. Second, the container
+adjusts its size and memory to effectively erase the contained element from
+its internal data structures.</p>
+   <p>If an exception is emitted during the first step, then the container proceeds
+to erase its element nonetheless (as if in the second step) and then propagates
+the exception.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
+   <h4 class="heading settled" data-level="6.4.3" id="lib-relocate_out"><span class="secno">6.4.3. </span><span class="content">relocate_out</span><a class="self-link" href="#lib-relocate_out"></a></h4>
+   <p>We further propose to add a <code class="highlight"><c- n>relocate_out</c-></code> function to some containers. <code class="highlight"><c- n>relocate_out</c-></code> takes three iterators as parameters. The first two are iterators
+that belong to the container, and define the range to relocate. The last parameter
+is an output iterator where the relocated elements will be constructed.
+This is similar the <code class="highlight"><c- n>erase</c-></code> functions that take a range of elements, except that
+an extra output iterator is provided.</p>
+   <p><code class="highlight"><c- n>relocate_out</c-></code> is proposed to improve support of relocate-only types. Without this,
+it would not be possible to move a range of relocate-only elements from one container to
+another, without writing complex and inefficient loops calling <code class="highlight"><c- n>pilfer</c-></code> at
+each iteration.</p>
+   <p>Note that there is less need for a <code class="highlight"><c- n>relocate_in</c-></code> function as the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>insert_iterator</c-></code> family will have an overload to enable relocation.</p>
+   <p><code class="highlight"><c- n>relocate_out</c-></code> proceeds as follows:</p>
+   <ol>
+    <li data-md>
+     <p>relocates the elements within range to the output iterator.
+The elements within range inside the container are then in a <em>destructed state</em>.</p>
+    <li data-md>
+     <p>The destructed elements are removed from the container. How this is achieved
+depends on the container. For instance <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>vector</c-></code> may call <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>uninitialized_relocate</c-></code> to move the trailing part of the container
+in the destructed range, and simply reduce its size.</p>
+   </ol>
+   <p>If an exception leaks through the first step, then the second step is run
+to erase from the container all the elements that are in a <em>destructed state</em> (i.e. those which got succesfully relocated plus the one responsible for the exception)
+, and the exception is propagated.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
+   <h4 class="heading settled" data-level="6.4.4" id="std-vector"><span class="secno">6.4.4. </span><span class="content">std::vector</span><a class="self-link" href="#std-vector"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>constexpr</c-> <c- b>void</c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>push_back</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
@@ -3900,7 +4055,7 @@ relocation assignment operator.</p>
 <c- n>OutputIterator</c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
 	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.2" id="std-deque"><span class="secno">6.4.2. </span><span class="content">std::deque</span><a class="self-link" href="#std-deque"></a></h4>
+   <h4 class="heading settled" data-level="6.4.5" id="std-deque"><span class="secno">6.4.5. </span><span class="content">std::deque</span><a class="self-link" href="#std-deque"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>constexpr</c-> <c- b>void</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>push_front</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
@@ -3928,7 +4083,7 @@ relocation assignment operator.</p>
 <c- n>OutputIterator</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
 	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.3" id="std-list"><span class="secno">6.4.3. </span><span class="content">std::list</span><a class="self-link" href="#std-list"></a></h4>
+   <h4 class="heading settled" data-level="6.4.6" id="std-list"><span class="secno">6.4.6. </span><span class="content">std::list</span><a class="self-link" href="#std-list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- b>void</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>push_front</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
@@ -3956,7 +4111,7 @@ relocation assignment operator.</p>
 <c- n>OutputIterator</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
 	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.4" id="std-forward_list"><span class="secno">6.4.4. </span><span class="content">std::forward_list</span><a class="self-link" href="#std-forward_list"></a></h4>
+   <h4 class="heading settled" data-level="6.4.7" id="std-forward_list"><span class="secno">6.4.7. </span><span class="content">std::forward_list</span><a class="self-link" href="#std-forward_list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// inserts a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- n>iterator</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>insert_after</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>,</c->
@@ -3978,7 +4133,7 @@ relocation assignment operator.</p>
 <c- n>OutputIterator</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_after</c-><c- p>(</c->
 	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.5" id="std-set-and-map"><span class="secno">6.4.5. </span><span class="content">set and map containers</span><a class="self-link" href="#std-set-and-map"></a></h4>
+   <h4 class="heading settled" data-level="6.4.8" id="std-set-and-map"><span class="secno">6.4.8. </span><span class="content">set and map containers</span><a class="self-link" href="#std-set-and-map"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// std::set, std::multiset, std::map, std::multimap,</c->
 <c- c1>// std::unordered_set, std::unordered_multiset, std::unordered_map</c->
 <c- c1>// and std::unordered_multimap, all aliased as 'map':</c->
@@ -3988,14 +4143,14 @@ relocation assignment operator.</p>
 <c- c1>// extract the stored value from the container</c->
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>value_type</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>map</c-><c- o>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>position</c-><c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.6" id="std-queues"><span class="secno">6.4.6. </span><span class="content">queues</span><a class="self-link" href="#std-queues"></a></h4>
+   <h4 class="heading settled" data-level="6.4.9" id="std-queues"><span class="secno">6.4.9. </span><span class="content">queues</span><a class="self-link" href="#std-queues"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// for std::stack, std::queue, std::priority_queue, aliased queue below:</c->
 <c- b>void</c-> <c- nf>queue::push</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
 
 <c- c1>// removes the next element from the queue</c->
 <c- n>T</c-> <c- nf>queue::pilfer</c-><c- p>();</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.7" id="std-iterator"><span class="secno">6.4.7. </span><span class="content">Iterator library</span><a class="self-link" href="#std-iterator"></a></h4>
+   <h4 class="heading settled" data-level="6.4.10" id="std-iterator"><span class="secno">6.4.10. </span><span class="content">Iterator library</span><a class="self-link" href="#std-iterator"></a></h4>
    <p>We propose to add the following overloads:</p>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Container</c-><c- o>></c->
 <c- n>back_insert_iterator</c-><c- o>&lt;</c-><c- n>Container</c-><c- o>>&amp;</c-> <c- n>operator</c-><c- o>=</c-><c- p>(</c-> <c- n>typename</c-> <c- n>Container</c-><c- o>::</c-><c- n>value_type</c-> <c- n>value</c-> <c- p>);</c->
@@ -4006,7 +4161,7 @@ relocation assignment operator.</p>
 <c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Container</c-><c- o>></c->
 <c- n>insert_iterator</c-><c- o>&lt;</c-><c- n>Container</c-><c- o>>&amp;</c-> <c- n>operator</c-><c- o>=</c-><c- p>(</c-> <c- n>typename</c-> <c- n>Container</c-><c- o>::</c-><c- n>value_type</c-> <c- n>value</c-> <c- p>);</c->
 </pre>
-   <h4 class="heading settled" data-level="6.4.8" id="std-misc-classes"><span class="secno">6.4.8. </span><span class="content">Other STL classes</span><a class="self-link" href="#std-misc-classes"></a></h4>
+   <h4 class="heading settled" data-level="6.4.11" id="std-misc-classes"><span class="secno">6.4.11. </span><span class="content">Other STL classes</span><a class="self-link" href="#std-misc-classes"></a></h4>
    <p>We propose to add a relocation constructor and a relocation assignment operator
 to all the following classes:</p>
    <ul>
@@ -4137,23 +4292,44 @@ have the same API across all containers to make it easier to write generic code.
    <p>We removed some of the changes we initilialy had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for 
 relocate-only types.</p>
-   <h4 class="heading settled" data-level="7.3.1" id="future-capture-value"><span class="secno">7.3.1. </span><span class="content">Capture by value in template functions</span><a class="self-link" href="#future-capture-value"></a></h4>
-   <p>In the following signature:</p>
-<pre class="language-c+++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-><c- p>...</c-> <c- n>Args</c-><c- o>></c->
-<c- b>void</c-> <c- n>fwd</c-><c- p>(</c-><c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c->
+   <h4 class="heading settled" data-level="7.3.1" id="future-capture-value"><span class="secno">7.3.1. </span><span class="content">More perfect forwarding</span><a class="self-link" href="#future-capture-value"></a></h4>
+   <p>Currently, "perfect forwarding" is built on top of <em>universal references</em>, requiring
+an understanding of reference-collapsing and the use of <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>forward</c-></code>. The present
+proposal improves on this by incidentally replacing <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>forward</c-></code> with <code class="highlight"><c- n>reloc</c-></code>, but
+at the same time the situation is worsened by making relocate-only types viable;
+such types cannot be relocated when passed by universal reference.</p>
+   <table>
+    <tbody>
+     <tr>
+      <th>Before
+      <th>After
+      <th>Future
+     <tr>
+      <td>
+<pre class="highlight" lang="c++"><c- k>template</c-> 
+<class... args><c- b>void</c-> <c- nf>fwd</c-><c- p>(</c-><c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c->
 <c- p>{</c->
-    <c- n>do_stuff</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>forward</c-><c- o>&lt;</c-><c- n>Args</c-><c- o>></c-><c- p>(</c-><c- n>args</c-><c- p>)...);</c->
+    <c- n>do_stuff</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>forward</c-><c- p>(</c-><args><c- n>args</c-><c- p>)...);</c->
 <c- p>}</c->
-</pre>
-   <p>We can call <code class="highlight"><c- n>fwd</c-></code> with both lvalue and rvalue references. However, <code class="highlight"><c- n>fwd</c-></code> cannot
-capture any of its parameters by value, which inhibit relocation.</p>
-   <p>We could have a new syntax that would capture parameters by lvalue, xvalue or prvalue:</p>
-<pre class="language-c+++ highlight"><c- b>void</c-> <c- nf>fwd</c-><c- p>(</c-><c- n>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)...</c-> <c- n>args</c-><c- p>)</c->
+</args></class...></pre>
+      <td>
+<pre class="highlight" lang="c++"><c- k>template</c-> 
+<class... args><c- b>void</c-> <c- nf>fwd</c-><c- p>(</c-><c- n>Args</c-><c- o>&amp;&amp;</c-><c- p>...</c-> <c- n>args</c-><c- p>)</c->
+<c- p>{</c->
+    <c- n>do_stuff</c-><c- p>(</c-><c- n>reloc</c-> <c- n>args</c-><c- p>...);</c->
+<c- p>}</c->
+</class...></pre>
+      <td>
+<pre class="highlight" lang="c++"><c- b>void</c-> <c- nf>fwd</c-><c- p>(</c-><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)...</c-> <c- n>args</c-><c- p>)</c->
 <c- p>{</c->
     <c- n>do_stuff</c-><c- p>(</c-><c- n>reloc</c-> <c- n>args</c-><c- p>...);</c->
 <c- p>}</c->
 </pre>
-   with <code class="highlight"><c- n>reloc</c-></code> effectively perfectly forwarding lvalues, xvalues and prvalues. 
+   </table>
+   <p>By allowing <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> as a <em>placeholder-type-specifier</em> in a <em>parameter-declaration</em> (i.e. relaxing <a href="http://wg21.link/dcl.fct#22.sentence-6">[dcl.fct] paragraph 22</a>)
+it would become possible to deduce each parameter to value, lvalue
+reference or rvalue reference according to whether the argument is of
+value category prvalue, lvalue or xvalue, and forward by relocation.</p>
    <h4 class="heading settled" data-level="7.3.2" id="solve-discarded-reloc-expr"><span class="secno">7.3.2. </span><span class="content">discarded reloc expression</span><a class="self-link" href="#solve-discarded-reloc-expr"></a></h4>
    <p>Initilialy, discarded reloc expressions such as <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> would simply
 translate to a call to the destructor of <code class="highlight"><c- n>obj</c-></code>, while ensuring that the 
@@ -4313,6 +4489,8 @@ moved-from state understanding problem, as well as used-after-move errors
   <dl>
    <dt id="biblio-d1144r6">[D1144R6]
    <dd>Arthur O'Dwyer. <a href="https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html"><cite>Object relocation in terms of move plus destroy</cite></a>. June 2022. URL: <a href="https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html">https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html</a>
+   <dt id="biblio-iife">[IIFE]
+   <dd>Bartlomiej Filipek. <a href="https://www.cppstories.com/2016/11/iife-for-complex-initialization/"><cite>IIFE for Complex Initialization - C++ Stories</cite></a>. October 2016. URL: <a href="https://www.cppstories.com/2016/11/iife-for-complex-initialization/">https://www.cppstories.com/2016/11/iife-for-complex-initialization/</a>
    <dt id="biblio-n4158">[N4158]
    <dd>Pablo Halpern. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf"><cite>Destructive Move</cite></a>. October 2014. URL: <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2014/n4158.pdf</a>
    <dt id="biblio-p0023r0">[P0023R0]
