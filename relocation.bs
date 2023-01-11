@@ -4,7 +4,7 @@ Revision: 1
 Audience: LEWG, EWG
 Status: D
 Group: WG21
-ED: https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.pdf
+ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
 Shortname: DXXXX
 Editor: Sébastien Bini, Stormshield, sebastien.bini@gmail.com
 Markup Shorthands: markdown yes, biblio yes, markup yes
@@ -61,7 +61,8 @@ and in particular, the source object's destructor is not called).
 Another place where C++ falls short is with constant objects. As of today, constant
 objects cannot be moved in C++ as the move constructor cannot steal the resources
 of a constant object. As such, never-modified objects that
-end their life by being moved (via `std::move`) cannot be marked as `const`. 
+end their life by being moved (e.g. via `std::move`, or implicitly by return-value optimization
+where complete elision is not viable) cannot be marked as `const`. 
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.
@@ -78,41 +79,39 @@ and code size gains from functions that use `std::swap`.
 
 # Nomenclature # {#nomenclature}
 
+We refer to the <a href="https://wg21.link/intro.defs">Terms and definitions</a> of the C++ Standard,
+and to nomenclature introduced therein,
+in particular the <a href="https://wg21.link/intro.object">object model</a>.
+In addition, we define:
+
 ## Source and target objects ## {#src-and-target}
 
-Relocation is the act of constructing a new instance by destructively stealing
-the resources of an existing one.
+Relocation is the act of constructing a new instance while ending the lifetime of an existing one.
+This allows destructively stealing its resources, if any.
 
-The new instance is called the *target object*. The existing instance whose resources
+The new instance is called the *target object*.
+The existing instance whose lifetime is ended and whose resources
 are stolen is called the *source object*.
-
-## Subobject ## {#subobject}
-
-We define the subobjects of a type `T` as all bases classes of `T`, 
-and all non-static data members of `T`. 
-Alternatively, if `T` is an array type, then its subobjects are
-its array elements.
-
-## Complete object ## {#complete-object}
-
-We call a *complete object* an object that is not the subobject of another object.
 
 ## Destructed state ## {#dtor-state}
 
-An object is to be in a *destructed state* if:
+An object is to be in a *destructed state* if its lifetime has ended because:
 
-- its destructor was called ;
+- its destructor was called, or ;
 - it was passed to as source object to its relocation constructor.
 
-Unless the object type is trivial (its destructor is a no-op), it is a 
+It is a 
 programming error to call the destructor of an object if it is already in a 
 *destructed state*.
+As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
+this has undefined behavior unless the object type is trivial, in which case its destructor
+or pseudo-destructor is a no-op.
 
 ## Unowned parameter ## {#unowned-parameter}
 
 An object is said to be an *unowned parameter* with regards to a function `f` 
 if the object is a parameter of the function, passed by value, but the
-function `f` has no control over its lifetime.
+function `f` does not have control over its lifetime.
 
 The lifetime of function parameters is implementation-defined in C++, but it 
 is of most importance with relocation. Depending on the function call convention
@@ -154,11 +153,12 @@ mark a type as trivially relocatable.
 The current proposal has its own take on trivial relocatability that does not 
 rely on a class attribute. Instead the trivial relocatability
 trait flows naturally from the new relocation constructor that we introduce. In short:
-if a type has a defaulted relocation constructor in its declaration, and all of 
-its subobjects recursively declare a defaulted relocation constructor, then the type
+if a class type has a relocation constructor that is (explicitly) declared as defaulted or
+is implicitly defined and not defaulted as deleted, and all of 
+its subobjects are trivially relocatable (or fully trivial), then the type
 is trivially relocatable.
 
-This is approach is not prone to errors when compared to a class attribute, 
+This approach is not prone to errors when compared to a class attribute, 
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.
 
@@ -213,6 +213,32 @@ void sink(T);
 void foo(T x) { sink(reloc x); /* x can no longer be used. */ }
 ```
 
+Moreover, the proposed syntax for invoking [[P0023R0]]'s relocator is low-level and
+prone to error:
+
+```c++
+T x;
+alignas(T) char buf[sizeof(T)];
+T* y = new (buf) >>T(x);
+```
+
+Here the lifetime of `x` has been ended as if by a destructor call, but the language
+is not aware of this,
+so firstly the user may erreoneously refer to `x` as if it was within its lifetime,
+and secondly if an object is not recreated in `x` by the time the block
+exits, the behavior is undefined by <a href="https://eel.is/c++draft/basic.life#9">[basic.life]/9</a>.
+Likewise, the language is not aware of the existence of `*y` so will not call its
+destructor; the behavior is then possibly undefined under <a href="https://eel.is/c++draft/basic.life#5">[basic.life]/5</a>.
+In contrast, the present proposal would write the above as:
+
+```c++
+T x;
+T y = reloc x;
+```
+
+Here the use of the `reloc` keyword ensures that the language is aware that the lifetime
+of `x` has finished, so the destructor only of `y` is called at scope exit.
+
 ## N4158: Destructive Move by Pablo Halpern ## {#compare-N4158}
 
 [[N4158]] proposes a customizable function `std::uninitialized_destructive_move`, 
@@ -261,7 +287,9 @@ We believe a language solution is best suited here:
 
 This paper suggests to introduce a new keyword, named `reloc`. `reloc` acts as a
 unary operator that can be applied to named, local, complete objects (in other
-words: local function variables).
+words: function-local non-static variables and, with some restrictions,
+function parameters and
+identifiers introduced through the syntax of structured binding declarations).
 
 `reloc obj` does the following:
 
@@ -299,7 +327,7 @@ If materialized, then the temporary is initialized as follows:
         source object is considered to be in a *destructed state*.
     - otherwise, either the move or copy constructor is called, ignoring the 
         cv-qualifiers on the source object. The destructor of the source object 
-        is then called at the end of the expression evaluation.
+        is then called at the end of the full-expression evaluation.
     - In all cases, the destructor of the source object is no longer called when
         its end of scope is reached.
 - otherwise (the source object is an *unowned parameter*), then the temporary is 
@@ -310,7 +338,7 @@ If materialized, then the temporary is initialized as follows:
 
 If the temporary is not materialized and that the source object is not an 
 *unowned parameter*, then the destructor of the source object is called at the 
-end of the expression evaluation, at the same time as temporary objects are destroyed.
+end of the full-expression evaluation, at the same time as temporary objects are destroyed.
 See [Discarded reloc expressions](#discarded-reloc-expr) for more details on 
 unmaterialized temporaries from `reloc` statements.
 
@@ -329,7 +357,8 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
     move, or copy constructor ;
-- the source object is a structured binding ;
+- the source object is a structured binding (and not an identifier introduced in a
+    <a href="#structured-reloc">structured relocation declaration</a>) ;
 
 For instance:
 ```cpp
@@ -355,6 +384,7 @@ void bar(void)
 void foobar(const std::string& str)
 {
 	foo(reloc str); // OK: str is passed by reference.
+	// Note that the lifetime of the referent of str is unaffected.
 }
 void foobar(std::string* str)
 {
@@ -362,7 +392,7 @@ void foobar(std::string* str)
 }
 void foobar2(std::string* str)
 {
-    foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
+	foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
 } 
 
 class A
@@ -802,6 +832,10 @@ The implicitly-declared or defaulted relocation constructor for class `T` is def
 As for move constructors, a defaulted relocation constructor that is deleted is 
 ignored by overload resolution.
 
+Note: this means that a class with an explictly deleted relocation constructor
+will still be relocated if necessary, but through the move (or copy) constructor
+and destructor.
+
 #### Trivial relocation #### {#trivial-relocation}
 
 A relocating constructor of a class type `X` is trivial if it is not user-provided and
@@ -847,10 +881,6 @@ of `T`, in declaration order:
 When all target subobjects have been constructed, the destructors all of 
 source subobjects are called, in reversed declaration order, omitting those 
 that are already in a *destructed state*.
-
-Alternatively, if synthesized relocation should happen for all subobjects of `T` and 
-that `T` provides a move constructor, then the relocation constructor delegates 
-to the move constructor and calls its destructor on the source object right after.
 
 #### User-provided definition #### {#reloc-ctor-user-definition}
 
@@ -1538,6 +1568,11 @@ the recursion stops and the *data member* protocol is used.
 
 ## ABI changes ## {#abi}
 
+As noted above ([[#unowned-parameter]]), some platforms have a *caller-destroy* ABI
+where the *calling* function expects to destroy nontrivial parameters passed by
+value. This poses a problem for functions that wish to relocate from such
+parameters, and a potential ABI break.
+
 ### relocate-only function parameters ### {#callee-destroy-abi}
 
 We propose the following requirement on functions: 
@@ -1631,6 +1666,10 @@ constexpr T* construct_at( T* p, T src );
 
 Which would be equivalent to `::new (p) T{reloc src}`, except that it may be 
 used in constant expression evaluations.
+
+Note: this overload would be unnecessary if the [[#future-capture-value]]
+direction were to be adopted; instead the existing signature should be
+altered to use the `decltype(auto)` placeholder.
 
 ### std::destroy_relocate ### {#std-destroy_relocate}
 
@@ -1731,16 +1770,20 @@ all constructed objects in the output iterator.
 ### std::relocate ### {#std-relocate}
 
 We propose to add the following tag type in the `std` namespace in the `utility` 
-header (mainly usefull with templates):
+header (mainly useful with templates):
 
 ```cpp
 namespace std
 {
-// tag type to indicate that the parameters are captured by value
+// tag type to indicate that the parameters are passed by value
 struct relocate_t {};
 inline constexpr relocate_t relocate = {};
 }
 ```
+
+Note: this facility would be unnecessary if the [[#future-capture-value]]
+direction were to be adopted; instead the existing signatures should be
+altered to use the `decltype(auto)` placeholder.
 
 ### std::decompose ### {#std-decompose}
 
@@ -1846,18 +1889,80 @@ any& any::operator=(T);
 
 ## Containers ## {#lib-change-containers}
 
-All containers should provide a way to insert and remove elements by relocation.
-
-Unfortunately existing APIs cannot fulfill this need. They mostly take references 
-of some kind as parameter, while relocation requires to pass elements by value.
-
-As such we suggest adding overloads to all insertion functions. 
-These shall capture the element to insert by value.
-
-In addition we add various "pilfer" functions to remove elements from containers.
-
-Finally, all containers must provide a relocation constructor and a 
+All containers must provide a relocation constructor and a
 relocation assignment operator.
+
+Also, in order to fully support relocate-only types, containers should provide
+a way to insert and remove elements by relocation.
+
+### Insertion overloads ### {#lib-insertion-overloads}
+
+Existing APIs cannot fulfill this need. They all take the element
+to insert as a reference parameter, while relocation requires to pass elements
+by value.
+
+As such we suggest adding overloads to all insertion functions, where the
+element to insert is passed by value.
+
+### Pilfer functions ### {#lib-pilfer-functions}
+
+The STL does not provide any function to erase an element
+from a container and return it as return value.
+
+Consider a container of relocate-only types. If an element of that container is to be
+"moved out" of it, it could only happen through relocation as it is
+the only operation supported by the type. Hence the relocated element must
+necessarily be simultaneously erased from the container as its lifetime ended.
+
+This is why we propose to add various "pilfer" functions to existing containers,
+that erase an element and return it. The return value will be constructed by
+relocation (likely thanks to `std::destroy_relocate`).
+
+All pilfer functions will operate the same way. First, the return value is constructed
+as if by `std::destroy_relocate` from the container element. Second, the container
+adjusts its size and memory to effectively erase the contained element from
+its internal data structures.
+
+If an exception is emitted during the first step, then the container proceeds
+to erase its element nonetheless (as if in the second step) and then propagates
+the exception.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then `std::terminate` is called.
+
+### relocate_out ### {#lib-relocate_out}
+
+We further propose to add a `relocate_out` function to some containers.
+`relocate_out` takes three iterators as parameters. The first two are iterators
+that belong to the container, and define the range to relocate. The last parameter
+is an output iterator where the relocated elements will be constructed.
+This is similar the `erase` functions that take a range of elements, except that
+an extra output iterator is provided.
+
+`relocate_out` is proposed to improve support of relocate-only types. Without this,
+it would not be possible to move a range of relocate-only elements from one container to
+another, without writing complex and inefficient loops calling `pilfer` at
+each iteration.
+
+Note that there is less need for a `relocate_in` function as the `std::insert_iterator`
+family will have an overload to enable relocation.
+
+`relocate_out` proceeds as follows:
+
+1. relocates the elements within range to the output iterator.
+    The elements within range inside the container are then in a *destructed state*.
+2. The destructed elements are removed from the container. How this is achieved
+    depends on the container. For instance `std::vector` may call
+    `std::uninitialized_relocate` to move the trailing part of the container
+    in the destructed range, and simply reduce its size.
+
+If an exception leaks through the first step, then the second step is run
+to erase from the container all the elements that are in a *destructed state*
+(i.e. those which got succesfully relocated plus the one responsible for the exception)
+, and the exception is propagated.
+If an exception is emitted during the second step
+(regardless of whether the second step was triggered normally of by an exception
+caught the first step), then `std::terminate` is called.
 
 ### std::vector ### {#std-vector}
 ```cpp
@@ -2127,28 +2232,46 @@ We removed some of the changes we initilialy had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for 
 relocate-only types.
 
-### Capture by value in template functions ### {#future-capture-value}
+### More perfect forwarding ### {#future-capture-value}
 
-In the following signature:
-```c+++
+Currently, "perfect forwarding" is built on top of *universal references*, requiring
+an understanding of reference-collapsing and the use of `std::forward`. The present
+proposal improves on this by incidentally replacing `std::forward` with `reloc`, but
+at the same time the situation is worsened by making relocate-only types viable;
+such types cannot be relocated when passed by universal reference.
+
+<table>
+<tr><th>Before</th><th>After</th><th>Future</th></tr>
+<tr>
+<td><pre lang="c++">
 template <class... Args>
 void fwd(Args&&... args)
 {
     do_stuff(std::forward<Args>(args)...);
 }
-```
-
-We can call `fwd` with both lvalue and rvalue references. However, `fwd` cannot
-capture any of its parameters by value, which inhibit relocation.
-
-We could have a new syntax that would capture parameters by lvalue, xvalue or prvalue:
-```c+++
+</pre></td>
+<td><pre lang="c++">
+template <class... Args>
+void fwd(Args&&... args)
+{
+    do_stuff(reloc args...);
+}
+</pre></td>
+<td><pre lang="c++">
 void fwd(decltype(auto)... args)
 {
     do_stuff(reloc args...);
 }
-```
-with `reloc` effectively perfectly forwarding lvalues, xvalues and prvalues.
+</pre></td>
+</tr>
+</table>
+
+By allowing `decltype(auto)` as a *placeholder-type-specifier* in a
+*parameter-declaration*
+(i.e. relaxing <a href="http://wg21.link/dcl.fct#22.sentence-6">[dcl.fct] paragraph 22</a>)
+it would become possible to deduce each parameter to value, lvalue
+reference or rvalue reference according to whether the argument is of
+value category prvalue, lvalue or xvalue, and forward by relocation.
 
 ### discarded reloc expression ### {#solve-discarded-reloc-expr}
 
