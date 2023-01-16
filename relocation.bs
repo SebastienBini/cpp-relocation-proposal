@@ -1076,10 +1076,11 @@ constructor already took care of that.
 #### Additional parameters #### {#reloc-ctor-try-with-init}
 
 As with copy and move constructors, it is permissible to add additional parameters
-to a relocating constructor, on condition they have a default initializer.
+to a relocation constructor, on condition they have a default initializer.
 
 One case where this can be of use is if the user needs space to store information
-for the duration of the relocating constructor, for a contrived example:
+and/or resources
+for the duration of the relocation constructor, for a contrived example:
 
 ```c++
 class T
