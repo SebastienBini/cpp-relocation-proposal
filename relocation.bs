@@ -866,7 +866,7 @@ A relocation constructor of a class type `X` is trivial if it is not user-provid
 if:
 * `X` has no virtual functions and no virtual base classes, and
 * for each direct base class and direct non-static data member of class type or array thereof,
-the relocation operation (which may be a relocating constructor or
+the relocation operation (which may be a relocation constructor or
 synthesized from copy/move constructor plus destructor) selected
 to relocate that base or member is trivial.
 
