@@ -862,7 +862,7 @@ and destructor.
 
 #### Trivial relocation #### {#trivial-relocation}
 
-A relocation constructor of a class type `X` is trivial if it is not user-provided and
+A relocation constructor of a class type `X` is *trivial* if it is not user-provided and
 if:
 * `X` has no virtual functions and no virtual base classes, and
 * for each direct base class and direct non-static data member of class type or array thereof,
@@ -870,15 +870,15 @@ the relocation operation (which may be a relocation constructor or
 synthesized from copy/move constructor plus destructor) selected
 to relocate that base or member is trivial.
 
-A class type `X` is a trivially relocatable class if:
-* it has a trivial, eligible relocation constructor, or
-* it does not have an eligible relocation constructor, and it is trivially copyable.
+A *trivially relocatable class* is one which:
+* has a trivial, eligible relocation constructor, or
+* does not have an eligible relocation constructor, and is trivially copyable.
 
 Note: *eligible* is defined in
 <a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
 
 Scalar types, trivially relocatable class types, and arrays and cv-qualified versions
-thereof are trivially relocatable.
+thereof are *trivially relocatable*.
 
 Advisement: we also tighten the definition of "trivial class" (and thus "trivial") to
 require that the class in question be trivially relocatable as well as trivially
