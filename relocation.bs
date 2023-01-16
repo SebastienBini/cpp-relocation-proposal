@@ -6,7 +6,9 @@ Status: D
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
 Shortname: DXXXX
-Editor: Sébastien Bini, Stormshield, sebastien.bini@gmail.com
+Editor:
+  Sébastien Bini, Stormshield, sebastien.bini@gmail.com
+  Ed Catmur, ed@catmur.uk
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract:
   This paper proposes several mechanisms to enable real relocation in C++.
@@ -1413,8 +1415,6 @@ Specifically, we would amend [over.ics.rank]/3.2.3 to read:
         ...
         ```
         &#45; end example]
-
-Special thanks to [Edward Catmur](mailto:ecatmur@googlemail.com) for writting that part!
 
 ## Structured relocation ## {#structured-reloc}
 
