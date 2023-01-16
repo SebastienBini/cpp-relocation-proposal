@@ -1072,7 +1072,7 @@ is destructor is called and the exception is propagated.
 Note that the target object needs not to be destroyed as the delegating 
 constructor already took care of that.
 
-#### Additional parameters #### {#reloc-ctor-try-with-init}
+#### Additional parameters #### {#reloc-ctor-additional-params}
 
 As with copy and move constructors, it is permissible to add additional parameters
 to a relocation constructor, on condition they have a default initializer.
