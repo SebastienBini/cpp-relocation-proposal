@@ -772,7 +772,8 @@ This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor 
 from an xvalue, and then the relocation constructor from a prvalue.
 
-Note: a further benefit of this syntax is that it is currently ill-formed, and
+Note: a further benefit of this syntax is that it is currently ill-formed
+<a href="http://wg21.link/class.copy.ctor#5">[class.copy.ctor]/5</a>, and
 thus available for extension.
 
 A point of confusion may be that the syntax implies an infinite regress: the
@@ -866,13 +867,14 @@ A relocation constructor of a class type `X` is *trivial* if it is not user-prov
 if:
 * `X` has no virtual functions and no virtual base classes, and
 * for each direct base class and direct non-static data member of class type or array thereof,
-the relocation operation (which may be a relocation constructor or
-synthesized from copy/move constructor plus destructor) selected
-to relocate that base or member is trivial.
+    the relocation operation (which may be a relocation constructor or
+    synthesized from copy/move constructor plus destructor) selected
+    to relocate that base or member is trivial.
 
 A *trivially relocatable class* is one which:
 * has a trivial, eligible relocation constructor, or
-* does not have an eligible relocation constructor, and is trivially copyable.
+* does not have a relocation constructor (including one that is deleted),
+    and is trivially copyable.
 
 Note: *eligible* is defined in
 <a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
