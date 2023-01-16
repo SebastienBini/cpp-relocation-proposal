@@ -958,7 +958,7 @@ struct T
         1. T::_a is constructed using the move constructor.
         2. T::_b is default constructed.
         3. T::_c is constructed using std::string's relocation constructor, from src._c.
-        4. src._a and src._b are destructed before the constructor body is entered.
+        4. src._b and src._a are destructed (in that order) before the constructor body is entered.
     */
 };
 
