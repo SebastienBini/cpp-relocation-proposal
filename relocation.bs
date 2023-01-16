@@ -896,8 +896,7 @@ on `T`'s type traits.
 
 If `T` is trivially relocatable then the relocation constructor
 effectively (ignoring padding) performs
-a memcpy over its entire memory layout. In `T(T src)`, the relocation constructor
-may be optimized into `memcpy(this, &src, sizeof(T))`.
+a memcpy over its entire memory layout.
 
 Otherwise in the nominal case, the constructor implementation performs
 memberwise relocations.
