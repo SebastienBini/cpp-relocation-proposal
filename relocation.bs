@@ -1,11 +1,11 @@
 <pre class='metadata'>
-Title: prvalue relocation
+Title: Relocating prvalues
 Revision: 1
 Audience: LEWG, EWG
 Status: D
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
-Shortname: DXXXX
+Shortname: D2785
 Editor:
   Sébastien Bini, Stormshield, sebastien.bini@gmail.com
   Ed Catmur, ed@catmur.uk
@@ -14,7 +14,7 @@ Abstract:
   This paper proposes several mechanisms to enable real relocation in C++.
   We cover several topics, such as trivial relocatibility, container optimizations,
   supports for relocate-only types, library changes and the impact of the existing code base.
-Date: 2022-09-14
+Date: 2023-01-30
 </pre>
 
 # Introduction # {#intro}
