@@ -361,6 +361,10 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     move, or copy constructor ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-reloc">structured relocation declaration</a>) ;
+- the source object is a lambda capture from a [non-decomposing lambda](#decomposing-lambda) ;
+
+In particular, the `reloc` statement is well-formed if the source object is a
+member of a function-local anonymous union.
 
 For instance:
 ```cpp
@@ -412,6 +416,10 @@ public:
 
 `reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding 
 any further mention of the name `obj` which would resolve into the relocated object.
+
+If `obj` is a member of an anonymous union, then `reloc` does not prevent from
+name reuse. All members of that union, including the one that got relocated,
+can be reused normally.
 
 Pointers and references that pointed to `obj` become dangling,
 and we don't try to offer any protection against that. We only protect against
@@ -659,6 +667,27 @@ from:
 }
 ```
 In this scenario `goto` is placed in a way that does not trigger the reuse of relocated `var`.
+```cpp
+void relocate_case_15()
+{
+	union { T x; U y; };
+	x = getT();
+	if (sometest(x))
+	{
+		do_smth(reloc x);
+		x = getT(); // well-formed
+	}
+	else
+	{
+		reloc x; // destroy x
+		y = getU();
+		do_smth_else(reloc y); // well-formed
+		x = getT(); // well-formed
+	}
+	do_smth_else(reloc y); // well-formed
+}
+```
+`reloc` does not forbids from reusing the names of anonymous union members.
 
 ### Conditional relocation ### {#conditional-reloc}
 
@@ -1585,7 +1614,7 @@ the return type of `get_all(T)` matches none of the two protocols.
 ##### std::tuple and std::array are implementation-defined ##### {#structured-reloc-tuple}
 
 `std::pair`, `std::tuple`, and `std::array` shall provide their own implementation
-of `get_all`. The return type is implementation-defined.
+of `get_all`. The return type is implementation-defined (may rely on compiler magic).
 
 This allows us to write things like:
 ```c++
@@ -1600,45 +1629,15 @@ void foo(std::vector<T>& v)
 }
 ```
 
-This code works even if `T` is relocate-only (no copy, no move constructor).
-
-##### std::decompose helper function ##### {#structured-reloc-decompose}
-
-We propose to add a new helper function, backed-up by compiler magic: `std::decompose`.
-The aim of this function is to safely decompose an object, passed by value, into
-smaller parts. The parts to retrieve are passed as template parameters.
-
-The template parameters of `std::decompose` are either direct base classes or
-pointers to non-static data members of the object to decompose.
-
-For instance, with 
-`struct Person : public Entry { std::string name; std::unique_ptr<Details> details; };`, we can
-write: `std::decompose<Entry, &Person::details>(reloc person);`
-
-The return value of `std::decompose` is implementation-defined. In practice, it needs
-to be a struct that complies with the *data member* protocol. The returned object
-contains the desired subobjects, constructed by relocation or synthesized relocation.
-The subobjects of the source objects that did not get relocated are destroyed.
-
-Special considerations are taken with regards to who should be allowed to call
-`std::decompose`, and of the risks of inadvertently breaking class invariants.
-We believe the following rules are enough to ensure code-safety:
-
-- if the class has any non-empty potentially overlapping direct subobjects 
-    (i.e., virtual bases or anonymous union members, but not EBO bases and 
-    `[[no_unique_address]]` members), then `std::decompose` is ill-formed ;
-- otherwise, if it has any user-declared (i.e. not declared as defaulted) special
-    member functions (copy, move, relocation constructors and assignment 
-    operators and destructor), 
-    or if it has any private direct subobjects, then `std::decompose` can only 
-    be called by members of the class and its friends ;
-- otherwise, if it has any protected direct subobjects, `std::decompose` can 
-    only be called by members of the class, its friends, and its derived classes ;
-- otherwise, `std::decompose` can be called from anywhere.
+This code works even if `T` is relocate-only.
 
 ##### Possible get_all implementations ##### {#structured-reloc-implem}
 
-Thanks to `std::decompose` and `std::tuple`'s `get_all` we can easily write
+Most of the time, `get_all` functions will want to be [[#decomposing-func]].
+A `get_all` implementation as a decomposing function is provided in the mentioned
+section.
+
+Thanks to `std::tuple`'s `get_all` we can easily write
 a `get_all` implementation for a custom class:
 
 ```c++
@@ -1649,11 +1648,10 @@ public:
     MyType(MyType);
 
     // Possible implementation:
-    static auto get_all(MyType tp)
+    auto get_all(this MyType self)
     {
-        bool const empty = tp._nodes.empty();
-        auto [nm, flg] = std::decompose<&MyType::_name, &MyType::&_flag>(reloc tp);
-        return std::tuple{std::relocate, reloc nm, reloc flg, !empty};
+        return std::tuple{std::relocate, std::move(self._name), self._flag,
+            !self._nodes.empty()};
     }
 
 private:
@@ -1682,6 +1680,148 @@ auto [name, flag, nodes] = reloc tp;
 `MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so 
 it is called again. The second return type won't have a `get_all` defined, hence
 the recursion stops and the *data member* protocol is used.
+
+## Decomposing functions ## {#decomposing-func}
+
+We established that `reloc` can only be used to relocate function-local variables.
+Thus it follows that `reloc` cannot be used on data-members, which is impractical
+when we consider [[#structured-reloc]].
+
+We introduce a special kind of member functions, called *decomposing functions*,
+to enable relocation of data-members. A decomposing function is a member
+function that takes an explicit `this`
+parameter by value and whose name is `reloc`:
+
+```c++
+auto get_all(this T reloc)
+```
+
+### Declaration ### {#decomposing-func-declare}
+
+The decomposing trait of a function may not appear in the declaration if the
+parameter name is omitted or different than `reloc`. The decomposing trait
+is an implementation detail and it does not need to appear in the declaration.
+
+### Ill-formed definition ### {#ill-formed-decomposing-func}
+
+A decomposing function definition is ill-formed if:
+
+- the explicit `this` parameter is not passed by value and is named `reloc` ;
+- or the parameter type is not the same as the class-type which the function is
+    a member of ; <!-- Not sure how to phrase it. I'd like the CRTP case to work,
+    but one musn't be allowed to use decomposing functions to decompose unrelated
+    classes. -->
+- or the class-type has no relocation, move or copy constructors.
+
+That last requirement is consistent with the rule which states that `reloc`
+cannot be used on value parameters that have no such constructors as well.
+It is merely needed to make room for ABI niceties.
+
+### Definition ### {#decomposing-func-definition}
+
+A decomposing function decomposes its `this` parameter into subobjects before
+the function body is entered. It is subject to the following rules:
+
+- The explicit `this` object is inaccessible in the function body ;
+- Upon calling the function, before the function body is entered,
+    `*this` is decomposed into individual objects for each direct base and
+    non-static data member. This decomposition is a no-op: all subobjects of
+    `*this` merely get considered as distinct complete objects. In particular the
+    decomposition does not odr-use any of the copy, move or relocation constructor
+    of the subobjects.
+- Although the lifetime of `*this` ends once decomposed, its destructor is never
+    called ;
+- The direct base objects have no identifiers, and can only be accessed once
+    through the `reloc Base` expression (`Base` being a direct base of the
+    class-type). In particular, base data members are inaccessible in the
+    function body ;
+- The non-static data member objects are identified by their name in the class
+    declaration and can be accessed normally.
+
+Special considerations are taken for overlapping subobjects:
+
+- **EBO bases and** `[[no_unique_address]]` **members:** Obey to the above rules.
+- **Anonymous unions:** Obey to the above rules. `reloc` rules on function-local
+    anonymous union members apply.
+- **Virtual bases (and bases with virtual bases):** are unrelocatable. They cannot
+    be accessed by the `reloc Base` expression (ill-formed).
+
+As subobjects are complete objects, they can be relocated like any function-local
+variable, or are otherwise destructed at scope exit.
+
+#### Examples #### {#decomposing-func-examples}
+
+**A possible get_all implementation with a relocate-only type**
+```c++
+struct Addr
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+
+    auto get_all(this Addr reloc) { return _addr; }
+};
+struct T : Addr
+{
+    std::vector<int> _data;
+
+    auto get_all(this T reloc)
+    {
+        auto const [addr] = reloc Addr;
+        return std::pair{reloc addr, reloc _data};
+    }
+};
+```
+
+**Curiously Recurring Template Pattern**
+```c++
+template <class Derived>
+struct ExtractAddr
+{
+    auto get_addr(this Derived reloc) { return _addr; }
+};
+struct A : ExtractAddr<A>
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+    // [...]
+};
+struct B : ExtractAddr<B>
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+    // [...]
+};
+```
+
+**A putative unique_ptr::release (not proposed)**
+```c++
+T* unique_ptr<T,D>::release(this unique_ptr reloc)
+{
+    /* the "owned" pointer is loose at this point because of the decomposition */
+    return _ptr;
+}
+```
+
+### Decomposing lambda ### {#decomposing-lambda}
+
+A decomposing lambda is a lambda function that takes an explicit `this`
+parameter by value and whose name is `reloc`.
+
+A decomposing lambda is ill-formed if the type of the `this`
+parameter is not passed by value, or the deduced parameter type is not the same
+as the lambda.
+
+A decomposing lambda acts as a decomposing function: when called, before the
+lambda body is entered, all the lambda captures are considered as distinct
+complete objects. As such, the lambda captures can be relocated.
+
+```c++
+void foo(reloc_only_t);
+
+reloc_only_t var;
+auto func = [v = reloc var](this auto reloc)
+{
+    foo(reloc v);
+};
+(reloc func)(); // well-formed
+```
 
 ## ABI changes ## {#abi}
 
@@ -1767,6 +1907,33 @@ This may introduce an ABI break, detectable at link-time (aliased symbols missin
 - if the aliasing now happens at definition level, but the aliased operator symbol
     remains visible nonetheless, then no ABI breaks are introduced ;
 - otherwise the ABI break happens, but remains detectable at link-time.
+
+### Decomposing functions ### {#decomposing-func-abi}
+
+A decomposing function has an extra ABI requirement: the function must be in
+charge of the lifetime of its explicit `this` parameter. How this requirement is
+satisfied is up to compiler vendors.
+
+Some tricks are possible for ABIs that do not natively meet this requirement.
+An attractive solution is to proceed as with the relocation assignment operator;
+when a decomposing function is defined, two functions are emitted:
+
+- an eliding one: this function takes the explicit `this` parameter as if by reference
+    and is in charge of its lifetime. Its body is the body of the decomposing
+    function provided by the user.
+- a non-eliding one:
+    - If the explicit `this` parameter is not an *unowned parameter*, then it simply calls
+        the eliding one, passing the `this` parameter object as if by reference.
+    - Otherwise it makes a temporary copy of the source object, and calls the
+        eliding one, passing the copy as if by reference. Upon function exit,
+        the copy is not destroyed as it is already in a *destructed state*.
+    - In all cases, it forwards as return value whatever the decomposing function
+        returns.
+
+The attentive reader will have noticed that a program with a decomposing function
+is ill-formed if the class-type does not provide a relocation, move or copy
+constructor. Hence, the non-eliding function is able to perform a copy if necessary
+without adding extra requirements on the class-type.
 
 # Proposed library changes # {#proposed-lib-changes}
 
@@ -1901,10 +2068,6 @@ inline constexpr relocate_t relocate = {};
 Note: this facility would be unnecessary if the [[#future-capture-value]]
 direction were to be adopted; instead the existing signatures should be
 altered to use the `decltype(auto)` placeholder.
-
-### std::decompose ### {#std-decompose}
-
-See description of the function [here](#structured-reloc-decompose).
 
 ## Bring relocate-only type support to the STL ## {#stl-relocate-only}
 
