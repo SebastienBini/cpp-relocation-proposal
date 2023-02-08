@@ -13,7 +13,7 @@ if (p1.second and p2.second) {
 
 Naturally, this should hold for all aggregate class types, not only those which participate in the tuple-like protocol;
 however, it should be restricted to ensure that destructors (of the complete-object class type) are not bypassed and
-that any invariants holding between the data member relocated from and other data members are not broken. This is
+that any invariants holding between the data member relocated from and other data members are not broken. This can be
 accomplished by requiring that every class type whose subobject is relocated from has no user-declared special member
 function.
 
@@ -23,7 +23,7 @@ binding form an adequate parallel.
 Finally, as well as relocating data member and array element subobjects, the facility should also work for base class
 subobjects.
 
-In conclusion, the rule that is to be introduced is, roughly: when lvalue-to-rvalue conversion is performed on an
+Considering all this, we adjust lvalue-to-rvalue conversion thus: when lvalue-to-rvalue conversion is performed on an
 xvalue, if that xvalue is a subobject of a materialized temporary object, and if reference binding to that xvalue would
 extend the lifetime of that temporary object, and if every containing object of that xvalue has no user-declared
 destructor, copy/move/relocation constructor, or copy/move/relocation assignment operator, then said xvalue subobject is
@@ -48,3 +48,28 @@ int main() {
 In this example, `&a1 + 1` is a past-the-end pointer of the implicit singular array of which every object not explicitly
 an array element is a member. It is *not* a pointer to the destroyed `as[2]`, since `a1` is not a subobject of the
 (destroyed) array `as`, even though it may (if elision occurred) have the same address as the destroyed `as[1]`.
+
+There is an open question of what to do if some other subobject of the immediate containing object of the xvalue
+subobject is inaccessible (or has a destructor inaccessible) from the context performing the lvalue-to-rvalue
+conversion. We see three options:
+
+1. Make the code ill-formed;
+2. Do not treat the xvalue as a prvalue, instead performing construction of the destination rvalue from the xvalue;
+3. Proceed anyway.
+
+The first option could break existing code, so should be avoided. The second option seems fragile and unpredictable, so
+we favor the third option. The defensible aspect is that the containing objects by implication all have trivial
+destructors, with the full-object having an accessible trivial destructor, so the sequence of destruction is
+effectively performed by the context anyway. Example:
+
+```c++
+struct A { private: A(); ~A(); friend struct X; };
+struct X {
+    A a = {};
+    int i = 1;
+};
+int main() {
+    X x;
+    int i = (reloc x).i;  // OK; calls x.a.~A().
+}
+```
