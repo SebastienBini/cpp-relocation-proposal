@@ -1685,7 +1685,19 @@ the recursion stops and the *data member* protocol is used.
 
 We established that `reloc` can only be used to relocate function-local variables.
 Thus it follows that `reloc` cannot be used on data-members, which is impractical
-when we consider [[#structured-reloc]].
+when we consider [[#structured-reloc]] and user-defined `get_all` functions:
+
+```c++
+struct MyClass
+{
+    gsl::non_null<std::unique_ptr<int>> _reloc_only;
+
+    auto get_all(this MyClass self)
+    {
+        return reloc _reloc_only; // ill-formed, cannot relocate data members
+    }
+}
+```
 
 We introduce a special kind of member functions, called *decomposing functions*,
 to enable relocation of data-members. A decomposing function is a member
@@ -1702,20 +1714,9 @@ The decomposing trait of a function may not appear in the declaration if the
 parameter name is omitted or different than `reloc`. The decomposing trait
 is an implementation detail and it does not need to appear in the declaration.
 
-### Ill-formed definition ### {#ill-formed-decomposing-func}
-
-A decomposing function definition is ill-formed if:
-
-- the explicit `this` parameter is not passed by value and is named `reloc` ;
-- or the parameter type is not the same as the class-type which the function is
-    a member of ; <!-- Not sure how to phrase it. I'd like the CRTP case to work,
-    but one musn't be allowed to use decomposing functions to decompose unrelated
-    classes. -->
-- or the class-type has no relocation, move or copy constructors.
-
-That last requirement is consistent with the rule which states that `reloc`
-cannot be used on value parameters that have no such constructors as well.
-It is merely needed to make room for ABI niceties.
+A decomposing function does not bear any constraints on the number and types of
+parameters, except that the first one must be an explicit this parameter passed
+by value.
 
 ### Definition ### {#decomposing-func-definition}
 
@@ -1746,8 +1747,8 @@ Special considerations are taken for overlapping subobjects:
 - **Virtual bases (and bases with virtual bases):** are unrelocatable. They cannot
     be accessed by the `reloc Base` expression (ill-formed).
 
-As subobjects are complete objects, they can be relocated like any function-local
-variable, or are otherwise destructed at scope exit.
+As subobjects got turned into complete objects, they can be relocated like any
+function-local variable, or their destructor is otherwise called at scope exit.
 
 #### Examples #### {#decomposing-func-examples}
 
@@ -1799,14 +1800,80 @@ T* unique_ptr<T,D>::release(this unique_ptr reloc)
 }
 ```
 
+### Ill-formed definition ### {#ill-formed-decomposing-func}
+
+A decomposing function definition is ill-formed if:
+
+- the explicit `this` parameter is not passed by value and is named `reloc` ;
+- or the decomposing function is not a member function.
+
+We build upon these rules in the sections below, where we add two ill-formedness
+criteria.
+
+#### Aberrations #### {#decomposing-func-aberrations}
+
+We don't want users to decompose types that never supported relocation in the
+first place. This could be used to extract private data-members of a class,
+and bypass a class destructor altogether, with disastrous consequences.
+
+```c++
+struct Extractor
+{
+    template <class T>
+    auto extract_ptr(this std::shared_ptr<T> reloc) { return _ptr; }
+}
+```
+Or even more disastrous:
+```c++
+struct Sink
+{
+    template <class T>
+    void sink(this T reloc) {} // prevent dtor call
+}
+```
+
+Those snippets are quite dangerous and must not be allowed to be valid. Hence we
+make them ill-formed thanks to the rule defined as follows:
+
+Let a decomposing function be defined in a class-type `B`, which takes
+an explicit `this` parameter of type `T`. The definition is ill-formed if
+`T` is not the same as `B` or does not derive from `B`.
+
+```c++
+struct GetFirst
+{
+    template <class T>
+    /* ill-formed unless std::is_base_of_v<GetFirst, T> is true */
+    auto get_first(this T reloc) { return first; }
+};
+```
+
+Note that if `B` is an inaccessible base of `T` in a context of the
+decomposition function call, then the program is ill-formed because of existing
+rules: the decomposing function is inaccessible.
+
+#### Immovable types #### {#decomposing-func-immovable}
+
+A decomposing function definition is ill-formed if the parameter type has no
+relocation constructor, no move constructor and no copy constructor
+(none of the three).
+
+This is consistent with the rule which states that `reloc`
+cannot be used on value parameters that have no such constructors as well.
+It is merely needed to make room for ABI niceties (see [[#decomposing-func-abi]]).
+
 ### Decomposing lambda ### {#decomposing-lambda}
 
 A decomposing lambda is a lambda function that takes an explicit `this`
 parameter by value and whose name is `reloc`.
 
-A decomposing lambda is ill-formed if the type of the `this`
-parameter is not passed by value, or the deduced parameter type is not the same
-as the lambda.
+As for decomposing functions, a decomposing lambda is ill-formed if:
+
+- the type of the `this` parameter is not passed by value ;
+- or the parameter type is not the same as, or does not derive from
+    the lambda (see [[#decomposing-func-aberrations]]) ;
+- or the parameter type has no relocation, move and copy constructors
+    (none of the three).
 
 A decomposing lambda acts as a decomposing function: when called, before the
 lambda body is entered, all the lambda captures are considered as distinct
