@@ -1694,7 +1694,7 @@ struct MyClass
 
     auto get_all(this MyClass self)
     {
-        return reloc _reloc_only; // ill-formed, cannot relocate data members
+        return reloc self._reloc_only; // ill-formed, cannot relocate data members
     }
 }
 ```
@@ -1737,7 +1737,10 @@ the function body is entered. It is subject to the following rules:
     class-type). In particular, base data members are inaccessible in the
     function body ;
 - The non-static data member objects are identified by their name in the class
-    declaration and can be accessed normally.
+    declaration and can be accessed normally. If disambiguation is necessary then
+    the data members can be accessed with the syntax `T::datamember`, `T` being
+    the type of the `this` parameter, and `datamember` being the name of the
+    data member.
 
 Special considerations are taken for overlapping subobjects:
 
@@ -1777,7 +1780,7 @@ struct T : Addr
 template <class Derived>
 struct ExtractAddr
 {
-    auto get_addr(this Derived reloc) { return _addr; }
+    auto get_addr(this Derived reloc) { return Derived::_addr; }
 };
 struct A : ExtractAddr<A>
 {
@@ -1802,65 +1805,109 @@ T* unique_ptr<T,D>::release(this unique_ptr reloc)
 
 ### Ill-formed definition ### {#ill-formed-decomposing-func}
 
-A decomposing function definition is ill-formed if:
-
-- the explicit `this` parameter is not passed by value and is named `reloc` ;
-- or the decomposing function is not a member function.
-
-We build upon these rules in the sections below, where we add two ill-formedness
-criteria.
+If not forbidden, there are several ways where decomposition functions can be
+misused and lead to problems. In this section we will see those cases and 
+they will serve as motivation to the ill-formedness criteria.
 
 #### Aberrations #### {#decomposing-func-aberrations}
 
-We don't want users to decompose types that never supported relocation in the
-first place. This could be used to extract private data-members of a class,
-and bypass a class destructor altogether, with disastrous consequences.
+As mentioned in [[P0847R6]], in the [pathological cases section](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases), 
+code like this is possible:
 
 ```c++
-struct Extractor
+struct A
 {
     template <class T>
-    auto extract_ptr(this std::shared_ptr<T> reloc) { return _ptr; }
-}
+    auto foo(this T self);
+};
+
+auto func = &A::foo<std::unique_ptr<int>>;
+func(std::make_unique<int>(0));
 ```
-Or even more disastrous:
+
+This remains acceptable in the context of P0847R6, but may lead to dangerous code
+with decomposing functions. We don't want the following code to be valid:
+
 ```c++
 struct Sink
 {
     template <class T>
-    void sink(this T reloc) {} // prevent dtor call
-}
-```
-
-Those snippets are quite dangerous and must not be allowed to be valid. Hence we
-make them ill-formed thanks to the rule defined as follows:
-
-Let a decomposing function be defined in a class-type `B`, which takes
-an explicit `this` parameter of type `T`. The definition is ill-formed if
-`T` is not the same as `B` or does not derive from `B`.
-
-```c++
-struct GetFirst
-{
-    template <class T>
-    /* ill-formed unless std::is_base_of_v<GetFirst, T> is true */
-    auto get_first(this T reloc) { return first; }
+    void sink(this T reloc) {} /* prevent dtor call, 
+        although each subobject is destroyed individually */
 };
+
+auto func = &Sink::sink<std::unique_ptr<int>>;
+func(std::make_unique<int>(0)); // leak
 ```
 
-Note that if `B` is an inaccessible base of `T` in a context of the
-decomposition function call, then the program is ill-formed because of existing
-rules: the decomposing function is inaccessible.
+We don't want users to decompose types that were never designed to support
+decomposition. Ideally, a decomposing function should be defined for the same
+source object type it is declared in (i.e. the explicit `this` parameter type should
+match the class-type which the function is a member of).
+However we feel this is too
+restrictive, especially when considering template code and the CRTP pattern.
 
-#### Immovable types #### {#decomposing-func-immovable}
+Hence we require the source object type to be the same as or to inherit from 
+the class-type the decomposing function is a member of,
+or else the definition of the decomposing function is ill-formed.
 
-A decomposing function definition is ill-formed if the parameter type has no
-relocation constructor, no move constructor and no copy constructor
-(none of the three).
+#### Accessibility #### {#decomposing-func-accessibility}
 
-This is consistent with the rule which states that `reloc`
-cannot be used on value parameters that have no such constructors as well.
-It is merely needed to make room for ABI niceties (see [[#decomposing-func-abi]]).
+Let's imagine for a moment that the source object has inaccessible subobjects
+from the context of the decomposing function.
+
+Upon entering the function, all subobjects are promoted to complete objects.
+As we don't want to break accessibility rules, we may forbid access to the objects
+that previously were inaccessible subobjects.
+
+However this is not necessary. If they are never accessed, then it means that
+their destructor will be called when the function exits. Calling the destructor
+requires them to be accessible in the first place.
+
+Hence, we further mandate that all subobjects of the source object be accessible
+from the context of the decomposing function.
+
+Note that this condition is fulfilled in the nominal case, where the decomposing
+function is merely a member function of the source object, and hence is granted
+access to all of its subobjects.
+
+#### ABI requirements #### {#decomposing-func-immovable}
+
+The decomposing trait does not appear in the function declaration, and as such
+a decomposing function does not have any specific ABI. In particular it shares
+the same ABI as any explicit `this` member function where the `this` paramater is
+passed by value.
+
+Some ABIs may not natively be compatible with decomposing functions, especially
+if the ABI specifies that the destruction of the source object happens at the
+call site and not in the decomposing function.
+
+To support such cases, we need to allow implementors to silently and transparently
+make a temporary copy of the source object, and pass that temporary copy
+to the decomposing function (see [[#decomposing-func-abi]]).
+
+This requires the source object to have at least one of the copy, move or 
+relocation constructor.
+
+Note that, for regular functions, function parameters passed by value can only
+be passed to `reloc` if they provide at least one of the three constructors.
+This requirement follows the same spirit.
+
+#### Ill-formedness criteria #### {#decomposing-func-ill-formedness-criteria}
+
+Now that we have seen motivating cases, let us summarize the ill-formedness
+criteria for a decomposing function.
+Let a decomposing function be defined in a class-type `T`, which takes
+an explicit `this` parameter (the source object) of type `S`.
+The definition is ill-formed if:
+
+- the explicit `this` parameter is not passed by value and is named `reloc` ;
+- or the decomposing function is not a member function ;
+- or `S` has any inaccessible subobjects with regards to the decomposing
+    function ;
+- or `S` is not the same as `T`, and does not derive from `T` ;
+- or `S` has no accessible relocation constructor, no accessible move 
+    constructor and no accessible copy constructor (none of the three).
 
 ### Decomposing lambda ### {#decomposing-lambda}
 
@@ -1993,7 +2040,8 @@ when a decomposing function is defined, two functions are emitted:
         the eliding one, passing the `this` parameter object as if by reference.
     - Otherwise it makes a temporary copy of the source object, and calls the
         eliding one, passing the copy as if by reference. Upon function exit,
-        the copy is not destroyed as it is already in a *destructed state*.
+        the destructor of the copy is not called as its lifetime already ended
+        when it was passed the eliding function.
     - In all cases, it forwards as return value whatever the decomposing function
         returns.
 
@@ -2731,6 +2779,12 @@ moved-from state understanding problem, as well as used-after-move errors
     "title": "Valueless Variants Considered Harmful",
     "href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html",
     "date": "March 2016"
+  },
+  "P0847R6": {
+    "title": "Deducing this",
+    "authors": [ "Gašper Ažman", "Sy Brand", "Ben Deane", "Barry Revzin" ],
+    "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html",
+    "date": "January 2021"
   },
   "IIFE": {
     "authors": [ "Bartlomiej Filipek" ],
