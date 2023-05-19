@@ -1487,8 +1487,8 @@ relocation from a structured binding. This is motivated by:
 
 - The need to make APIs that support relocate-only types. How would we write an 
     API to extract an item at an arbitrary position from a vector? We propose the 
-    following API: `std::pair<T, iterator> vector<T>::pilfer(const_iterator);` 
-    (returns next valid iterator and relocated vector element) as it is consistent 
+    following API: `std::pair<T, iterator> vector<T>::erase(std::relocate_t, const_iterator);`
+    (returns relocated vector element and next valid iterator) as it is consistent
     with other vector APIs and complies with the 
     [core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out). 
     Then, what can users do with the returned object as it lies in a pair, and 
@@ -1592,9 +1592,9 @@ This allows us to write things like:
 void bar(T);
 void foo(std::vector<T>& v)
 {
-    /* pilfer removes a vector element at given iterator,
+    /* erase(std::relocate_t) removes a vector element at given iterator,
      * returns a pair with next valid iterator and relocated vector element. */
-    auto [val, it] = v.pilfer(v.begin() + 1); /* calls get_all behind 
+    auto [val, it] = v.erase(std::relocate, v.begin() + 1); /* calls get_all behind
         the scene. */
     bar(reloc val); /* can call reloc on val as it is not a structured binding */
 }
@@ -1815,7 +1815,7 @@ from a memory address. For instance, extracting a value out of an optional just
 becomes:
 
 ```c++
-T optional<T>::pilfer()
+T optional<T>::extract()
 {
     _has_value = false;
     return std::destroy_relocate(_value_addr()); 
@@ -1961,7 +1961,7 @@ optional& optional<T>::operator=(T val);
  * \throws std::bad_optional_access if the optional did not contain any value.
  */
 template <class T>
-T optional<T>::pilfer();
+T optional<T>::extract();
 ```
 
 ### std::variant ### {#std-variant}
@@ -2021,7 +2021,7 @@ by value.
 As such we suggest adding overloads to all insertion functions, where the
 element to insert is passed by value.
 
-### Pilfer functions ### {#lib-pilfer-functions}
+### Extracting functions ### {#lib-extract-functions}
 
 The STL does not provide any function to erase an element
 from a container and return it as return value.
@@ -2031,11 +2031,13 @@ Consider a container of relocate-only types. If an element of that container is 
 the only operation supported by the type. Hence the relocated element must
 necessarily be simultaneously erased from the container as its lifetime ended.
 
-This is why we propose to add various "pilfer" functions to existing containers,
-that erase an element and return it. The return value will be constructed by
+This is why we propose to add various "value-extracting" functions to existing
+containers, which erase an element and return it. Those functions are overloads
+over existing `pop*()` and `erase()` functions, but they take the `std::relocate_t`
+[tag type](#std-relocate) as first parameter. The return value will be constructed by
 relocation (likely thanks to `std::destroy_relocate`).
 
-All pilfer functions will operate the same way. First, the return value is constructed
+All extracting functions will operate the same way. First, the return value is constructed
 as if by `std::destroy_relocate` from the container element. Second, the container
 adjusts its size and memory to effectively erase the contained element from
 its internal data structures.
@@ -2045,21 +2047,25 @@ to erase its element nonetheless (as if in the second step) and then propagates
 the exception.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then `std::terminate` is called.
+caught during the first step), then `std::terminate` is called.
 
 ### relocate_out ### {#lib-relocate_out}
 
 We further propose to add a `relocate_out` function to some containers.
-`relocate_out` takes three iterators as parameters. The first two are iterators
-that belong to the container, and define the range to relocate. The last parameter
+`relocate_out` takes three iterators as parameters. The first two iterators
+belong to the container and define the range to relocate. The last parameter
 is an output iterator where the relocated elements will be constructed.
 This is similar the `erase` functions that take a range of elements, except that
 an extra output iterator is provided.
+It returns a pair of iterators, whose first iterator is the next valid iterator
+in the container (similar to what `erase` returns), and whose second iterator
+is the output iterator, past the last element copied (similar to what `std::copy`
+returns).
 
 `relocate_out` is proposed to improve support of relocate-only types. Without this,
 it would not be possible to move a range of relocate-only elements from one container to
-another, without writing complex and inefficient loops calling `pilfer` at
-each iteration.
+another, without writing complex and inefficient loops calling some value-extracting
+function at each iteration.
 
 Note that there is less need for a `relocate_in` function as the `std::insert_iterator`
 family will have an overload to enable relocation.
@@ -2079,7 +2085,7 @@ to erase from the container all the elements that are in a *destructed state*
 , and the exception is propagated.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then `std::terminate` is called.
+caught in the first step), then `std::terminate` is called.
 
 ### std::vector ### {#std-vector}
 ```cpp
@@ -2093,19 +2099,19 @@ iterator vector<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the vector and returns it
 template <class T, class Alloc>
-T vector<T, Alloc>::pilfer_back();
+T vector<T, Alloc>::pop_back(std::relocate_t);
 
 // removes the item from the vector and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> vector<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> vector<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out, 
 // as if by doing iteratively: *out++ = std::destroy_relocate(&*src++);
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator vector<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> vector<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::deque ### {#std-deque}
@@ -2122,20 +2128,20 @@ iterator deque<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::pilfer_back();
+T deque<T, Alloc>::pop_back(std::relocate_t);
 // removes the first item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::pilfer_front();
+T deque<T, Alloc>::pop_front(std::relocate_t);
 // removes the item from the queue and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> deque<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> deque<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator deque<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> deque<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::list ### {#std-list}
@@ -2152,20 +2158,20 @@ iterator list<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::pilfer_back();
+T list<T, Alloc>::pop_back(std::relocate_t);
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::pilfer_front();
+T list<T, Alloc>::pop_front(std::relocate_t);
 // removes the item from the list and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> list<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> list<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator list<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> list<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::forward_list ### {#std-forward_list}
@@ -2179,29 +2185,30 @@ void forward_list<T, Alloc>::push_front(T value);
 
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T forward_list<T, Alloc>::pilfer_front();
+T forward_list<T, Alloc>::pop_front(std::relocate_t);
 // removes the item after pos from the list and returns it with the iterator following pos
 template <class T, class Alloc>
-std::pair<T, iterator> forward_list<T, Alloc>::pilfer_after(const_iterator pos);
+std::pair<T, iterator> forward_list<T, Alloc>::erase_after(std::relocate_t, const_iterator pos);
 
 // relocates items in ]from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
 OutputIterator forward_list<T, Alloc>::relocate_after(
-	iterator from, iterator to, OutputIterator out);
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### set and map containers ### {#std-set-and-map}
 ```cpp
 // std::set, std::multiset, std::map, std::multimap,
+// std::flat_set, std::flat_multiset, std::flat_map, std::flat_multimap,
 // std::unordered_set, std::unordered_multiset, std::unordered_map
 // and std::unordered_multimap, all aliased as 'map':
 std::pair<iterator, bool> map::insert(value_type value);
 iterator map::insert(const_iterator hint, value_type value);
 
 // extract the stored value from the container
-std::pair<value_type, iterator> map::pilfer(const_iterator position);
+std::pair<value_type, iterator> map::erase(std::relocate_t, const_iterator position);
 ```
 
 ### queues ### {#std-queues}
@@ -2209,8 +2216,9 @@ std::pair<value_type, iterator> map::pilfer(const_iterator position);
 // for std::stack, std::queue, std::priority_queue, aliased queue below:
 void queue::push(T value);
 
-// removes the next element from the queue
-T queue::pilfer();
+// removes the next element from the queue, calling the appropriate pop function
+// on the underlying container with std::relocate as parameter
+T queue::pop(std::relocate_t);
 ```
 
 ### Iterator library ### {#std-iterator}
@@ -2337,11 +2345,49 @@ The impact seems to be minimal, where only a few files might need to be fixed
 here and there. To smooth the transition, compilers may also warn that existing 
 code will break as `reloc` will become a keyword in a next C++ version.
 
-## Why name the extract functions pilfer and not extract in STL containers? ## {#pilfer-vs-extract}
+## STL API changes ## {#stl-api-changes}
 
-`std::set` and `std::map` already have their `extract` function, which don't do 
-exactly what we want, so that's why we introduced `pilfer` instead. We prefer to 
-have the same API across all containers to make it easier to write generic code.
+### Why add overload to the value-extracting functions in STL containers? ### {#value-extract-api-choice}
+
+In the original draft, all value-extracting functions were named `pilfer` (or `pilfer_back`
+and so on). However we felt it was better to reuse the function names that already
+exist.
+
+We thought of simply changing the return value of existing functions: `vector::pop_back()`
+would return the erased value. C++17 already changed the return value of `vector::emplace_back`.
+It caused no ABI issue (the return type of template member function is part of the mangling),
+and no performance hit (as template functions are inlined,
+when the reference returned from `vector::emplace_back` is not used, then the
+instructions that return the reference are not emitted).
+
+We could have done the same with `vector::pop_back()`. However, doing so would require
+that the type stored in the container to have one of the three constructors
+(relocation, move or copy). This is a requirement that doesn't exist today
+for node-based containers (`std::list`, `std::set` etc...).
+To state it otherwise, making an `T list<T>::pop_back()` will add unwanted
+constraints on what can be stored in a list.
+
+In order to preserve a consistent API across all STL containers, we opted in favor
+of `pop(std::relocate_t)` overloads.
+
+### Why name the value-extracting function of optional extract? ### {#optional-extract-api-choice}
+
+As mentioned we introduce `T optional<T>::extract()` to relocate a value out of
+the optional.
+
+Alternatively, this function could have been named `pop` if
+we want to stay consistent with what's done with containers.
+
+However a container `pop()` function doesn't return anything, only the
+`pop(std::relocate_t)` overload does.
+
+We prefer `extract()` over `pop(std::relocate_t)` for `std::optional`, as it
+better conveys the intent, is easier to write, and `std::optional` is not after
+all a container.
+
+Another alternative would be to name all value-extracting functions with a new
+name, and have it in common with `std::optional` (like `pilfer()`), however we
+prefer to stick with existing API for containers.
 
 ## Future directions ## {#future-directions}
 
