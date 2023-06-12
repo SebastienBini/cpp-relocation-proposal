@@ -5,7 +5,7 @@ Audience: LEWG, EWG
 Status: D
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
-Shortname: P2785
+Shortname: D2785
 Editor:
   Sébastien Bini, Stormshield, sebastien.bini@gmail.com
   Ed Catmur, ed@catmur.uk
