@@ -2,10 +2,10 @@
 Title: Relocating prvalues
 Revision: 1
 Audience: LEWG, EWG
-Status: D
+Status: P
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
-Shortname: D2785
+Shortname: P2785
 Editor:
   Sébastien Bini, Stormshield, sebastien.bini@gmail.com
   Ed Catmur, ed@catmur.uk
