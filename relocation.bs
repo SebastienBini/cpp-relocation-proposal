@@ -1,8 +1,8 @@
 <pre class='metadata'>
 Title: Relocating prvalues
-Revision: 1
+Revision: 2
 Audience: LEWG, EWG
-Status: P
+Status: D
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
 Shortname: P2785
