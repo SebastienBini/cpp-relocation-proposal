@@ -2,7 +2,7 @@
  <head>
   <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
   <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
-  <title>DXXXXR1: prvalue relocation</title>
+  <title>D2785R1: Relocating prvalues</title>
 <style data-fill-with="stylesheet">/******************************************************************************
  *                   Style sheet for the W3C specifications                   *
  *
@@ -1238,14 +1238,15 @@ Possible extra rowspan handling
 			grid-column: 2;
 			width: auto;
 			margin-right: 1rem;
+			border-bottom: 3px solid transparent;
+			margin-bottom: -3px;
 		}
 		#toc .content:hover,
 		#toc .content:focus {
 			background: rgba(75%, 75%, 75%, .25);
 			background: var(--a-hover-bg);
-			border-bottom: 3px solid #054572;
-			border-bottom: 3px solid var(--toclink-underline);
-			margin-bottom: -3px;
+			border-bottom-color: #054572;
+			border-bottom-color: var(--toclink-underline);
 		}
 		#toc li li li .content {
 			margin-left: 1rem;
@@ -1560,12 +1561,11 @@ Possible extra rowspan handling
     blockquote c-[vi] { color: inherit; } /* Name.Variable.Instance */
     blockquote c-[il] { color: inherit; } /* Literal.Number.Integer.Long */
   </style>
-  <meta content="Bikeshed version 44af0bf3e, updated Fri Jul 29 17:05:16 2022 -0700" name="generator">
+  <meta content="Bikeshed version 5fcd28d6d, updated Tue May 30 13:12:11 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="e8da54d4e43552ec2f7ced759c5b00d5cc79e7a1" name="document-revision">
-<style>/* style-autolinks */
-
+  <meta content="1072ffad59e0f3996d43a59301d97e5eaf95ee6f" name="document-revision">
+<style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
     font-size: inherit;
@@ -1625,8 +1625,17 @@ pre .property::before, pre .property::after {
 
 [data-link-type=biblio] {
     white-space: pre;
-}</style>
-<style>/* style-colors */
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --selflink-text: black;
+        --selflink-bg: silver;
+        --selflink-hover-text: white;
+    }
+}
+</style>
+<style>/* Boilerplate: style-colors */
 
 /* Any --*-text not paired with a --*-bg is assumed to have a transparent bg */
 :root {
@@ -1734,168 +1743,7 @@ pre .property::before, pre .property::after {
     --outdated-shadow: red;
 
     --editedrec-bg: darkorange;
-}</style>
-<style>/* style-counters */
-
-body {
-    counter-reset: example figure issue;
 }
-.issue {
-    counter-increment: issue;
-}
-.issue:not(.no-marker)::before {
-    content: "Issue " counter(issue);
-}
-
-.example {
-    counter-increment: example;
-}
-.example:not(.no-marker)::before {
-    content: "Example " counter(example);
-}
-.invalid.example:not(.no-marker)::before,
-.illegal.example:not(.no-marker)::before {
-    content: "Invalid Example" counter(example);
-}
-
-figcaption {
-    counter-increment: figure;
-}
-figcaption:not(.no-marker)::before {
-    content: "Figure " counter(figure) " ";
-}</style>
-<style>/* style-issues */
-
-a[href].issue-return {
-    float: right;
-    float: inline-end;
-    color: var(--issueheading-text);
-    font-weight: bold;
-    text-decoration: none;
-}
-</style>
-<style>/* style-md-lists */
-
-/* This is a weird hack for me not yet following the commonmark spec
-   regarding paragraph and lists. */
-[data-md] > :first-child {
-    margin-top: 0;
-}
-[data-md] > :last-child {
-    margin-bottom: 0;
-}</style>
-<style>/* style-selflinks */
-
-:root {
-    --selflink-text: white;
-    --selflink-bg: gray;
-    --selflink-hover-text: black;
-}
-.heading, .issue, .note, .example, li, dt {
-    position: relative;
-}
-a.self-link {
-    position: absolute;
-    top: 0;
-    left: calc(-1 * (3.5rem - 26px));
-    width: calc(3.5rem - 26px);
-    height: 2em;
-    text-align: center;
-    border: none;
-    transition: opacity .2s;
-    opacity: .5;
-}
-a.self-link:hover {
-    opacity: 1;
-}
-.heading > a.self-link {
-    font-size: 83%;
-}
-li > a.self-link {
-    left: calc(-1 * (3.5rem - 26px) - 2em);
-}
-dfn > a.self-link {
-    top: auto;
-    left: auto;
-    opacity: 0;
-    width: 1.5em;
-    height: 1.5em;
-    background: var(--selflink-bg);
-    color: var(--selflink-text);
-    font-style: normal;
-    transition: opacity .2s, background-color .2s, color .2s;
-}
-dfn:hover > a.self-link {
-    opacity: 1;
-}
-dfn > a.self-link:hover {
-    color: var(--selflink-hover-text);
-}
-
-a.self-link::before            { content: "¶"; }
-.heading > a.self-link::before { content: "§"; }
-dfn > a.self-link::before      { content: "#"; }
-</style>
-<style>/* style-syntax-highlighting */
-
-code.highlight { padding: .1em; border-radius: .3em; }
-pre.highlight, pre > code.highlight { display: block; padding: 1em; margin: .5em 0; overflow: auto; border-radius: 0; }
-
-.highlight:not(.idl) { background: rgba(0, 0, 0, .03); }
-c-[a] { color: #990055 } /* Keyword.Declaration */
-c-[b] { color: #990055 } /* Keyword.Type */
-c-[c] { color: #708090 } /* Comment */
-c-[d] { color: #708090 } /* Comment.Multiline */
-c-[e] { color: #0077aa } /* Name.Attribute */
-c-[f] { color: #669900 } /* Name.Tag */
-c-[g] { color: #222222 } /* Name.Variable */
-c-[k] { color: #990055 } /* Keyword */
-c-[l] { color: #000000 } /* Literal */
-c-[m] { color: #000000 } /* Literal.Number */
-c-[n] { color: #0077aa } /* Name */
-c-[o] { color: #999999 } /* Operator */
-c-[p] { color: #999999 } /* Punctuation */
-c-[s] { color: #a67f59 } /* Literal.String */
-c-[t] { color: #a67f59 } /* Literal.String.Single */
-c-[u] { color: #a67f59 } /* Literal.String.Double */
-c-[cp] { color: #708090 } /* Comment.Preproc */
-c-[c1] { color: #708090 } /* Comment.Single */
-c-[cs] { color: #708090 } /* Comment.Special */
-c-[kc] { color: #990055 } /* Keyword.Constant */
-c-[kn] { color: #990055 } /* Keyword.Namespace */
-c-[kp] { color: #990055 } /* Keyword.Pseudo */
-c-[kr] { color: #990055 } /* Keyword.Reserved */
-c-[ld] { color: #000000 } /* Literal.Date */
-c-[nc] { color: #0077aa } /* Name.Class */
-c-[no] { color: #0077aa } /* Name.Constant */
-c-[nd] { color: #0077aa } /* Name.Decorator */
-c-[ni] { color: #0077aa } /* Name.Entity */
-c-[ne] { color: #0077aa } /* Name.Exception */
-c-[nf] { color: #0077aa } /* Name.Function */
-c-[nl] { color: #0077aa } /* Name.Label */
-c-[nn] { color: #0077aa } /* Name.Namespace */
-c-[py] { color: #0077aa } /* Name.Property */
-c-[ow] { color: #999999 } /* Operator.Word */
-c-[mb] { color: #000000 } /* Literal.Number.Bin */
-c-[mf] { color: #000000 } /* Literal.Number.Float */
-c-[mh] { color: #000000 } /* Literal.Number.Hex */
-c-[mi] { color: #000000 } /* Literal.Number.Integer */
-c-[mo] { color: #000000 } /* Literal.Number.Oct */
-c-[sb] { color: #a67f59 } /* Literal.String.Backtick */
-c-[sc] { color: #a67f59 } /* Literal.String.Char */
-c-[sd] { color: #a67f59 } /* Literal.String.Doc */
-c-[se] { color: #a67f59 } /* Literal.String.Escape */
-c-[sh] { color: #a67f59 } /* Literal.String.Heredoc */
-c-[si] { color: #a67f59 } /* Literal.String.Interpol */
-c-[sx] { color: #a67f59 } /* Literal.String.Other */
-c-[sr] { color: #a67f59 } /* Literal.String.Regex */
-c-[ss] { color: #a67f59 } /* Literal.String.Symbol */
-c-[vc] { color: #0077aa } /* Name.Variable.Class */
-c-[vg] { color: #0077aa } /* Name.Variable.Global */
-c-[vi] { color: #0077aa } /* Name.Variable.Instance */
-c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
-</style>
-<style>/* style-darkmode */
 
 @media (prefers-color-scheme: dark) {
     :root {
@@ -2008,13 +1856,174 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        which is quite common in practice... */
     img { background: white; }
 }
-@media (prefers-color-scheme: dark) {
-    :root {
-        --selflink-text: black;
-        --selflink-bg: silver;
-        --selflink-hover-text: white;
-    }
+</style>
+<style>/* Boilerplate: style-counters */
+body {
+    counter-reset: example figure issue;
 }
+.issue {
+    counter-increment: issue;
+}
+.issue:not(.no-marker)::before {
+    content: "Issue " counter(issue);
+}
+
+.example {
+    counter-increment: example;
+}
+.example:not(.no-marker)::before {
+    content: "Example " counter(example);
+}
+.invalid.example:not(.no-marker)::before,
+.illegal.example:not(.no-marker)::before {
+    content: "Invalid Example" counter(example);
+}
+
+figcaption {
+    counter-increment: figure;
+}
+figcaption:not(.no-marker)::before {
+    content: "Figure " counter(figure) " ";
+}
+</style>
+<style>/* Boilerplate: style-issues */
+a[href].issue-return {
+    float: right;
+    float: inline-end;
+    color: var(--issueheading-text);
+    font-weight: bold;
+    text-decoration: none;
+}
+</style>
+<style>/* Boilerplate: style-md-lists */
+/* This is a weird hack for me not yet following the commonmark spec
+   regarding paragraph and lists. */
+[data-md] > :first-child {
+    margin-top: 0;
+}
+[data-md] > :last-child {
+    margin-bottom: 0;
+}
+</style>
+<style>/* Boilerplate: style-selflinks */
+
+:root {
+    --selflink-text: white;
+    --selflink-bg: gray;
+    --selflink-hover-text: black;
+}
+.heading, .issue, .note, .example, li, dt {
+    position: relative;
+}
+a.self-link {
+    position: absolute;
+    top: 0;
+    left: calc(-1 * (3.5rem - 26px));
+    width: calc(3.5rem - 26px);
+    height: 2em;
+    text-align: center;
+    border: none;
+    transition: opacity .2s;
+    opacity: .5;
+}
+a.self-link:hover {
+    opacity: 1;
+}
+.heading > a.self-link {
+    font-size: 83%;
+}
+.example > a.self-link,
+.note > a.self-link,
+.issue > a.self-link {
+    /* These blocks are overflow:auto, so positioning outside
+       doesn't work. */
+    left: auto;
+    right: 0;
+}
+li > a.self-link {
+    left: calc(-1 * (3.5rem - 26px) - 2em);
+}
+dfn > a.self-link {
+    top: auto;
+    left: auto;
+    opacity: 0;
+    width: 1.5em;
+    height: 1.5em;
+    background: var(--selflink-bg);
+    color: var(--selflink-text);
+    font-style: normal;
+    transition: opacity .2s, background-color .2s, color .2s;
+}
+dfn:hover > a.self-link {
+    opacity: 1;
+}
+dfn > a.self-link:hover {
+    color: var(--selflink-hover-text);
+}
+
+a.self-link::before            { content: "¶"; }
+.heading > a.self-link::before { content: "§"; }
+dfn > a.self-link::before      { content: "#"; }
+</style>
+<style>/* Boilerplate: style-syntax-highlighting */
+
+code.highlight { padding: .1em; border-radius: .3em; }
+pre.highlight, pre > code.highlight { display: block; padding: 1em; margin: .5em 0; overflow: auto; border-radius: 0; }
+
+.highlight:not(.idl) { background: rgba(0, 0, 0, .03); }
+c-[a] { color: #990055 } /* Keyword.Declaration */
+c-[b] { color: #990055 } /* Keyword.Type */
+c-[c] { color: #708090 } /* Comment */
+c-[d] { color: #708090 } /* Comment.Multiline */
+c-[e] { color: #0077aa } /* Name.Attribute */
+c-[f] { color: #669900 } /* Name.Tag */
+c-[g] { color: #222222 } /* Name.Variable */
+c-[k] { color: #990055 } /* Keyword */
+c-[l] { color: #000000 } /* Literal */
+c-[m] { color: #000000 } /* Literal.Number */
+c-[n] { color: #0077aa } /* Name */
+c-[o] { color: #999999 } /* Operator */
+c-[p] { color: #999999 } /* Punctuation */
+c-[s] { color: #a67f59 } /* Literal.String */
+c-[t] { color: #a67f59 } /* Literal.String.Single */
+c-[u] { color: #a67f59 } /* Literal.String.Double */
+c-[cp] { color: #708090 } /* Comment.Preproc */
+c-[c1] { color: #708090 } /* Comment.Single */
+c-[cs] { color: #708090 } /* Comment.Special */
+c-[kc] { color: #990055 } /* Keyword.Constant */
+c-[kn] { color: #990055 } /* Keyword.Namespace */
+c-[kp] { color: #990055 } /* Keyword.Pseudo */
+c-[kr] { color: #990055 } /* Keyword.Reserved */
+c-[ld] { color: #000000 } /* Literal.Date */
+c-[nc] { color: #0077aa } /* Name.Class */
+c-[no] { color: #0077aa } /* Name.Constant */
+c-[nd] { color: #0077aa } /* Name.Decorator */
+c-[ni] { color: #0077aa } /* Name.Entity */
+c-[ne] { color: #0077aa } /* Name.Exception */
+c-[nf] { color: #0077aa } /* Name.Function */
+c-[nl] { color: #0077aa } /* Name.Label */
+c-[nn] { color: #0077aa } /* Name.Namespace */
+c-[py] { color: #0077aa } /* Name.Property */
+c-[ow] { color: #999999 } /* Operator.Word */
+c-[mb] { color: #000000 } /* Literal.Number.Bin */
+c-[mf] { color: #000000 } /* Literal.Number.Float */
+c-[mh] { color: #000000 } /* Literal.Number.Hex */
+c-[mi] { color: #000000 } /* Literal.Number.Integer */
+c-[mo] { color: #000000 } /* Literal.Number.Oct */
+c-[sb] { color: #a67f59 } /* Literal.String.Backtick */
+c-[sc] { color: #a67f59 } /* Literal.String.Char */
+c-[sd] { color: #a67f59 } /* Literal.String.Doc */
+c-[se] { color: #a67f59 } /* Literal.String.Escape */
+c-[sh] { color: #a67f59 } /* Literal.String.Heredoc */
+c-[si] { color: #a67f59 } /* Literal.String.Interpol */
+c-[sx] { color: #a67f59 } /* Literal.String.Other */
+c-[sr] { color: #a67f59 } /* Literal.String.Regex */
+c-[ss] { color: #a67f59 } /* Literal.String.Symbol */
+c-[vc] { color: #0077aa } /* Name.Variable.Class */
+c-[vg] { color: #0077aa } /* Name.Variable.Global */
+c-[vi] { color: #0077aa } /* Name.Variable.Instance */
+c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
+
 
 @media (prefers-color-scheme: dark) {
     .highlight:not(.idl) { background: rgba(255, 255, 255, .05); }
@@ -2082,14 +2091,16 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
  <body class="h-entry">
   <div class="head">
    <p data-fill-with="logo"></p>
-   <h1 class="p-name no-ref" id="title">DXXXXR1<br>prvalue relocation</h1>
-   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Draft Proposal, <time class="dt-updated" datetime="2022-09-14">2022-09-14</time></span></h2>
+   <h1 class="p-name no-ref" id="title">D2785R1<br>Relocating prvalues</h1>
+   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Draft Proposal, <time class="dt-updated" datetime="2023-01-30">2023-01-30</time></span></h2>
    <div data-fill-with="spec-metadata">
     <dl>
      <dt>This version:
      <dd><a class="u-url" href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html">https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html</a>
-     <dt class="editor">Author:
+     <dt class="editor">Authors:
+     <dd class="editor p-author h-card vcard"><span class="p-name fn"></span>
      <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:sebastien.bini@gmail.com">Sébastien Bini</a> (<span class="p-org org">Stormshield</span>)
+     <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:ed@catmur.uk">Ed Catmur</a>
      <dt>Audience:
      <dd>LEWG, EWG
      <dt>Project:
@@ -2138,7 +2149,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
         <li><a href="#reloc-illegal-uses"><span class="secno">5.1.3</span> <span class="content">Illegal uses of reloc</span></a>
         <li><a href="#reloc-early-end-of-scope"><span class="secno">5.1.4</span> <span class="content">Early end-of-scope</span></a>
         <li><a href="#conditional-reloc"><span class="secno">5.1.5</span> <span class="content">Conditional relocation</span></a>
-        <li><a href="#discarded-reloc-expr"><span class="secno">5.1.6</span> <span class="content">Discarded reloc expressions</span></a>
+        <li><a href="#reloc-elision"><span class="secno">5.1.6</span> <span class="content">Relocation elision</span></a>
+        <li><a href="#discarded-reloc-expr"><span class="secno">5.1.7</span> <span class="content">Discarded reloc expressions</span></a>
        </ol>
       <li>
        <a href="#reloc-ctor"><span class="secno">5.2</span> <span class="content">Relocation constructor</span></a>
@@ -2155,8 +2167,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
          <ol class="toc">
           <li><a href="#reloc-ctor-default-definition"><span class="secno">5.2.2.1</span> <span class="content">Default definition</span></a>
           <li><a href="#reloc-ctor-user-definition"><span class="secno">5.2.2.2</span> <span class="content">User-provided definition</span></a>
-          <li><a href="#reloc-ctor-try-with-init"><span class="secno">5.2.2.3</span> <span class="content">Try-with-init</span></a>
-          <li><a href="#reloc-ctor-exceptions"><span class="secno">5.2.2.4</span> <span class="content">Exception handling</span></a>
+          <li><a href="#reloc-ctor-exceptions"><span class="secno">5.2.2.3</span> <span class="content">Exception handling</span></a>
+          <li><a href="#reloc-ctor-additional-params"><span class="secno">5.2.2.4</span> <span class="content">Additional parameters</span></a>
          </ol>
         <li><a href="#reloc-ctor-invoke"><span class="secno">5.2.3</span> <span class="content">Invocation</span></a>
        </ol>
@@ -2322,7 +2334,7 @@ relocate-only types, and even less for constant objects.
 They only partly improve their support in a limited way.</p>
    <p>Finally, relocation and especially trivial relocation will bring performance boosts
 in many situations. Other proposals make a fine work at enumerating all the gains
-from trivial relocation (see in particular <a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a>). To summarize, the performance gains
+from trivial relocation (see in particular <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a>). To summarize, the performance gains
 are mainly in containers (std::vector::resize and the likes)
 and code size gains from functions that use <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>swap</c-></code>.</p>
    <h2 class="heading settled" data-level="3" id="nomenclature"><span class="secno">3. </span><span class="content">Nomenclature</span><a class="self-link" href="#nomenclature"></a></h2>
@@ -2371,16 +2383,16 @@ Likewise, with callee-destroy, none of its parameters are <em>unowned parameters
    <h2 class="heading settled" data-level="4" id="compare"><span class="secno">4. </span><span class="content">Comparison with existing proposals</span><a class="self-link" href="#compare"></a></h2>
    <p>This proposal introduces the <code class="highlight"><c- n>reloc</c-></code> keyword, which allows users to explicitly
 and safely relocate local variables in their code base.</p>
-   <p>This proposal is also one of the few (with <a data-link-type="biblio" href="#biblio-p0308r0">[P0308R0]</a>), to tackle the case of
+   <p>This proposal is also one of the few (with <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a>), to tackle the case of
 relocate-only types. The <code class="highlight"><c- n>reloc</c-></code> keyword thus becomes necessary to safely pass 
 around such objects in user code.</p>
-   <p>Also, all these proposals (but <a data-link-type="biblio" href="#biblio-p0308r0">[P0308R0]</a>) aim to optimize the move and destruct
+   <p>Also, all these proposals (but <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a>) aim to optimize the move and destruct
 operations into a single memcpy. But there are places where this optimization 
 could not happen, and we are left with a suboptimized move and destruct. 
 The relocation constructor that we propose offers a customization point, and
 especially allow for a more optimized relocation technique than move and destruct.</p>
    <h3 class="heading settled" data-level="4.1" id="compare-D1144R6"><span class="secno">4.1. </span><span class="content">D1144R6: Object relocation in terms of move plus destroy by Arthur O’Dwyer</span><a class="self-link" href="#compare-D1144R6"></a></h3>
-   <p><a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a> puts the focus on trivially relocatable types, and offers ways to
+   <p><a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> puts the focus on trivially relocatable types, and offers ways to
 mark a type as trivially relocatable.</p>
    <p>The current proposal has its own take on trivial relocatability that does not
 rely on a class attribute. Instead the trivial relocatability
@@ -2392,7 +2404,7 @@ is trivially relocatable.</p>
    <p>This approach is not prone to errors when compared to a class attribute,
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.</p>
-   <p>Also, <a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a> does not account for relocate-only types. To some extend, trivially
+   <p>Also, <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> does not account for relocate-only types. To some extend, trivially
 relocatable types have minimal support as they could be trivially relocated in the
 places where "move plus destroy" can be optimized. However:</p>
    <ul>
@@ -2407,19 +2419,19 @@ enclosing class becomes non trivially relocatable, while remaining relocate-only
 This renders the enclosing class impractical to use without proper support
 for relocate-only types.</p>
    </ul>
-   <p>In this proposal we reuse <a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a>'s <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate</c-></code> function, except that we
+   <p>In this proposal we reuse <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a>'s <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate</c-></code> function, except that we
 name it <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code>.</p>
    <h3 class="heading settled" data-level="4.2" id="compare-P0023R0"><span class="secno">4.2. </span><span class="content">P0023R0: Relocator: Efficiently moving objects by Denis Bider</span><a class="self-link" href="#compare-P0023R0"></a></h3>
-   <p>The Relocator introduced in <a data-link-type="biblio" href="#biblio-p0023r0">[P0023R0]</a> is similar to the proposed relocation constructor.
+   <p>The Relocator introduced in <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a> is similar to the proposed relocation constructor.
 However P0023R0’s Relocator is not viewed as a constructor. Instead, it is a special
 function that can be invoked in lieu of move plus destroy where possible.</p>
-   <p>However this brings again suboptimal support for relocate-only types. Indeed <a data-link-type="biblio" href="#biblio-p0023r0">[P0023R0]</a> does not force relocation to happen in all cases, and falls back to move+destroy paradigm
+   <p>However this brings again suboptimal support for relocate-only types. Indeed <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a> does not force relocation to happen in all cases, and falls back to move+destroy paradigm
 when relocation cannot happen.</p>
    <p>A typical example is when relocating a function parameter:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>sink</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>x</c-><c- p>)</c-> <c- p>{</c-> <c- n>sink</c-><c- p>(</c-><c- n>x</c-><c- p>);</c-> <c- p>}</c->
 </pre>
-   <p>Here, under the terms of <a data-link-type="biblio" href="#biblio-p0023r0">[P0023R0]</a>, relocation may not happen because of ABI
+   <p>Here, under the terms of <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a>, relocation may not happen because of ABI
 constraints (if <code class="highlight"><c- n>x</c-></code> is an unowned parameter).
 This will cause <code class="highlight"><c- n>foo</c-></code> to fallback to a move+deferred detroy paradigm.</p>
    <p>This proposal has another take on this issue: if <code class="highlight"><c- n>T</c-></code> is relocate-only, then any
@@ -2433,7 +2445,7 @@ The solution then becomes:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>sink</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>x</c-><c- p>)</c-> <c- p>{</c-> <c- n>sink</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>);</c-> <c- d>/* x can no longer be used. */</c-> <c- p>}</c->
 </pre>
-   <p>Moreover, the proposed syntax for invoking <a data-link-type="biblio" href="#biblio-p0023r0">[P0023R0]</a>'s relocator is low-level and
+   <p>Moreover, the proposed syntax for invoking <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a>'s relocator is low-level and
 prone to error:</p>
 <pre class="language-c++ highlight"><c- n>T</c-> <c- n>x</c-><c- p>;</c->
 <c- k>alignas</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-> <c- b>char</c-> <c- n>buf</c-><c- p>[</c-><c- k>sizeof</c-><c- p>(</c-><c- n>T</c-><c- p>)];</c->
@@ -2453,7 +2465,7 @@ In contrast, the present proposal would write the above as:</p>
    <p>Here the use of the <code class="highlight"><c- n>reloc</c-></code> keyword ensures that the language is aware that the lifetime
 of <code class="highlight"><c- n>x</c-></code> has finished, so the destructor only of <code class="highlight"><c- n>y</c-></code> is called at scope exit.</p>
    <h3 class="heading settled" data-level="4.3" id="compare-N4158"><span class="secno">4.3. </span><span class="content">N4158: Destructive Move by Pablo Halpern</span><a class="self-link" href="#compare-N4158"></a></h3>
-   <p><a data-link-type="biblio" href="#biblio-n4158">[N4158]</a> proposes a customizable function <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>uninitialized_destructive_move</c-></code>,
+   <p><a data-link-type="biblio" href="#biblio-n4158" title="Destructive Move">[N4158]</a> proposes a customizable function <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>uninitialized_destructive_move</c-></code>,
 that is somewhat similar to the relocation constructor, but is a pure library solution.</p>
    <p>It has several drawbacks :</p>
    <ul>
@@ -2470,11 +2482,11 @@ custom <code class="highlight"><c- n>uninitialized_destructive_move</c-></code> 
 relocation.</p>
    </ul>
    <h3 class="heading settled" data-level="4.4" id="compare-P1029R3"><span class="secno">4.4. </span><span class="content">P1029R3: move = bitcopies by Niall Douglas</span><a class="self-link" href="#compare-P1029R3"></a></h3>
-   <p><a data-link-type="biblio" href="#biblio-p1029r3">[P1029R3]</a> enables a special bitcopies move constructor for types that are trivially relocatable.</p>
-   <p>Like the other proposals <a data-link-type="biblio" href="#biblio-p1029r3">[P1029R3]</a> does not provide support for relocate-only types
-(it suffers from the same drawbacks as <a data-link-type="biblio" href="#biblio-d1144r6">[D1144R6]</a> in that regard).</p>
+   <p><a data-link-type="biblio" href="#biblio-p1029r3" title="move = bitcopies">[P1029R3]</a> enables a special bitcopies move constructor for types that are trivially relocatable.</p>
+   <p>Like the other proposals <a data-link-type="biblio" href="#biblio-p1029r3" title="move = bitcopies">[P1029R3]</a> does not provide support for relocate-only types
+(it suffers from the same drawbacks as <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> in that regard).</p>
    <h3 class="heading settled" data-level="4.5" id="compare-P0308R0"><span class="secno">4.5. </span><span class="content">P0308R0: Valueless Variants Considered Harmful by Peter Dimov</span><a class="self-link" href="#compare-P0308R0"></a></h3>
-   <p>We only consider the "pilfering" proposition from <a data-link-type="biblio" href="#biblio-p0308r0">[P0308R0]</a>.
+   <p>We only consider the "pilfering" proposition from <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a>.
 P0308R0’s pilfering shares some similarities with the current proposal, 
 as it is an attempt to support relocate-only types as a pure library solution.</p>
    <p>We believe a language solution is best suited here:</p>
@@ -2490,7 +2502,7 @@ while <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pilfer</c-></code
     <li data-md>
      <p>as a library solution, the pilfering constructor cannot be defaulted ;</p>
     <li data-md>
-     <p>trivial relocation is not possible with pilfering, which makes <a data-link-type="biblio" href="#biblio-p0308r0">[P0308R0]</a> miss
+     <p>trivial relocation is not possible with pilfering, which makes <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a> miss
 the performance boost that is so longed for.</p>
    </ul>
    <h2 class="heading settled" data-level="5" id="lg-changes"><span class="secno">5. </span><span class="content">Proposed language changes</span><a class="self-link" href="#lg-changes"></a></h2>
@@ -2875,14 +2887,27 @@ if all the following conditions are met:</p>
 in at least one branch as well (taking into account the potentially empty <code class="highlight"><c- k>else</c-></code> branch).</p>
    </ul>
    <p>We prefer to leave the details of this tracking implementation-defined.</p>
-   <h4 class="heading settled" data-level="5.1.6" id="discarded-reloc-expr"><span class="secno">5.1.6. </span><span class="content">Discarded reloc expressions</span><a class="self-link" href="#discarded-reloc-expr"></a></h4>
+   <h4 class="heading settled" data-level="5.1.6" id="reloc-elision"><span class="secno">5.1.6. </span><span class="content">Relocation elision</span><a class="self-link" href="#reloc-elision"></a></h4>
+   <p>Whether performed by relocation, move or copy constructor, relocation
+may be elided if the compiler can ensure that the source object is created at
+the address to be occuped by the target object.
+This is intended to work in much the same way as the named return value optimization;
+for example:</p>
+<pre class="language-c+ highlight"><c- b>void</c-> <c- nf>f</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>);</c->
+<c- b>void</c-> <c- nf>g</c-><c- p>()</c-> <c- p>{</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>;</c->  <c- c1>// may be created in f’s argument slot</c->
+    <c- n>f</c-><c- p>(</c-><c- n>reloc</c-> <c- n>s</c-><c- p>);</c->  <c- c1>// relocation may be elided</c->
+<c- p>}</c->
+</pre>
+   <h4 class="heading settled" data-level="5.1.7" id="discarded-reloc-expr"><span class="secno">5.1.7. </span><span class="content">Discarded reloc expressions</span><a class="self-link" href="#discarded-reloc-expr"></a></h4>
    <p>Under some conditions the following expression is well-formed: <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> (note the semi-colon).</p>
    <p>Given the rules we established for <code class="highlight"><c- n>reloc</c-></code>, this statement returns a temporary
 constructed from the source object. The temporary is then destructed at the end
 of the expression evaluation.</p>
    <p>However, materializing a temporary whose only goal is to be destroyed is
-suboptimal. Hence, it is authorized for implementations to elide the creation
-of the temporary object (if created by relocation or move constructor), 
+suboptimal. Hence, it is authorized for implementations to (as above)
+elide the creation
+of the temporary object, 
 effectively only calling the destructor of the source
 object at the end of the expression evaluation. If this optimization is done, 
 the temporary returned by <code class="highlight"><c- n>reloc</c-></code> is not materialized.</p>
@@ -2892,8 +2917,7 @@ the temporary returned by <code class="highlight"><c- n>reloc</c-></code> is not
      <p>if <code class="highlight"><c- n>obj</c-></code> is not an <em>unowned parameter</em> then:</p>
      <ul>
       <li data-md>
-       <p>If <code class="highlight"><c- n>obj</c-></code> has a relocation or move constructor,
-then the temporary is likely elided, effectively only calling the 
+       <p>The temporary is likely elided, effectively only calling the
 destructor of <code class="highlight"><c- n>obj</c-></code>.</p>
       <li data-md>
        <p>Otherwise a temporary is initialized from the
@@ -2954,7 +2978,7 @@ the constructor takes a prvalue as parameter: <code class="highlight"><c- n>T</c
    <p>This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor 
 from an xvalue, and then the relocation constructor from a prvalue.</p>
-   <p class="note" role="note"><span>Note:</span> a further benefit of this syntax is that it is currently ill-formed, and
+   <p class="note" role="note"><span class="marker">Note:</span> a further benefit of this syntax is that it is currently ill-formed <a href="http://wg21.link/class.copy.ctor#5">[class.copy.ctor]/5</a>, and
 thus available for extension.</p>
    <p>A point of confusion may be that the syntax implies an infinite regress: the
 parameter must be constructed, which requires a prior call to the relocation
@@ -2968,12 +2992,12 @@ same way as a reference or a structured binding declaration.
 However, this is misleading; the lifetime of a source object glvalue has already
 ended and so use of a pointer or reference referring to the source object has
 undefined behavior, except as provided by [basic.life] and [class.cdtor].</p>
-   <p class="note" role="note"><span>Note:</span> this behavior matches that for the destructor of a class type; see <a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1.</p>
+   <p class="note" role="note"><span class="marker">Note:</span> this behavior matches that for the destructor of a class type; see <a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1.</p>
    <p>This intuition is only useful in so far as the ABI for a relocation
 constructor prvalue parameter is likely to be the same as that for a copy or move
 constructor parameter, since the prvalue parameter may have the same storage
 location as a previously existing glvalue.</p>
-   <p class="note" role="note"><span>Note:</span> it does not matter that the ABI for the relocation constructor parameter
+   <p class="note" role="note"><span class="marker">Note:</span> it does not matter that the ABI for the relocation constructor parameter
 differs from that for a prvalue parameter in normal functions, since it is not
 possible to take the address of a constructor.</p>
    <p>The role of the relocation constructor is to construct a new instance by destructively
@@ -3004,7 +3028,22 @@ ABI. See the <a href="#abi">ABI section</a>.</p>
    <h5 class="heading settled" data-level="5.2.1.1" id="reloc-ctor-declaration-implicit"><span class="secno">5.2.1.1. </span><span class="content">Implicit declaration</span><a class="self-link" href="#reloc-ctor-declaration-implicit"></a></h5>
    <p>If a class-type follows the Rule of Zero (updated to account for the relocation
 constructor and relocation assignment operator), then the compiler will declare
-a non-explicit inline public relocation constructor.</p>
+a non-explicit inline public relocation constructor,
+i.e. if none of the following are user-declared:</p>
+   <ul>
+    <li data-md>
+     <p>copy constructor</p>
+    <li data-md>
+     <p>copy assignment operator</p>
+    <li data-md>
+     <p>move constructor</p>
+    <li data-md>
+     <p>move assignment operator</p>
+    <li data-md>
+     <p>destructor</p>
+    <li data-md>
+     <p>relocating assignment operator</p>
+   </ul>
    <h5 class="heading settled" data-level="5.2.1.2" id="reloc-ctor-declaration-deleted"><span class="secno">5.2.1.2. </span><span class="content">Deleted implicitly-declared or defaulted relocation constructor</span><a class="self-link" href="#reloc-ctor-declaration-deleted"></a></h5>
    <p>The implicitly-declared or defaulted relocation constructor for class <code class="highlight"><c- n>T</c-></code> is defined as deleted:</p>
    <ul>
@@ -3018,25 +3057,43 @@ that are deleted, inaccessible, or ambiguous).</p>
    </ul>
    <p>As for move constructors, a defaulted relocation constructor that is deleted is
 ignored by overload resolution.</p>
-   <p class="note" role="note"><span>Note:</span> this means that a class with an explictly deleted relocation constructor
+   <p class="note" role="note"><span class="marker">Note:</span> this means that a class with an explictly deleted relocation constructor
 will still be relocated if necessary, but through the move (or copy) constructor
 and destructor.</p>
    <h5 class="heading settled" data-level="5.2.1.3" id="trivial-relocation"><span class="secno">5.2.1.3. </span><span class="content">Trivial relocation</span><a class="self-link" href="#trivial-relocation"></a></h5>
-   <p>A class-type <code class="highlight"><c- n>T</c-></code> is trivially relocatable if all the following is true:</p>
+   <p>A relocation constructor of a class type <code class="highlight"><c- n>X</c-></code> is <em>trivial</em> if it is not user-provided and
+if:</p>
    <ul>
     <li data-md>
-     <p><code class="highlight"><c- n>T</c-></code> has a (potentially implicitly-declared), defaulted, non-deleted relocation constructor ;</p>
+     <p><code class="highlight"><c- n>X</c-></code> has no virtual functions and no virtual base classes, and</p>
     <li data-md>
-     <p>All <code class="highlight"><c- n>T</c-></code>'s subobjects are recursively trivially relocatable.</p>
+     <p>for each direct base class and direct non-static data member of class type or array thereof,
+the relocation operation (which may be a relocation constructor or
+synthesized from copy/move constructor plus destructor) selected
+to relocate that base or member is trivial.</p>
    </ul>
-   <p>All C++ primitive types are trivially relocatable.</p>
+   <p>A <em>trivially relocatable class</em> is one which:</p>
+   <ul>
+    <li data-md>
+     <p>has a trivial, eligible relocation constructor, or</p>
+    <li data-md>
+     <p>does not have a relocation constructor (including one that is deleted),
+and is trivially copyable.</p>
+   </ul>
+   <p class="note" role="note"><span class="marker">Note:</span> <em>eligible</em> is defined in <a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.</p>
+   <p>Scalar types, trivially relocatable class types, and arrays and cv-qualified versions
+thereof are <em>trivially relocatable</em>.</p>
+   <p><strong class="advisement"> we also tighten the definition of "trivial class" (and thus "trivial") to
+require that the class in question be trivially relocatable as well as trivially
+copyable. This is to ensure that if the user wants code to be called on relocation,
+the library does not bypass said code by, say, using <code class="highlight"><c- n>memmove</c-></code>.</strong></p>
    <h4 class="heading settled" data-level="5.2.2" id="reloc-ctor-definition"><span class="secno">5.2.2. </span><span class="content">Definition</span><a class="self-link" href="#reloc-ctor-definition"></a></h4>
    <h5 class="heading settled" data-level="5.2.2.1" id="reloc-ctor-default-definition"><span class="secno">5.2.2.1. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-ctor-default-definition"></a></h5>
    <p>The default relocation constructor implementation for a class-type <code class="highlight"><c- n>T</c-></code> depends
 on <code class="highlight"><c- n>T</c-></code>'s type traits.</p>
-   <p>If <code class="highlight"><c- n>T</c-></code> is trivially relocatable then the relocation constructor merely performs
-a memcpy over its entire memory layout. In <code class="highlight"><c- n>T</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-></code>, the relocation constructor
-is then optimized into <code class="highlight"><c- n>memcpy</c-><c- p>(</c-><c- k>this</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>src</c-><c- p>,</c-> <c- k>sizeof</c-><c- p>(</c-><c- n>T</c-><c- p>))</c-></code>.</p>
+   <p>If <code class="highlight"><c- n>T</c-></code> is trivially relocatable then the relocation constructor
+effectively (ignoring padding) performs
+a memcpy over its entire memory layout.</p>
    <p>Otherwise in the nominal case, the constructor implementation performs
 memberwise relocations.</p>
    <p>In the relocation constructor <code class="highlight"><c- n>T</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-></code>, for each subobject <code class="highlight"><c- n>s</c-></code> (of type <code class="highlight"><c- n>S</c-></code>)
@@ -3045,7 +3102,7 @@ of <code class="highlight"><c- n>T</c-></code>, in declaration order:</p>
     <li data-md>
      <p>if <code class="highlight"><c- n>S</c-></code> has an accessible relocation constructor, then <code class="highlight"><c- k>this</c-><c- o>-></c-><c- n>s</c-></code> is constructed
 by calling the relocation constructor, passing <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> as source object. <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> is then left in a <em>destructed state</em>. Note that if <code class="highlight"><c- n>S</c-></code> is trivially 
-relocatable then the relocation constructor call will be optiomized into a 
+relocatable then the relocation constructor call may be optiomized into a 
 memcpy: <code class="highlight"><c- n>memcpy</c-><c- p>(</c-><c- o>&amp;</c-><c- k>this</c-><c- o>-></c-><c- n>s</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>src</c-><c- p>.</c-><c- n>s</c-><c- p>,</c-> <c- k>sizeof</c-><c- p>(</c-><c- n>S</c-><c- p>))</c-></code> ;</p>
     <li data-md>
      <p>otherwise if <code class="highlight"><c- n>S</c-></code> has an accessible move constructor and destructor, then <code class="highlight"><c- k>this</c-><c- o>-></c-><c- n>s</c-></code> is constructed by calling the move constructor, ignoring <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code>'s
@@ -3079,13 +3136,14 @@ to an undefined behavior.</p>
    <p>Consider the following examples:</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>T</c->
 <c- p>{</c->
-    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_a</c-><c- p>,</c-> <c- n>_b</c-><c- p>;</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_a</c-><c- p>,</c-> <c- n>_b</c-><c- p>,</c-> <c- n>_c</c-><c- p>;</c->
 
     <c- n>T</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-> <c- o>:</c->
-        <c- n>_a</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>src</c-><c- p>.</c-><c- n>_a</c-><c- p>)}</c-> <c- p>{}</c-> <c- d>/*</c->
+        <c- n>_a</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>src</c-><c- p>.</c-><c- n>_a</c-><c- p>)},</c-> <c- n>_b</c-><c- p>{}</c-> <c- p>{}</c-> <c- d>/*</c->
 <c- d>        1. T::_a is constructed using the move constructor.</c->
-<c- d>        2. T::_b is constructed using std::string’s relocation constructor, from src._b</c->
-<c- d>        3. src._a is destructed before the constructor body is entered</c->
+<c- d>        2. T::_b is default constructed.</c->
+<c- d>        3. T::_c is constructed using std::string’s relocation constructor, from src._c.</c->
+<c- d>        4. src._b and src._a are destructed (in that order) before the constructor body is entered.</c->
 <c- d>    */</c->
 <c- p>};</c->
 
@@ -3140,39 +3198,14 @@ then they can write it explicitly: <code class="highlight"><c- n>T</c-><c- p>(</
 is destroyed at the end of the initializer list).</p>
    <p>It is for safety reasons that the relocation constructor ensures that
 the source object is entirely destroyed by the time the constructor’s body is reached.
-Had it been otherwise, then it would have been the responsability of the users to destroy
+Had it been otherwise, then it would have been the responsibility of the users to destroy
 the subobjects that did not get relocated. This would likely lead to programming errors, 
 especially when we consider synthesized relocation.</p>
-   <h5 class="heading settled" data-level="5.2.2.3" id="reloc-ctor-try-with-init"><span class="secno">5.2.2.3. </span><span class="content">Try-with-init</span><a class="self-link" href="#reloc-ctor-try-with-init"></a></h5>
-   <p>We propose an extension to the function-try-block definition for constructors.</p>
-   <p>In a constructor definition, after the <code class="highlight"><c- k>try</c-></code> and before the member initializer
-list, new objects can be initialized that are not part of the class subobject.
-This would allow for more fin-grained control in the constructor definition, which 
-will prove usefull for the relocation constructor.</p>
-   <p>The newly introduced objects are accessible for the member initialization list,
-the constructor body, and the catch blocks. They are destructed right before the 
-constructor returns.</p>
-   <p>TODO: provide a compelling example.</p>
-<pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c-> <c- o>:</c-> <c- n>public</c-> <c- n>BaseClass</c->
-<c- p>{</c->
-<c- n>public</c-><c- o>:</c->
-    <c- n>T</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>)</c-> <c- n>try</c-> <c- p>(</c-><c- k>auto</c-><c- o>*</c-> <c- n>p</c-> <c- o>=</c-> <c- n>_d</c-><c- p>.</c-><c- n>get_resource</c-><c- p>())</c-> <c- o>:</c-> <c- n>_d</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>src</c-><c- p>.</c-><c- n>_d</c-><c- p>)}</c->
-    <c- p>{</c->
-
-    <c- p>}</c->
-    <c- n>catch</c-> <c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>exception</c-> <c- k>const</c-><c- o>&amp;</c-> <c- n>ex</c-><c- p>)</c->
-    <c- p>{</c->
-        <c- n>delete</c-> <c- n>p</c-><c- p>;</c->
-    <c- p>}</c->
-
-<c- n>private</c-><c- o>:</c->
-    <c- n>DataMember</c-> <c- n>_d</c-><c- p>;</c->
-<c- p>};</c->
-</pre>
-   <h5 class="heading settled" data-level="5.2.2.4" id="reloc-ctor-exceptions"><span class="secno">5.2.2.4. </span><span class="content">Exception handling</span><a class="self-link" href="#reloc-ctor-exceptions"></a></h5>
+   <h5 class="heading settled" data-level="5.2.2.3" id="reloc-ctor-exceptions"><span class="secno">5.2.2.3. </span><span class="content">Exception handling</span><a class="self-link" href="#reloc-ctor-exceptions"></a></h5>
    <p>The relocation constructor is able to handle exceptions. If an exception leaks
 through the relocation constructor then it guarantees that the <em>target</em> is not 
 constructed and the <em>source</em> object is destroyed.</p>
+   <p>**This is in general undesirable, which is why the relocation constructor is <code class="highlight"><c- k>noexcept</c-></code> if at all possible.**</p>
    <p>As we have seen above, the relocation constructor acts in three stages:
 (a) target subobjects construction, 
 (b) destruction in reversed declaration order on any source subobject 
@@ -3218,6 +3251,44 @@ destroyed in reversed declaration order, like it is the case for any constructor
 is destructor is called and the exception is propagated.</p>
    <p>Note that the target object needs not to be destroyed as the delegating
 constructor already took care of that.</p>
+   <h5 class="heading settled" data-level="5.2.2.4" id="reloc-ctor-additional-params"><span class="secno">5.2.2.4. </span><span class="content">Additional parameters</span><a class="self-link" href="#reloc-ctor-additional-params"></a></h5>
+   <p>As with copy and move constructors, it is permissible to add additional parameters
+to a relocation constructor, on condition they have a default initializer.</p>
+   <p>One case where this can be of use is if the user needs space to store information
+and/or resources
+for the duration of the relocation constructor, for a contrived example:</p>
+<pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c->
+<c- p>{</c->
+<c- n>public</c-><c- o>:</c->
+    <c- n>class</c-> <c- n>Helper</c-> <c- p>{</c->
+    <c- n>public</c-><c- o>:</c->
+        <c- n>Helper</c-><c- p>()</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
+        <c- o>~</c-><c- n>Helper</c-><c- p>()</c-> <c- p>{</c-> <c- n>delete</c-> <c- n>p</c-><c- p>;</c-> <c- p>}</c->
+    <c- n>private</c-><c- o>:</c->
+        <c- n>friend</c-> <c- n>T</c-><c- p>;</c->
+        <c- b>int</c-><c- o>*</c-> <c- n>p</c-><c- p>;</c->
+    <c- p>};</c->
+
+    <c- n>T</c-><c- p>(</c-><c- n>T</c-> <c- n>src</c-><c- p>,</c-> <c- n>Helper</c-> <c- n>storage</c-> <c- o>=</c-> <c- p>{})</c-> <c- n>noexcept</c-><c- p>(</c->false<c- p>)</c->
+        <c- o>:</c-> <c- n>_p</c-><c- p>(</c-><c- n>storage</c-><c- p>.</c-><c- n>p</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>exchange</c-><c- p>(</c-><c- n>src</c-><c- p>.</c-><c- n>_p</c-><c- p>,</c-> <c- n>nullptr</c-><c- p>))</c->
+    <c- p>{</c->
+        <c- n>storage</c-><c- p>.</c-><c- n>p</c-> <c- o>=</c-> <c- n>nullptr</c-><c- p>;</c->
+    <c- p>}</c->
+
+    <c- o>~</c-><c- n>T</c-><c- p>()</c-> <c- p>{</c->
+        <c- n>delete</c-> <c- n>_p</c-><c- p>;</c->
+    <c- p>}</c->
+
+<c- n>private</c-><c- o>:</c->
+    <c- b>int</c-><c- o>*</c-> <c- n>_p</c-><c- p>;</c->
+    <c- n>RelocateOnly</c-> <c- n>_q</c-><c- p>;</c->
+    <c- n>ThrowingRelocate</c-> <c- n>_r</c-><c- p>;</c->
+<c- p>};</c->
+</pre>
+   <p>In the above, <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>_p</c-></code> does not manage its own lifetime,
+but the presence of <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>_r</c-></code> means that <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>T</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> is not noexcept so we need to
+release its resources if an exception is thrown during relocation.
+The presence of <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>_q</c-></code> demonstrates that relocation cannot be synthesized.</p>
    <h4 class="heading settled" data-level="5.2.3" id="reloc-ctor-invoke"><span class="secno">5.2.3. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-ctor-invoke"></a></h4>
    <p>The relocation constructor is invoked <em>as necessary</em> to relocate a prvalue
 from one storage location to another. Use of the <code class="highlight"><c- n>reloc</c-></code> operator does not
@@ -3228,7 +3299,7 @@ appropriate address.</p>
    <p>In particular, code of the form <code class="highlight"><c- n>T</c-> <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>y</c-><c- p>;</c-></code> is <em>highly</em> likely to be a
 no-op, simply renaming an existing object. This is however likely to find use
 for "sealing" objects with complex initialization, replacing the idiom of
-immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href="#biblio-iife">[IIFE]</a>):</p>
+immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href="#biblio-iife" title="IIFE for Complex Initialization - C++ Stories">[IIFE]</a>):</p>
    <table>
     <tbody>
      <tr>
@@ -3529,7 +3600,6 @@ non-static member function declared without a ref-qualifier, and either:</p>
        - end example] 
      </ul>
    </ul>
-   <p>Special thanks to <a href="mailto:ecatmur@googlemail.com">Edward Catmur</a> for writting that part!</p>
    <h3 class="heading settled" data-level="5.5" id="structured-reloc"><span class="secno">5.5. </span><span class="content">Structured relocation</span><a class="self-link" href="#structured-reloc"></a></h3>
    <h4 class="heading settled" data-level="5.5.1" id="structured-reloc-discussion"><span class="secno">5.5.1. </span><span class="content">Discussion</span><a class="self-link" href="#structured-reloc-discussion"></a></h4>
    <p><code class="highlight"><c- k>auto</c-> <c- p>[</c-><c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>]</c-> <c- o>=</c-> <c- n>foo</c-><c- p>();</c-> <c- n>sink</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-></code>, if ill-formed given the rules we
@@ -3800,7 +3870,7 @@ remains visible nonetheless, then no ABI breaks are introduced ;</p>
 </pre>
    <p>Which would be equivalent to <code class="highlight"><c- o>::</c-><c- k>new</c-> <c- p>(</c-><c- n>p</c-><c- p>)</c-> <c- n>T</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>}</c-></code>, except that it may be
 used in constant expression evaluations.</p>
-   <p class="note" role="note"><span>Note:</span> this overload would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signature should be
+   <p class="note" role="note"><span class="marker">Note:</span> this overload would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signature should be
 altered to use the <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> placeholder.</p>
    <h4 class="heading settled" data-level="6.1.2" id="std-destroy_relocate"><span class="secno">6.1.2. </span><span class="content">std::destroy_relocate</span><a class="self-link" href="#std-destroy_relocate"></a></h4>
    <p>We propose to add the following function in the <code class="highlight"><c- n>std</c-></code> namespace in the <code class="highlight"><c- n>memory</c-></code> header to perform relocation through a pointer:</p>
@@ -3887,7 +3957,7 @@ all constructed objects in the output iterator.</p>
 <c- kr>inline</c-> <c- k>constexpr</c-> <c- n>relocate_t</c-> <c- n>relocate</c-> <c- o>=</c-> <c- p>{};</c->
 <c- p>}</c->
 </pre>
-   <p class="note" role="note"><span>Note:</span> this facility would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signatures should be
+   <p class="note" role="note"><span class="marker">Note:</span> this facility would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signatures should be
 altered to use the <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> placeholder.</p>
    <h4 class="heading settled" data-level="6.2.2" id="std-decompose"><span class="secno">6.2.2. </span><span class="content">std::decompose</span><a class="self-link" href="#std-decompose"></a></h4>
    <p>See description of the function <a href="#structured-reloc-decompose">here</a>.</p>
