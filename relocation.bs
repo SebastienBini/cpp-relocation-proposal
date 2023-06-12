@@ -295,7 +295,7 @@ identifiers introduced through the syntax of structured binding declarations).
 
 `reloc obj` does the following:
 
-- if `obj` is ref-qualified, then performs perfect-forwarding 
+- if `obj` is ref-qualified, then performs perfect-forwarding
     (as if by `static_cast<decltype(obj)>(obj)`);
 - otherwise returns a temporary obtained from the source object, leaving 
     it in a *destructed state* or a "*pending-destruction*" state ;
@@ -774,7 +774,8 @@ This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor 
 from an xvalue, and then the relocation constructor from a prvalue.
 
-Note: a further benefit of this syntax is that it is currently ill-formed, and
+Note: a further benefit of this syntax is that it is currently ill-formed
+<a href="http://wg21.link/class.copy.ctor#5">[class.copy.ctor]/5</a>, and
 thus available for extension.
 
 A point of confusion may be that the syntax implies an infinite regress: the
@@ -836,7 +837,15 @@ ABI. See the [ABI section](#abi).
 
 If a class-type follows the Rule of Zero (updated to account for the relocation 
 constructor and relocation assignment operator), then the compiler will declare
-a non-explicit inline public relocation constructor.
+a non-explicit inline public relocation constructor,
+i.e. if none of the following are user-declared:
+
+* copy constructor
+* copy assignment operator
+* move constructor
+* move assignment operator
+* destructor
+* relocating assignment operator
 
 #### Deleted implicitly-declared or defaulted relocation constructor #### {#reloc-ctor-declaration-deleted}
 
@@ -856,12 +865,29 @@ and destructor.
 
 #### Trivial relocation #### {#trivial-relocation}
 
-A class-type `T` is trivially relocatable if all the following is true:
+A relocation constructor of a class type `X` is *trivial* if it is not user-provided and
+if:
+* `X` has no virtual functions and no virtual base classes, and
+* for each direct base class and direct non-static data member of class type or array thereof,
+    the relocation operation (which may be a relocation constructor or
+    synthesized from copy/move constructor plus destructor) selected
+    to relocate that base or member is trivial.
 
-- `T` has a (potentially implicitly-declared), defaulted, non-deleted relocation constructor ;
-- All `T`'s subobjects are recursively trivially relocatable.
+A *trivially relocatable class* is one which:
+* has a trivial, eligible relocation constructor, or
+* does not have a relocation constructor (including one that is deleted),
+    and is trivially copyable.
 
-All C++ primitive types are trivially relocatable.
+Note: *eligible* is defined in
+<a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
+
+Scalar types, trivially relocatable class types, and arrays and cv-qualified versions
+thereof are *trivially relocatable*.
+
+Advisement: we also tighten the definition of "trivial class" (and thus "trivial") to
+require that the class in question be trivially relocatable as well as trivially
+copyable. This is to ensure that if the user wants code to be called on relocation,
+the library does not bypass said code by, say, using `memmove`.
 
 ### Definition ### {#reloc-ctor-definition}
 
@@ -870,9 +896,9 @@ All C++ primitive types are trivially relocatable.
 The default relocation constructor implementation for a class-type `T` depends 
 on `T`'s type traits.
 
-If `T` is trivially relocatable then the relocation constructor merely performs
-a memcpy over its entire memory layout. In `T(T src)`, the relocation constructor
-is then optimized into `memcpy(this, &src, sizeof(T))`.
+If `T` is trivially relocatable then the relocation constructor
+effectively (ignoring padding) performs
+a memcpy over its entire memory layout.
 
 Otherwise in the nominal case, the constructor implementation performs
 memberwise relocations.
@@ -883,7 +909,7 @@ of `T`, in declaration order:
 - if `S` has an accessible relocation constructor, then `this->s` is constructed
     by calling the relocation constructor, passing `src.s` as source object.
     `src.s` is then left in a *destructed state*. Note that if `S` is trivially 
-    relocatable then the relocation constructor call will be optiomized into a 
+    relocatable then the relocation constructor call may be optiomized into a 
     memcpy: `memcpy(&this->s, &src.s, sizeof(S))` ;
 - otherwise if `S` has an accessible move constructor and destructor, then 
     `this->s` is constructed by calling the move constructor, ignoring `src.s`'s
@@ -926,13 +952,14 @@ Consider the following examples:
 ```c++
 struct T
 {
-    std::string _a, _b;
+    std::string _a, _b, _c;
 
     T(T src) :
-        _a{std::move(src._a)} {} /*
+        _a{std::move(src._a)}, _b{} {} /*
         1. T::_a is constructed using the move constructor.
-        2. T::_b is constructed using std::string's relocation constructor, from src._b
-        3. src._a is destructed before the constructor body is entered
+        2. T::_b is default constructed.
+        3. T::_c is constructed using std::string's relocation constructor, from src._c.
+        4. src._b and src._a are destructed (in that order) before the constructor body is entered.
     */
 };
 
@@ -988,48 +1015,18 @@ is destroyed at the end of the initializer list).
 
 It is for safety reasons that the relocation constructor ensures that
 the source object is entirely destroyed by the time the constructor's body is reached.
-Had it been otherwise, then it would have been the responsability of the users to destroy
+Had it been otherwise, then it would have been the responsibility of the users to destroy
 the subobjects that did not get relocated. This would likely lead to programming errors, 
 especially when we consider synthesized relocation.
-
-#### Try-with-init #### {#reloc-ctor-try-with-init}
-
-We propose an extension to the function-try-block definition for constructors.
-
-In a constructor definition, after the `try` and before the member initializer
-list, new objects can be initialized that are not part of the class subobject.
-This would allow for more fin-grained control in the constructor definition, which 
-will prove usefull for the relocation constructor.
-
-The newly introduced objects are accessible for the member initialization list, 
-the constructor body, and the catch blocks. They are destructed right before the 
-constructor returns.
-
-TODO: provide a compelling example.
-
-```c++
-class T : public BaseClass
-{
-public:
-    T(T src) try (auto* p = _d.get_resource()) : _d{std::move(src._d)}
-    {
-
-    }
-    catch (std::exception const& ex)
-    {
-        delete p;
-    }
-
-private:
-    DataMember _d;
-};
-```
 
 #### Exception handling #### {#reloc-ctor-exceptions}
 
 The relocation constructor is able to handle exceptions. If an exception leaks 
 through the relocation constructor then it guarantees that the *target* is not 
 constructed and the *source* object is destroyed.
+
+**This is in general undesirable, which is why the relocation constructor is
+`noexcept` if at all possible.**
 
 As we have seen above, the relocation constructor acts in three stages: 
 (a) target subobjects construction, 
@@ -1076,6 +1073,50 @@ is destructor is called and the exception is propagated.
 
 Note that the target object needs not to be destroyed as the delegating 
 constructor already took care of that.
+
+#### Additional parameters #### {#reloc-ctor-additional-params}
+
+As with copy and move constructors, it is permissible to add additional parameters
+to a relocation constructor, on condition they have a default initializer.
+
+One case where this can be of use is if the user needs space to store information
+and/or resources
+for the duration of the relocation constructor, for a contrived example:
+
+```c++
+class T
+{
+public:
+    class Helper {
+    public:
+        Helper() = default;
+        ~Helper() { delete p; }
+    private:
+        friend T;
+        int* p;
+    };
+
+    T(T src, Helper storage = {}) noexcept(false)
+        : _p(storage.p = std::exchange(src._p, nullptr))
+    {
+        storage.p = nullptr;
+    }
+
+    ~T() {
+        delete _p;
+    }
+
+private:
+    int* _p;
+    RelocateOnly _q;
+    ThrowingRelocate _r;
+};
+```
+
+In the above, `T::_p` does not manage its own lifetime,
+but the presence of `T::_r` means that `T::T(T)` is not noexcept so we need to
+release its resources if an exception is thrown during relocation.
+The presence of `T::_q` demonstrates that relocation cannot be synthesized.
 
 ### Invocation ### {#reloc-ctor-invoke}
 
