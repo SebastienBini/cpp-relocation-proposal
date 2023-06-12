@@ -694,6 +694,22 @@ if all the following conditions are met:
 
 We prefer to leave the details of this tracking implementation-defined.
 
+### Relocation elision ### {#reloc-elision}
+
+Whether performed by relocation, move or copy constructor, relocation
+may be elided if the compiler can ensure that the source object is created at
+the address to be occuped by the target object.
+This is intended to work in much the same way as the named return value optimization;
+for example:
+
+```c+
+void f(std::string s);
+void g() {
+    std::string s;  // may be created in f's argument slot
+    f(reloc s);  // relocation may be elided
+}
+```
+
 ### Discarded reloc expressions ### {#discarded-reloc-expr}
 
 Under some conditions the following expression is well-formed: `reloc obj;` 
@@ -704,8 +720,9 @@ constructed from the source object. The temporary is then destructed at the end
 of the expression evaluation.
 
 However, materializing a temporary whose only goal is to be destroyed is 
-suboptimal. Hence, it is authorized for implementations to elide the creation
-of the temporary object (if created by relocation or move constructor), 
+suboptimal. Hence, it is authorized for implementations to (as above)
+elide the creation
+of the temporary object, 
 effectively only calling the destructor of the source
 object at the end of the expression evaluation. If this optimization is done, 
 the temporary returned by `reloc` is not materialized.
@@ -713,8 +730,7 @@ the temporary returned by `reloc` is not materialized.
 This means that `reloc obj;` has the following behavior:
 
 - if `obj` is not an *unowned parameter* then:
-    - If `obj` has a relocation or move constructor,
-        then the temporary is likely elided, effectively only calling the 
+    - The temporary is likely elided, effectively only calling the 
         destructor of `obj`.
     - Otherwise a temporary is initialized from the 
         source object, and then destructed.
