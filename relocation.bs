@@ -1787,17 +1787,28 @@ struct ExtractAddr
 {
     auto get_addr(this Derived reloc) { return Derived::_addr; }
 };
+struct ExtractAddr2
+{
+    template <class Derived>
+    auto get_addr(this Derived reloc) { return Derived::_addr; }
+};
 struct A : ExtractAddr<A>
 {
     gsl::non_null<std::unique_ptr<int>> _addr;
     // [...]
 };
-struct B : ExtractAddr<B>
+struct B : ExtractAddr2
 {
     gsl::non_null<std::unique_ptr<int>> _addr;
     // [...]
 };
 ```
+
+Note that, in the above example, if we have a `DA` structure that inherits
+from `A` and a `DB` structure that inherits from `B`,
+then `DA{}.get_addr()` is well-formed while `DB{}.get_addr()` is not.
+Indeed `_addr` is not a direct member of `DB` (type deduced in `ExtractAddr2::get_addr`)
+and hence is not directly accessible this way.
 
 **A possible implementation of a putative unique_ptr::release (not proposed)**
 ```c++
