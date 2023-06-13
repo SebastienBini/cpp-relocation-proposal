@@ -417,8 +417,8 @@ public:
 `reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding 
 any further mention of the name `obj` which would resolve into the relocated object.
 
-If `obj` is a member of an anonymous union, then `reloc` does not prevent from
-name reuse. All members of that union, including the one that got relocated,
+If `obj` is a member of an anonymous union, then `reloc` does not prevent
+name reuse; all members of that union, including the one that was relocated,
 can be reused normally.
 
 Pointers and references that pointed to `obj` become dangling,
@@ -687,7 +687,7 @@ void relocate_case_15()
 	do_smth_else(reloc y); // well-formed
 }
 ```
-`reloc` does not forbids from reusing the names of anonymous union members.
+`reloc` does not prevent reusing the names of anonymous union members.
 
 ### Conditional relocation ### {#conditional-reloc}
 
@@ -1715,7 +1715,7 @@ parameter name is omitted or different than `reloc`. The decomposing trait
 is an implementation detail and it does not need to appear in the declaration.
 
 A decomposing function does not bear any constraints on the number and types of
-parameters, except that the first one must be an explicit this parameter passed
+parameters, except that the first one must be an explicit object parameter passed
 by value.
 
 ### Definition ### {#decomposing-func-definition}
@@ -1744,14 +1744,14 @@ the function body is entered. It is subject to the following rules:
 
 Special considerations are taken for overlapping subobjects:
 
-- **EBO bases and** `[[no_unique_address]]` **members:** Obey to the above rules.
-- **Anonymous unions:** Obey to the above rules. `reloc` rules on function-local
+- **EBO bases and** `[[no_unique_address]]` **members:** Obey the above rules.
+- **Anonymous unions:** Obey the above rules. `reloc` rules pertaining to function-local
     anonymous union members apply.
 - **Virtual bases (and bases with virtual bases):** are unrelocatable. They cannot
     be accessed by the `reloc Base` expression (ill-formed).
 
-As subobjects got turned into complete objects, they can be relocated like any
-function-local variable, or their destructor is otherwise called at scope exit.
+Since subobjects have become complete objects, they can be relocated like any
+function-local variable; otherwise, their destructor is called on exit from function scope.
 
 #### Examples #### {#decomposing-func-examples}
 
@@ -1794,7 +1794,7 @@ struct B : ExtractAddr<B>
 };
 ```
 
-**A putative unique_ptr::release (not proposed)**
+**A possible implementation of a putative unique_ptr::release (not proposed)**
 ```c++
 T* unique_ptr<T,D>::release(this unique_ptr reloc)
 {
@@ -1918,7 +1918,7 @@ As for decomposing functions, a decomposing lambda is ill-formed if:
 
 - the type of the `this` parameter is not passed by value ;
 - or the parameter type is not the same as, or does not derive from
-    the lambda (see [[#decomposing-func-aberrations]]) ;
+    the type of the lambda (see [[#decomposing-func-aberrations]]) ;
 - or the parameter type has no relocation, move and copy constructors
     (none of the three).
 
