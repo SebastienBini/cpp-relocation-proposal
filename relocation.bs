@@ -1715,8 +1715,13 @@ parameter name is omitted or different than `reloc`. The decomposing trait
 is an implementation detail and it does not need to appear in the declaration.
 
 A decomposing function does not bear any constraints on the number and types of
-parameters, except that the first one must be an explicit object parameter passed
-by value.
+parameters, except for its first parameter. The first parameter must be an
+explicit object parameter passed by value, possibly cv-qualified.
+
+Further constraints apply to the type of the first parameter. For instance
+the type must be same as, or derive from the class-type the function is a
+member of. However those constraints are only checked in the context of the definition,
+not the declaration. See also [here](#decomposing-func-ill-formedness-criteria)).
 
 ### Definition ### {#decomposing-func-definition}
 
