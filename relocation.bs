@@ -781,6 +781,15 @@ if all the following conditions are met:
 
 We prefer to leave the details of this tracking implementation-defined.
 
+Concerns have been expressed that extra flags would violate the "don't pay for
+what you don't use" principle. We acknowledge this concern, but feel that the
+user is getting at least something out of this. Alternatives would be for the source
+object to be destroyed implicitly at the opening or closing brace of the `else`,
+for the code to be ill-formed unless the source object is relocated within the
+`else`, or for the code to be ill-formed unconditionally. Note that in each of these
+cases, the user can recover our preferred behavior in library, using `std::optional`
+to add the tracking flags that in our proposal would be provided by the language.
+
 ### Relocation elision ### {#reloc-elision}
 
 Whether performed by relocation, move or copy constructor, relocation
