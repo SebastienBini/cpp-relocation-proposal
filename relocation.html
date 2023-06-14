@@ -2,7 +2,7 @@
  <head>
   <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
   <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
-  <title>D2785R2: Relocating prvalues</title>
+  <title>P2785R3: Relocating prvalues</title>
 <style data-fill-with="stylesheet">/******************************************************************************
  *                   Style sheet for the W3C specifications                   *
  *
@@ -1564,7 +1564,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 5fcd28d6d, updated Tue May 30 13:12:11 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="b7a03aab4307cd2ef054be56dc035b13d3280eaa" name="document-revision">
+  <meta content="b28d6d3e7ece4f80589cf96de0558804470df26f" name="document-revision">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -2091,8 +2091,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
  <body class="h-entry">
   <div class="head">
    <p data-fill-with="logo"></p>
-   <h1 class="p-name no-ref" id="title">D2785R2<br>Relocating prvalues</h1>
-   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Draft Proposal, <time class="dt-updated" datetime="2023-06-14">2023-06-14</time></span></h2>
+   <h1 class="p-name no-ref" id="title">P2785R3<br>Relocating prvalues</h1>
+   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Published Proposal, <time class="dt-updated" datetime="2023-06-14">2023-06-14</time></span></h2>
    <div data-fill-with="spec-metadata">
     <dl>
      <dt>This version:
@@ -2120,8 +2120,17 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <nav data-fill-with="table-of-contents" id="toc">
    <h2 class="no-num no-toc no-ref" id="contents">Table of Contents</h2>
    <ol class="toc" role="directory">
-    <li><a href="#intro"><span class="secno">1</span> <span class="content">Introduction</span></a>
-    <li><a href="#motivation"><span class="secno">2</span> <span class="content">Motivation</span></a>
+    <li><a href="#intro"><span class="secno">1</span> <span class="content">Overview</span></a>
+    <li>
+     <a href="#motivation"><span class="secno">2</span> <span class="content">Motivation</span></a>
+     <ol class="toc">
+      <li><a href="#motivation-never-empty"><span class="secno">2.1</span> <span class="content">Never-empty types</span></a>
+      <li><a href="#motivation-constant-objects"><span class="secno">2.2</span> <span class="content">Constant objects</span></a>
+      <li><a href="#motivation-teachability"><span class="secno">2.3</span> <span class="content">Teachability</span></a>
+      <li><a href="#motivation-vs-trivial-relocation"><span class="secno">2.4</span> <span class="content">Versus trivial relocation</span></a>
+      <li><a href="#motivation-helper-types"><span class="secno">2.5</span> <span class="content">Helper types</span></a>
+      <li><a href="#motivation-performance"><span class="secno">2.6</span> <span class="content">Library performance</span></a>
+     </ol>
     <li>
      <a href="#nomenclature"><span class="secno">3</span> <span class="content">Nomenclature</span></a>
      <ol class="toc">
@@ -2132,11 +2141,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <li>
      <a href="#compare"><span class="secno">4</span> <span class="content">Comparison with existing proposals</span></a>
      <ol class="toc">
-      <li><a href="#compare-D1144R6"><span class="secno">4.1</span> <span class="content">D1144R6: Object relocation in terms of move plus destroy by Arthur O’Dwyer</span></a>
+      <li><a href="#compare-P1144R8"><span class="secno">4.1</span> <span class="content">P1144R8: Object relocation in terms of move plus destroy by Arthur O’Dwyer</span></a>
       <li><a href="#compare-P0023R0"><span class="secno">4.2</span> <span class="content">P0023R0: Relocator: Efficiently moving objects by Denis Bider</span></a>
       <li><a href="#compare-N4158"><span class="secno">4.3</span> <span class="content">N4158: Destructive Move by Pablo Halpern</span></a>
       <li><a href="#compare-P1029R3"><span class="secno">4.4</span> <span class="content">P1029R3: move = bitcopies by Niall Douglas</span></a>
       <li><a href="#compare-P0308R0"><span class="secno">4.5</span> <span class="content">P0308R0: Valueless Variants Considered Harmful by Peter Dimov</span></a>
+      <li><a href="#compare-D2839"><span class="secno">4.6</span> <span class="content">D2839R1: Nontrivial Relocation via a New <em>owning reference</em> Type by Brian Bi and Joshua Berne</span></a>
      </ol>
     <li>
      <a href="#lg-changes"><span class="secno">5</span> <span class="content">Proposed language changes</span></a>
@@ -2305,45 +2315,48 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
    </ol>
   </nav>
   <main>
-   <h2 class="heading settled" data-level="1" id="intro"><span class="secno">1. </span><span class="content">Introduction</span><a class="self-link" href="#intro"></a></h2>
-   <p>C++11 introduced rvalue-references, move constructor and move-assignment operators.
+   <h2 class="heading settled" data-level="1" id="intro"><span class="secno">1. </span><span class="content">Overview</span><a class="self-link" href="#intro"></a></h2>
+   <p>C++11 introduced rvalue references, move constructor and move-assignment operators.
 While these have improved C++ in many ways, there is still one operation that is 
 unsupported: relocation. By "relocation", we mean the operation to construct a 
 new object while simultaneously destructing the source object. Some other proposals
 look at this as "move + destruct", while we see this as a unique, different, 
 and optionally better optimized operation.</p>
-   <p>This new operation brings several benefits, namely in terms of performance and
+   <p>This new operation brings several benefits, principally in terms of performance and
 code correctness. This proposal has its own take on trivial relocatibility 
 (which allows to optimize the relocation operation into a simple <code class="highlight"><c- n>memcpy</c-></code>). 
 It also supports relocate-only types (such as <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-></code>)
 and enables to relocate constant objects.</p>
-   <p>The proposal brings:</p>
+   <p>The proposal introduces:</p>
    <ul>
     <li data-md>
-     <p>two new specials member functions: a relocation constructor <code class="highlight"><c- n>T</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> and a relocation
+     <p>two new special member functions: a relocation constructor <code class="highlight"><c- n>T</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> and a relocation
 assignment operator <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- k>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> ;</p>
     <li data-md>
      <p>a new keyword: <code class="highlight"><c- n>reloc</c-></code> ;</p>
     <li data-md>
-     <p>slightly changes overload resolution rules ;</p>
+     <p>slight changes to overload resolution rules ;</p>
     <li data-md>
      <p>might introduce ABI breaks of some functions ;</p>
     <li data-md>
-     <p>library evolutions to support relocation.</p>
+     <p>library evolution to support relocation.</p>
    </ul>
    <p>The proposal does not introduce a new value type; instead relocation will happen from prvalues.</p>
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Motivation</span><a class="self-link" href="#motivation"></a></h2>
-   <p>C++ lacks the support for relocate-only types. Let’s us consider the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> case for a moment. <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-></code> inhibits
+   <h3 class="heading settled" data-level="2.1" id="motivation-never-empty"><span class="secno">2.1. </span><span class="content">Never-empty types</span><a class="self-link" href="#motivation-never-empty"></a></h3>
+   <p>C++ lacks support for relocate-only types. Let’s us consider the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> case for a moment. <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-></code> inhibits
 the move constructor, as a moved-from pointer would be null and break the class invariant.
 In turn <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-></code> inhibits the copy constructor because of its ownership policy. 
-Hence this type is non-copyable and non-movable. Those objects are legitimate for
-they provide code correctness.</p>
+Hence this type is non-copyable and non-movable. Those objects are legitimate since
+they improve code correctness (the user need not check whether they are empty) and performance
+(the compiler need not check whether they are empty).</p>
    <p>Unfortunately those objects are quite impractical to handle in C++: they cannot be moved around
-in the program memory (passed down to function, stored and removed from containers, etc...), 
-while in practice there is no good reason to prevent that. With the relocation
+in program memory (passed down to function, stored and removed from containers, etc...), 
+while in principle there is no good reason to prevent that. With the relocation
 semantics in mind this would be allowed: each time the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> is moved in memory, it simultaneously destroys the previous instance (in practice, 
 this simply means the memory occupied by the source object just becomes uninitialized, 
 and in particular, the source object’s destructor is not called).</p>
+   <h3 class="heading settled" data-level="2.2" id="motivation-constant-objects"><span class="secno">2.2. </span><span class="content">Constant objects</span><a class="self-link" href="#motivation-constant-objects"></a></h3>
    <p>Another place where C++ falls short is with constant objects. As of today, constant
 objects cannot be moved in C++ as the move constructor cannot steal the resources
 of a constant object. As such, never-modified objects that
@@ -2352,12 +2365,40 @@ where complete elision is not viable) cannot be marked as <code class="highlight
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.</p>
+   <p>Automatic objects are recommended by various guidelines to be constant, since a constant object
+will not change throughout its lifetime, simplifying reasoning about program state both for
+humans (coders, reviewers, maintainers) and for machines (compilers, tooling). Allowing an object
+to be <code class="highlight"><c- k>const</c-></code> throughout its lifetime but give up its resources at the end of its lifetime allows
+for better, safer code.</p>
    <p>As we will see other proposals about relocation provide little support for
 relocate-only types, and even less for constant objects.
 They only partly improve their support in a limited way.</p>
+   <h3 class="heading settled" data-level="2.3" id="motivation-teachability"><span class="secno">2.3. </span><span class="content">Teachability</span><a class="self-link" href="#motivation-teachability"></a></h3>
+   <p>It is a matter of some confusion for learners that a "moved-from" object still exists and is
+accessible, but has an unspecified state. This leads to so-called "use-after-move" bugs, and
+requires static analysis passes and coding guidelines to prevent. "What does <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code> do?"
+is, regrettably, a common "gotcha" question in a certain style of coding interview. In this
+matter C++ compares unfavorably to other languages where the "move" operation is destructive
+(if trivial) and bars further access to the source object.</p>
+   <h3 class="heading settled" data-level="2.4" id="motivation-vs-trivial-relocation"><span class="secno">2.4. </span><span class="content">Versus trivial relocation</span><a class="self-link" href="#motivation-vs-trivial-relocation"></a></h3>
+   <p>As will be seen below, trivial relocation provides an incomplete solution to the issues
+presented in this section. The primary concern is that of composability; an aggregate of
+a self-referential type that cannot be trivially relocated (e.g. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>string</c-></code> in some
+implementations) and a relocate-only type (e.g. a non-null <code class="highlight"><c- n>unique_ptr</c-></code>) can neither be
+relocated by move-and-destroy nor trivially relocated. Thus non-trivial relocation
+emerges as a requirement.</p>
+   <h3 class="heading settled" data-level="2.5" id="motivation-helper-types"><span class="secno">2.5. </span><span class="content">Helper types</span><a class="self-link" href="#motivation-helper-types"></a></h3>
+   <p>In framework code it is a relatively everyday task to write helper classes that are
+constructed to own some resource, passed around from place to place, and then destroyed,
+cleaning up the resource in the destructor. Move semantics for such classes requires
+identifying or adding an appropriate empty state, writing a move constructor, and
+adding checks to the destructor; all of these inhibit performance and are opportunities
+to introduce bugs. Relocation would replace all of this with a single defaulted special
+member function declaration.</p>
+   <h3 class="heading settled" data-level="2.6" id="motivation-performance"><span class="secno">2.6. </span><span class="content">Library performance</span><a class="self-link" href="#motivation-performance"></a></h3>
    <p>Finally, relocation and especially trivial relocation will bring performance boosts
-in many situations. Other proposals make a fine work at enumerating all the gains
-from trivial relocation (see in particular <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a>). To summarize, the performance gains
+in many situations. Other proposals make fine work at enumerating all the gains to be had
+from trivial relocation (see in particular <a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a>). To summarize, the performance gains
 are mainly in containers (std::vector::resize and the likes)
 and code size gains from functions that use <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>swap</c-></code>.</p>
    <h2 class="heading settled" data-level="3" id="nomenclature"><span class="secno">3. </span><span class="content">Nomenclature</span><a class="self-link" href="#nomenclature"></a></h2>
@@ -2414,8 +2455,8 @@ operations into a single memcpy. But there are places where this optimization
 could not happen, and we are left with a suboptimized move and destruct. 
 The relocation constructor that we propose offers a customization point, and
 especially allow for a more optimized relocation technique than move and destruct.</p>
-   <h3 class="heading settled" data-level="4.1" id="compare-D1144R6"><span class="secno">4.1. </span><span class="content">D1144R6: Object relocation in terms of move plus destroy by Arthur O’Dwyer</span><a class="self-link" href="#compare-D1144R6"></a></h3>
-   <p><a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> puts the focus on trivially relocatable types, and offers ways to
+   <h3 class="heading settled" data-level="4.1" id="compare-P1144R8"><span class="secno">4.1. </span><span class="content">P1144R8: Object relocation in terms of move plus destroy by Arthur O’Dwyer</span><a class="self-link" href="#compare-P1144R8"></a></h3>
+   <p><a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a> puts the focus on trivially relocatable types, and offers ways to
 mark a type as trivially relocatable.</p>
    <p>The current proposal has its own take on trivial relocatability that does not
 rely on a class attribute. Instead the trivial relocatability
@@ -2427,7 +2468,7 @@ is trivially relocatable.</p>
    <p>This approach is not prone to errors when compared to a class attribute,
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.</p>
-   <p>Also, <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> does not account for relocate-only types. To some extend, trivially
+   <p>Also, <a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a> does not account for relocate-only types. To some extend, trivially
 relocatable types have minimal support as they could be trivially relocated in the
 places where "move plus destroy" can be optimized. However:</p>
    <ul>
@@ -2442,7 +2483,7 @@ enclosing class becomes non trivially relocatable, while remaining relocate-only
 This renders the enclosing class impractical to use without proper support
 for relocate-only types.</p>
    </ul>
-   <p>In this proposal we reuse <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a>'s <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate</c-></code> function, except that we
+   <p>In this proposal we reuse <a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a>'s <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate</c-></code> function, except that we
 name it <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code>.</p>
    <h3 class="heading settled" data-level="4.2" id="compare-P0023R0"><span class="secno">4.2. </span><span class="content">P0023R0: Relocator: Efficiently moving objects by Denis Bider</span><a class="self-link" href="#compare-P0023R0"></a></h3>
    <p>The Relocator introduced in <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a> is similar to the proposed relocation constructor.
@@ -2507,7 +2548,7 @@ relocation.</p>
    <h3 class="heading settled" data-level="4.4" id="compare-P1029R3"><span class="secno">4.4. </span><span class="content">P1029R3: move = bitcopies by Niall Douglas</span><a class="self-link" href="#compare-P1029R3"></a></h3>
    <p><a data-link-type="biblio" href="#biblio-p1029r3" title="move = bitcopies">[P1029R3]</a> enables a special bitcopies move constructor for types that are trivially relocatable.</p>
    <p>Like the other proposals <a data-link-type="biblio" href="#biblio-p1029r3" title="move = bitcopies">[P1029R3]</a> does not provide support for relocate-only types
-(it suffers from the same drawbacks as <a data-link-type="biblio" href="#biblio-d1144r6" title="Object relocation in terms of move plus destroy">[D1144R6]</a> in that regard).</p>
+(it suffers from the same drawbacks as <a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a> in that regard).</p>
    <h3 class="heading settled" data-level="4.5" id="compare-P0308R0"><span class="secno">4.5. </span><span class="content">P0308R0: Valueless Variants Considered Harmful by Peter Dimov</span><a class="self-link" href="#compare-P0308R0"></a></h3>
    <p>We only consider the "pilfering" proposition from <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a>.
 P0308R0’s pilfering shares some similarities with the current proposal, 
@@ -2528,6 +2569,22 @@ while <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pilfer</c-></code
      <p>trivial relocation is not possible with pilfering, which makes <a data-link-type="biblio" href="#biblio-p0308r0" title="Valueless Variants Considered Harmful">[P0308R0]</a> miss
 the performance boost that is so longed for.</p>
    </ul>
+   <h3 class="heading settled" data-level="4.6" id="compare-D2839"><span class="secno">4.6. </span><span class="content">D2839R1: Nontrivial Relocation via a New <em>owning reference</em> Type by Brian Bi and Joshua Berne</span><a class="self-link" href="#compare-D2839"></a></h3>
+   <p><a data-link-type="biblio" href="#biblio-d2839r1" title="Nontrivial Relocation via a New owning reference Type">[D2839R1]</a> is very close in spirit and mechanism to this paper. We consider the
+addition of an "owning reference" to be an unnecessary complication to the type
+system that would impose a burden throughout library code. We refute the claim
+that a prvalue occupying storage constitutes a fourth value category; in our
+model, the lvalue that previously occupied that storage ceases to exist and a
+new prvalue is formed, which may come to occupy that storage (if relocation is
+elided) or distinct storage (in the general case).</p>
+   <p>We are intrigued by the claim that an owning reference can provided superior
+performance when passing a variable up the stack, compared to repeatedly relocating
+it from caller to callee, but believe that in practice such gains would be minimal
+and liable to be eliminated via optimization, while our model offers the possibility
+of improved locality, since the relocated object will reside directly in the leafmost
+function’s stack as opposed to being accessible only via indirection.</p>
+   <p>Otherwise, the paper has some minor differences in naming (e.g. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>force_relocate</c-></code> for what we call <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code>) that could easily be reconciled in either
+direction.</p>
    <h2 class="heading settled" data-level="5" id="lg-changes"><span class="secno">5. </span><span class="content">Proposed language changes</span><a class="self-link" href="#lg-changes"></a></h2>
    <h3 class="heading settled" data-level="5.1" id="reloc-operator"><span class="secno">5.1. </span><span class="content">reloc operator</span><a class="self-link" href="#reloc-operator"></a></h3>
    <p>This paper suggests to introduce a new keyword, named <code class="highlight"><c- n>reloc</c-></code>. <code class="highlight"><c- n>reloc</c-></code> acts as a
@@ -2937,6 +2994,12 @@ if all the following conditions are met:</p>
 in at least one branch as well (taking into account the potentially empty <code class="highlight"><c- k>else</c-></code> branch).</p>
    </ul>
    <p>We prefer to leave the details of this tracking implementation-defined.</p>
+   <p>Concerns have been expressed that extra flags would violate the "don’t pay for
+what you don’t use" principle. We acknowledge this concern, but feel that the
+user is getting at least something out of this. Alternatives would be for the source
+object to be destroyed implicitly at the opening or closing brace of the <code class="highlight"><c- k>else</c-></code>,
+for the code to be ill-formed unless the source object is relocated within the <code class="highlight"><c- k>else</c-></code>, or for the code to be ill-formed unconditionally. Note that in each of these
+cases, the user can recover our preferred behavior in library, using <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>optional</c-></code> to add the tracking flags that in our proposal would be provided by the language.</p>
    <h4 class="heading settled" data-level="5.1.6" id="reloc-elision"><span class="secno">5.1.6. </span><span class="content">Relocation elision</span><a class="self-link" href="#reloc-elision"></a></h4>
    <p>Whether performed by relocation, move or copy constructor, relocation
 may be elided if the compiler can ensure that the source object is created at
@@ -3609,6 +3672,8 @@ is called is implementation-defined.</p>
 to call the eliding version instead, as long as it can elide the call to the 
 destructor on the source object.</p>
    <h3 class="heading settled" data-level="5.4" id="overload-resolution"><span class="secno">5.4. </span><span class="content">Overload resolution</span><a class="self-link" href="#overload-resolution"></a></h3>
+   <p class="note" role="note"><span class="marker">Note:</span> Compare <a data-link-type="biblio" href="#biblio-p2665r0" title="Allow calling overload sets containing T, const T&amp;">[P2665R0]</a> "Allow calling overload sets containing T,
+const T&amp;".</p>
    <p>The current overload resolution rules are not suitable for relocation by prvalue.</p>
    <p>Indeed, consider the following scenario:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-><c- o>&amp;&amp;</c-><c- p>);</c->
@@ -4874,8 +4939,8 @@ moved-from state understanding problem, as well as used-after-move errors
   <h2 class="no-num no-ref heading settled" id="references"><span class="content">References</span><a class="self-link" href="#references"></a></h2>
   <h3 class="no-num no-ref heading settled" id="informative"><span class="content">Informative References</span><a class="self-link" href="#informative"></a></h3>
   <dl>
-   <dt id="biblio-d1144r6">[D1144R6]
-   <dd>Arthur O'Dwyer. <a href="https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html"><cite>Object relocation in terms of move plus destroy</cite></a>. June 2022. URL: <a href="https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html">https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html</a>
+   <dt id="biblio-d2839r1">[D2839R1]
+   <dd>Brian Bi; Joshua Berne. <a href="https://isocpp.org/files/papers/D2839R1.html"><cite>Nontrivial Relocation via a New owning reference Type</cite></a>. June 2023. URL: <a href="https://isocpp.org/files/papers/D2839R1.html">https://isocpp.org/files/papers/D2839R1.html</a>
    <dt id="biblio-iife">[IIFE]
    <dd>Bartlomiej Filipek. <a href="https://www.cppstories.com/2016/11/iife-for-complex-initialization/"><cite>IIFE for Complex Initialization - C++ Stories</cite></a>. October 2016. URL: <a href="https://www.cppstories.com/2016/11/iife-for-complex-initialization/">https://www.cppstories.com/2016/11/iife-for-complex-initialization/</a>
    <dt id="biblio-n4158">[N4158]
@@ -4888,4 +4953,8 @@ moved-from state understanding problem, as well as used-after-move errors
    <dd>Gašper Ažman; et al. <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html"><cite>Deducing this</cite></a>. January 2021. URL: <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html</a>
    <dt id="biblio-p1029r3">[P1029R3]
    <dd>Niall Douglas. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf"><cite>move = bitcopies</cite></a>. January 2020. URL: <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf</a>
+   <dt id="biblio-p1144r8">[P1144R8]
+   <dd>Arthur O'Dwyer. <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p1144r8.html"><cite>std::is_trivially_relocatable</cite></a>. May 2023. URL: <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p1144r8.html">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p1144r8.html</a>
+   <dt id="biblio-p2665r0">[P2665R0]
+   <dd>Bengt Gustafsson. <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2665r0.pdf"><cite>Allow calling overload sets containing T, const T&amp;</cite></a>. October 2022. URL: <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2665r0.pdf">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2665r0.pdf</a>
   </dl>
