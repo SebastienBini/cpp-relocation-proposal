@@ -1,6 +1,6 @@
 <pre class='metadata'>
 Title: Relocating prvalues
-Revision: 1
+Revision: 2
 Audience: LEWG, EWG
 Status: D
 Group: WG21
@@ -14,7 +14,7 @@ Abstract:
   This paper proposes several mechanisms to enable real relocation in C++.
   We cover several topics, such as trivial relocatibility, container optimizations,
   supports for relocate-only types, library changes and the impact of the existing code base.
-Date: 2023-01-30
+Date: 2023-06-12
 </pre>
 
 # Introduction # {#intro}
@@ -361,6 +361,10 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     move, or copy constructor ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-reloc">structured relocation declaration</a>) ;
+- the source object is a lambda capture from a [non-decomposing lambda](#decomposing-lambda) ;
+
+In particular, the `reloc` statement is well-formed if the source object is a
+member of a function-local anonymous union.
 
 For instance:
 ```cpp
@@ -412,6 +416,10 @@ public:
 
 `reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding 
 any further mention of the name `obj` which would resolve into the relocated object.
+
+If `obj` is a member of an anonymous union, then `reloc` does not prevent
+name reuse; all members of that union, including the one that was relocated,
+can be reused normally.
 
 Pointers and references that pointed to `obj` become dangling,
 and we don't try to offer any protection against that. We only protect against
@@ -659,6 +667,27 @@ from:
 }
 ```
 In this scenario `goto` is placed in a way that does not trigger the reuse of relocated `var`.
+```cpp
+void relocate_case_15()
+{
+	union { T x; U y; };
+	x = getT();
+	if (sometest(x))
+	{
+		do_smth(reloc x);
+		x = getT(); // well-formed
+	}
+	else
+	{
+		reloc x; // destroy x
+		y = getU();
+		do_smth_else(reloc y); // well-formed
+		x = getT(); // well-formed
+	}
+	do_smth_else(reloc y); // well-formed
+}
+```
+`reloc` does not prevent reusing the names of anonymous union members.
 
 ### Conditional relocation ### {#conditional-reloc}
 
@@ -1487,8 +1516,8 @@ relocation from a structured binding. This is motivated by:
 
 - The need to make APIs that support relocate-only types. How would we write an 
     API to extract an item at an arbitrary position from a vector? We propose the 
-    following API: `std::pair<T, iterator> vector<T>::pilfer(const_iterator);` 
-    (returns next valid iterator and relocated vector element) as it is consistent 
+    following API: `std::pair<T, iterator> vector<T>::erase(std::relocate_t, const_iterator);`
+    (returns relocated vector element and next valid iterator) as it is consistent
     with other vector APIs and complies with the 
     [core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out). 
     Then, what can users do with the returned object as it lies in a pair, and 
@@ -1585,60 +1614,30 @@ the return type of `get_all(T)` matches none of the two protocols.
 ##### std::tuple and std::array are implementation-defined ##### {#structured-reloc-tuple}
 
 `std::pair`, `std::tuple`, and `std::array` shall provide their own implementation
-of `get_all`. The return type is implementation-defined.
+of `get_all`. The return type is implementation-defined (may rely on compiler magic).
 
 This allows us to write things like:
 ```c++
 void bar(T);
 void foo(std::vector<T>& v)
 {
-    /* pilfer removes a vector element at given iterator,
+    /* erase(std::relocate_t) removes a vector element at given iterator,
      * returns a pair with next valid iterator and relocated vector element. */
-    auto [val, it] = v.pilfer(v.begin() + 1); /* calls get_all behind 
+    auto [val, it] = v.erase(std::relocate, v.begin() + 1); /* calls get_all behind
         the scene. */
     bar(reloc val); /* can call reloc on val as it is not a structured binding */
 }
 ```
 
-This code works even if `T` is relocate-only (no copy, no move constructor).
-
-##### std::decompose helper function ##### {#structured-reloc-decompose}
-
-We propose to add a new helper function, backed-up by compiler magic: `std::decompose`.
-The aim of this function is to safely decompose an object, passed by value, into
-smaller parts. The parts to retrieve are passed as template parameters.
-
-The template parameters of `std::decompose` are either direct base classes or
-pointers to non-static data members of the object to decompose.
-
-For instance, with 
-`struct Person : public Entry { std::string name; std::unique_ptr<Details> details; };`, we can
-write: `std::decompose<Entry, &Person::details>(reloc person);`
-
-The return value of `std::decompose` is implementation-defined. In practice, it needs
-to be a struct that complies with the *data member* protocol. The returned object
-contains the desired subobjects, constructed by relocation or synthesized relocation.
-The subobjects of the source objects that did not get relocated are destroyed.
-
-Special considerations are taken with regards to who should be allowed to call
-`std::decompose`, and of the risks of inadvertently breaking class invariants.
-We believe the following rules are enough to ensure code-safety:
-
-- if the class has any non-empty potentially overlapping direct subobjects 
-    (i.e., virtual bases or anonymous union members, but not EBO bases and 
-    `[[no_unique_address]]` members), then `std::decompose` is ill-formed ;
-- otherwise, if it has any user-declared (i.e. not declared as defaulted) special
-    member functions (copy, move, relocation constructors and assignment 
-    operators and destructor), 
-    or if it has any private direct subobjects, then `std::decompose` can only 
-    be called by members of the class and its friends ;
-- otherwise, if it has any protected direct subobjects, `std::decompose` can 
-    only be called by members of the class, its friends, and its derived classes ;
-- otherwise, `std::decompose` can be called from anywhere.
+This code works even if `T` is relocate-only.
 
 ##### Possible get_all implementations ##### {#structured-reloc-implem}
 
-Thanks to `std::decompose` and `std::tuple`'s `get_all` we can easily write
+Most of the time, `get_all` functions will want to be [[#decomposing-func]].
+A `get_all` implementation as a decomposing function is provided in the mentioned
+section.
+
+Thanks to `std::tuple`'s `get_all` we can easily write
 a `get_all` implementation for a custom class:
 
 ```c++
@@ -1649,11 +1648,10 @@ public:
     MyType(MyType);
 
     // Possible implementation:
-    static auto get_all(MyType tp)
+    auto get_all(this MyType self)
     {
-        bool const empty = tp._nodes.empty();
-        auto [nm, flg] = std::decompose<&MyType::_name, &MyType::&_flag>(reloc tp);
-        return std::tuple{std::relocate, reloc nm, reloc flg, !empty};
+        return std::tuple{std::relocate, std::move(self._name), self._flag,
+            !self._nodes.empty()};
     }
 
 private:
@@ -1682,6 +1680,278 @@ auto [name, flag, nodes] = reloc tp;
 `MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so 
 it is called again. The second return type won't have a `get_all` defined, hence
 the recursion stops and the *data member* protocol is used.
+
+## Decomposing functions ## {#decomposing-func}
+
+We established that `reloc` can only be used to relocate function-local variables.
+Thus it follows that `reloc` cannot be used on data-members, which is impractical
+when we consider [[#structured-reloc]] and user-defined `get_all` functions:
+
+```c++
+struct MyClass
+{
+    gsl::non_null<std::unique_ptr<int>> _reloc_only;
+
+    auto get_all(this MyClass self)
+    {
+        return reloc self._reloc_only; // ill-formed, cannot relocate data members
+    }
+}
+```
+
+We introduce a special kind of member functions, called *decomposing functions*,
+to enable relocation of data-members. A decomposing function is a member
+function that takes an explicit `this`
+parameter by value and whose name is `reloc`:
+
+```c++
+auto get_all(this T reloc)
+```
+
+### Declaration ### {#decomposing-func-declare}
+
+The decomposing trait of a function may not appear in the declaration if the
+parameter name is omitted or different than `reloc`. The decomposing trait
+is an implementation detail and it does not need to appear in the declaration.
+
+A decomposing function does not bear any constraints on the number and types of
+parameters, except for its first parameter. The first parameter must be an
+explicit object parameter passed by value, possibly cv-qualified.
+
+Further constraints apply to the type of the first parameter. For instance
+the type must be same as, or derive from the class-type the function is a
+member of. However those constraints are only checked in the context of the definition,
+not the declaration. See also [here](#decomposing-func-ill-formedness-criteria)).
+
+### Definition ### {#decomposing-func-definition}
+
+A decomposing function decomposes its `this` parameter into subobjects before
+the function body is entered. It is subject to the following rules:
+
+- The explicit `this` object is inaccessible in the function body ;
+- Upon calling the function, before the function body is entered,
+    `*this` is decomposed into individual objects for each direct base and
+    non-static data member. This decomposition is a no-op: all subobjects of
+    `*this` merely get considered as distinct complete objects. In particular the
+    decomposition does not odr-use any of the copy, move or relocation constructor
+    of the subobjects.
+- Although the lifetime of `*this` ends once decomposed, its destructor is never
+    called ;
+- The direct base objects have no identifiers, and can only be accessed once
+    through the `reloc Base` expression (`Base` being a direct base of the
+    class-type). In particular, base data members are inaccessible in the
+    function body ;
+- The non-static data member objects are identified by their name in the class
+    declaration and can be accessed normally. If disambiguation is necessary then
+    the data members can be accessed with the syntax `T::datamember`, `T` being
+    the type of the `this` parameter, and `datamember` being the name of the
+    data member.
+
+Special considerations are taken for overlapping subobjects:
+
+- **EBO bases and** `[[no_unique_address]]` **members:** Obey the above rules.
+- **Anonymous unions:** Obey the above rules. `reloc` rules pertaining to function-local
+    anonymous union members apply.
+- **Virtual bases (and bases with virtual bases):** are unrelocatable. They cannot
+    be accessed by the `reloc Base` expression (ill-formed).
+
+Since subobjects have become complete objects, they can be relocated like any
+function-local variable; otherwise, their destructor is called on exit from function scope.
+
+#### Examples #### {#decomposing-func-examples}
+
+**A possible get_all implementation with a relocate-only type**
+```c++
+struct Addr
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+
+    auto get_all(this Addr reloc) { return _addr; }
+};
+struct T : Addr
+{
+    std::vector<int> _data;
+
+    auto get_all(this T reloc)
+    {
+        auto const [addr] = reloc Addr;
+        return std::pair{reloc addr, reloc _data};
+    }
+};
+```
+
+**Curiously Recurring Template Pattern**
+```c++
+template <class Derived>
+struct ExtractAddr
+{
+    auto get_addr(this Derived reloc) { return Derived::_addr; }
+};
+struct ExtractAddr2
+{
+    template <class Derived>
+    auto get_addr(this Derived reloc) { return Derived::_addr; }
+};
+struct A : ExtractAddr<A>
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+    // [...]
+};
+struct B : ExtractAddr2
+{
+    gsl::non_null<std::unique_ptr<int>> _addr;
+    // [...]
+};
+```
+
+Note that, in the above example, if we have a `DA` structure that inherits
+from `A` and a `DB` structure that inherits from `B`,
+then `DA{}.get_addr()` is well-formed while `DB{}.get_addr()` is not.
+Indeed `_addr` is not a direct member of `DB` (type deduced in `ExtractAddr2::get_addr`)
+and hence is not directly accessible this way.
+
+**A possible implementation of a putative unique_ptr::release (not proposed)**
+```c++
+T* unique_ptr<T,D>::release(this unique_ptr reloc)
+{
+    /* the "owned" pointer is loose at this point because of the decomposition */
+    return _ptr;
+}
+```
+
+### Ill-formed definition ### {#ill-formed-decomposing-func}
+
+If not forbidden, there are several ways where decomposition functions can be
+misused and lead to problems. In this section we will see those cases and 
+they will serve as motivation to the ill-formedness criteria.
+
+#### Aberrations #### {#decomposing-func-aberrations}
+
+As mentioned in [[P0847R6]], in the [pathological cases section](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases), 
+code like this is possible:
+
+```c++
+struct A
+{
+    template <class T>
+    auto foo(this T self);
+};
+
+auto func = &A::foo<std::unique_ptr<int>>;
+func(std::make_unique<int>(0));
+```
+
+This remains acceptable in the context of P0847R6, but may lead to dangerous code
+with decomposing functions. We don't want the following code to be valid:
+
+```c++
+struct Sink
+{
+    template <class T>
+    void sink(this T reloc) {} /* prevent dtor call, 
+        although each subobject is destroyed individually */
+};
+
+auto func = &Sink::sink<std::unique_ptr<int>>;
+func(std::make_unique<int>(0)); // leak
+```
+
+We don't want users to decompose types that were never designed to support
+decomposition. Ideally, a decomposing function should be defined for the same
+source object type it is declared in (i.e. the explicit `this` parameter type should
+match the class-type which the function is a member of).
+However we feel this is too
+restrictive, especially when considering template code and the CRTP pattern.
+
+Hence we require the source object type to be the same as or to inherit from 
+the class-type the decomposing function is a member of,
+or else the definition of the decomposing function is ill-formed.
+
+#### Accessibility #### {#decomposing-func-accessibility}
+
+Let's imagine for a moment that the source object has inaccessible subobjects
+from the context of the decomposing function.
+
+Upon entering the function, all subobjects are promoted to complete objects.
+As we don't want to break accessibility rules, we may forbid access to the objects
+that previously were inaccessible subobjects.
+
+However this is not necessary. If they are never accessed, then it means that
+their destructor will be called when the function exits. Calling the destructor
+requires them to be accessible in the first place.
+
+Hence, we further mandate that all subobjects of the source object be accessible
+from the context of the decomposing function.
+
+Note that this condition is fulfilled in the nominal case, where the decomposing
+function is merely a member function of the source object, and hence is granted
+access to all of its subobjects.
+
+#### ABI requirements #### {#decomposing-func-immovable}
+
+The decomposing trait does not appear in the function declaration, and as such
+a decomposing function does not have any specific ABI. In particular it shares
+the same ABI as any explicit `this` member function where the `this` paramater is
+passed by value.
+
+Some ABIs may not natively be compatible with decomposing functions, especially
+if the ABI specifies that the destruction of the source object happens at the
+call site and not in the decomposing function.
+
+To support such cases, we need to allow implementors to silently and transparently
+make a temporary copy of the source object, and pass that temporary copy
+to the decomposing function (see [[#decomposing-func-abi]]).
+
+This requires the source object to have at least one of the copy, move or 
+relocation constructor.
+
+Note that, for regular functions, function parameters passed by value can only
+be passed to `reloc` if they provide at least one of the three constructors.
+This requirement follows the same spirit.
+
+#### Ill-formedness criteria #### {#decomposing-func-ill-formedness-criteria}
+
+Now that we have seen motivating cases, let us summarize the ill-formedness
+criteria for a decomposing function.
+Let a decomposing function be defined in a class-type `T`, which takes
+an explicit `this` parameter (the source object) of type `S`.
+The definition is ill-formed if:
+
+- the explicit `this` parameter is not passed by value and is named `reloc` ;
+- or the decomposing function is not a member function ;
+- or `S` has any inaccessible subobjects with regards to the decomposing
+    function ;
+- or `S` is not the same as `T`, and does not derive from `T` ;
+- or `S` has no accessible relocation constructor, no accessible move 
+    constructor and no accessible copy constructor (none of the three).
+
+### Decomposing lambda ### {#decomposing-lambda}
+
+A decomposing lambda is a lambda function that takes an explicit `this`
+parameter by value and whose name is `reloc`.
+
+As for decomposing functions, a decomposing lambda is ill-formed if:
+
+- the type of the `this` parameter is not passed by value ;
+- or the parameter type is not the same as, or does not derive from
+    the type of the lambda (see [[#decomposing-func-aberrations]]) ;
+- or the parameter type has no relocation, move and copy constructors
+    (none of the three).
+
+A decomposing lambda acts as a decomposing function: when called, before the
+lambda body is entered, all the lambda captures are considered as distinct
+complete objects. As such, the lambda captures can be relocated.
+
+```c++
+void foo(reloc_only_t);
+
+reloc_only_t var;
+auto func = [v = reloc var](this auto reloc)
+{
+    foo(reloc v);
+};
+(reloc func)(); // well-formed
+```
 
 ## ABI changes ## {#abi}
 
@@ -1768,6 +2038,34 @@ This may introduce an ABI break, detectable at link-time (aliased symbols missin
     remains visible nonetheless, then no ABI breaks are introduced ;
 - otherwise the ABI break happens, but remains detectable at link-time.
 
+### Decomposing functions ### {#decomposing-func-abi}
+
+A decomposing function has an extra ABI requirement: the function must be in
+charge of the lifetime of its explicit `this` parameter. How this requirement is
+satisfied is up to compiler vendors.
+
+Some tricks are possible for ABIs that do not natively meet this requirement.
+An attractive solution is to proceed as with the relocation assignment operator;
+when a decomposing function is defined, two functions are emitted:
+
+- an eliding one: this function takes the explicit `this` parameter as if by reference
+    and is in charge of its lifetime. Its body is the body of the decomposing
+    function provided by the user.
+- a non-eliding one:
+    - If the explicit `this` parameter is not an *unowned parameter*, then it simply calls
+        the eliding one, passing the `this` parameter object as if by reference.
+    - Otherwise it makes a temporary copy of the source object, and calls the
+        eliding one, passing the copy as if by reference. Upon function exit,
+        the destructor of the copy is not called as its lifetime already ended
+        when it was passed the eliding function.
+    - In all cases, it forwards as return value whatever the decomposing function
+        returns.
+
+The attentive reader will have noticed that a program with a decomposing function
+is ill-formed if the class-type does not provide a relocation, move or copy
+constructor. Hence, the non-eliding function is able to perform a copy if necessary
+without adding extra requirements on the class-type.
+
 # Proposed library changes # {#proposed-lib-changes}
 
 ## Memory header ## {#std-mem-header}
@@ -1815,7 +2113,7 @@ from a memory address. For instance, extracting a value out of an optional just
 becomes:
 
 ```c++
-T optional<T>::pilfer()
+T optional<T>::extract()
 {
     _has_value = false;
     return std::destroy_relocate(_value_addr()); 
@@ -1902,10 +2200,6 @@ Note: this facility would be unnecessary if the [[#future-capture-value]]
 direction were to be adopted; instead the existing signatures should be
 altered to use the `decltype(auto)` placeholder.
 
-### std::decompose ### {#std-decompose}
-
-See description of the function [here](#structured-reloc-decompose).
-
 ## Bring relocate-only type support to the STL ## {#stl-relocate-only}
 
 ### std::pair and std::tuple ### {#std-pair-tuple}
@@ -1961,7 +2255,7 @@ optional& optional<T>::operator=(T val);
  * \throws std::bad_optional_access if the optional did not contain any value.
  */
 template <class T>
-T optional<T>::pilfer();
+T optional<T>::extract();
 ```
 
 ### std::variant ### {#std-variant}
@@ -2021,7 +2315,7 @@ by value.
 As such we suggest adding overloads to all insertion functions, where the
 element to insert is passed by value.
 
-### Pilfer functions ### {#lib-pilfer-functions}
+### Extracting functions ### {#lib-extract-functions}
 
 The STL does not provide any function to erase an element
 from a container and return it as return value.
@@ -2031,11 +2325,13 @@ Consider a container of relocate-only types. If an element of that container is 
 the only operation supported by the type. Hence the relocated element must
 necessarily be simultaneously erased from the container as its lifetime ended.
 
-This is why we propose to add various "pilfer" functions to existing containers,
-that erase an element and return it. The return value will be constructed by
+This is why we propose to add various "value-extracting" functions to existing
+containers, which erase an element and return it. Those functions are overloads
+over existing `pop*()` and `erase()` functions, but they take the `std::relocate_t`
+[tag type](#std-relocate) as first parameter. The return value will be constructed by
 relocation (likely thanks to `std::destroy_relocate`).
 
-All pilfer functions will operate the same way. First, the return value is constructed
+All extracting functions will operate the same way. First, the return value is constructed
 as if by `std::destroy_relocate` from the container element. Second, the container
 adjusts its size and memory to effectively erase the contained element from
 its internal data structures.
@@ -2045,21 +2341,25 @@ to erase its element nonetheless (as if in the second step) and then propagates
 the exception.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then `std::terminate` is called.
+caught during the first step), then `std::terminate` is called.
 
 ### relocate_out ### {#lib-relocate_out}
 
 We further propose to add a `relocate_out` function to some containers.
-`relocate_out` takes three iterators as parameters. The first two are iterators
-that belong to the container, and define the range to relocate. The last parameter
+`relocate_out` takes three iterators as parameters. The first two iterators
+belong to the container and define the range to relocate. The last parameter
 is an output iterator where the relocated elements will be constructed.
 This is similar the `erase` functions that take a range of elements, except that
 an extra output iterator is provided.
+It returns a pair of iterators, whose first iterator is the next valid iterator
+in the container (similar to what `erase` returns), and whose second iterator
+is the output iterator, past the last element copied (similar to what `std::copy`
+returns).
 
 `relocate_out` is proposed to improve support of relocate-only types. Without this,
 it would not be possible to move a range of relocate-only elements from one container to
-another, without writing complex and inefficient loops calling `pilfer` at
-each iteration.
+another, without writing complex and inefficient loops calling some value-extracting
+function at each iteration.
 
 Note that there is less need for a `relocate_in` function as the `std::insert_iterator`
 family will have an overload to enable relocation.
@@ -2079,7 +2379,7 @@ to erase from the container all the elements that are in a *destructed state*
 , and the exception is propagated.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then `std::terminate` is called.
+caught in the first step), then `std::terminate` is called.
 
 ### std::vector ### {#std-vector}
 ```cpp
@@ -2093,19 +2393,19 @@ iterator vector<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the vector and returns it
 template <class T, class Alloc>
-T vector<T, Alloc>::pilfer_back();
+T vector<T, Alloc>::pop_back(std::relocate_t);
 
 // removes the item from the vector and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> vector<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> vector<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out, 
 // as if by doing iteratively: *out++ = std::destroy_relocate(&*src++);
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator vector<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> vector<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::deque ### {#std-deque}
@@ -2122,20 +2422,20 @@ iterator deque<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::pilfer_back();
+T deque<T, Alloc>::pop_back(std::relocate_t);
 // removes the first item from the queue and returns it
 template <class T, class Alloc>
-T deque<T, Alloc>::pilfer_front();
+T deque<T, Alloc>::pop_front(std::relocate_t);
 // removes the item from the queue and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> deque<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> deque<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator deque<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> deque<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::list ### {#std-list}
@@ -2152,20 +2452,20 @@ iterator list<T, Alloc>::insert(const_iterator pos, T value);
 
 // removes the last item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::pilfer_back();
+T list<T, Alloc>::pop_back(std::relocate_t);
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T list<T, Alloc>::pilfer_front();
+T list<T, Alloc>::pop_front(std::relocate_t);
 // removes the item from the list and returns it with the next valid iterator
 template <class T, class Alloc>
-std::pair<T, iterator> list<T, Alloc>::pilfer(const_iterator pos);
+std::pair<T, iterator> list<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
-OutputIterator list<T, Alloc>::relocate_out(
-	iterator from, iterator to, OutputIterator out);
+std::pair<iterator, OutputIterator> list<T, Alloc>::relocate_out(
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### std::forward_list ### {#std-forward_list}
@@ -2179,29 +2479,30 @@ void forward_list<T, Alloc>::push_front(T value);
 
 // removes the first item from the list and returns it
 template <class T, class Alloc>
-T forward_list<T, Alloc>::pilfer_front();
+T forward_list<T, Alloc>::pop_front(std::relocate_t);
 // removes the item after pos from the list and returns it with the iterator following pos
 template <class T, class Alloc>
-std::pair<T, iterator> forward_list<T, Alloc>::pilfer_after(const_iterator pos);
+std::pair<T, iterator> forward_list<T, Alloc>::erase_after(std::relocate_t, const_iterator pos);
 
 // relocates items in ]from, to[ into out. 
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
 OutputIterator forward_list<T, Alloc>::relocate_after(
-	iterator from, iterator to, OutputIterator out);
+	const_iterator from, const_iterator to, OutputIterator out);
 ```
 
 ### set and map containers ### {#std-set-and-map}
 ```cpp
 // std::set, std::multiset, std::map, std::multimap,
+// std::flat_set, std::flat_multiset, std::flat_map, std::flat_multimap,
 // std::unordered_set, std::unordered_multiset, std::unordered_map
 // and std::unordered_multimap, all aliased as 'map':
 std::pair<iterator, bool> map::insert(value_type value);
 iterator map::insert(const_iterator hint, value_type value);
 
 // extract the stored value from the container
-std::pair<value_type, iterator> map::pilfer(const_iterator position);
+std::pair<value_type, iterator> map::erase(std::relocate_t, const_iterator position);
 ```
 
 ### queues ### {#std-queues}
@@ -2209,8 +2510,9 @@ std::pair<value_type, iterator> map::pilfer(const_iterator position);
 // for std::stack, std::queue, std::priority_queue, aliased queue below:
 void queue::push(T value);
 
-// removes the next element from the queue
-T queue::pilfer();
+// removes the next element from the queue, calling the appropriate pop function
+// on the underlying container with std::relocate as parameter
+T queue::pop(std::relocate_t);
 ```
 
 ### Iterator library ### {#std-iterator}
@@ -2337,11 +2639,49 @@ The impact seems to be minimal, where only a few files might need to be fixed
 here and there. To smooth the transition, compilers may also warn that existing 
 code will break as `reloc` will become a keyword in a next C++ version.
 
-## Why name the extract functions pilfer and not extract in STL containers? ## {#pilfer-vs-extract}
+## STL API changes ## {#stl-api-changes}
 
-`std::set` and `std::map` already have their `extract` function, which don't do 
-exactly what we want, so that's why we introduced `pilfer` instead. We prefer to 
-have the same API across all containers to make it easier to write generic code.
+### Why add overload to the value-extracting functions in STL containers? ### {#value-extract-api-choice}
+
+In the original draft, all value-extracting functions were named `pilfer` (or `pilfer_back`
+and so on). However we felt it was better to reuse the function names that already
+exist.
+
+We thought of simply changing the return value of existing functions: `vector::pop_back()`
+would return the erased value. C++17 already changed the return value of `vector::emplace_back`.
+It caused no ABI issue (the return type of template member function is part of the mangling),
+and no performance hit (as template functions are inlined,
+when the reference returned from `vector::emplace_back` is not used, then the
+instructions that return the reference are not emitted).
+
+We could have done the same with `vector::pop_back()`. However, doing so would require
+that the type stored in the container to have one of the three constructors
+(relocation, move or copy). This is a requirement that doesn't exist today
+for node-based containers (`std::list`, `std::set` etc...).
+To state it otherwise, making an `T list<T>::pop_back()` will add unwanted
+constraints on what can be stored in a list.
+
+In order to preserve a consistent API across all STL containers, we opted in favor
+of `pop(std::relocate_t)` overloads.
+
+### Why name the value-extracting function of optional extract? ### {#optional-extract-api-choice}
+
+As mentioned we introduce `T optional<T>::extract()` to relocate a value out of
+the optional.
+
+Alternatively, this function could have been named `pop` if
+we want to stay consistent with what's done with containers.
+
+However a container `pop()` function doesn't return anything, only the
+`pop(std::relocate_t)` overload does.
+
+We prefer `extract()` over `pop(std::relocate_t)` for `std::optional`, as it
+better conveys the intent, is easier to write, and `std::optional` is not after
+all a container.
+
+Another alternative would be to name all value-extracting functions with a new
+name, and have it in common with `std::optional` (like `pilfer()`), however we
+prefer to stick with existing API for containers.
 
 ## Future directions ## {#future-directions}
 
@@ -2455,6 +2795,12 @@ moved-from state understanding problem, as well as used-after-move errors
     "title": "Valueless Variants Considered Harmful",
     "href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html",
     "date": "March 2016"
+  },
+  "P0847R6": {
+    "title": "Deducing this",
+    "authors": [ "Gašper Ažman", "Sy Brand", "Ben Deane", "Barry Revzin" ],
+    "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html",
+    "date": "January 2021"
   },
   "IIFE": {
     "authors": [ "Bartlomiej Filipek" ],

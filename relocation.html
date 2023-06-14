@@ -2,7 +2,7 @@
  <head>
   <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
   <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
-  <title>D2785R1: Relocating prvalues</title>
+  <title>D2785R2: Relocating prvalues</title>
 <style data-fill-with="stylesheet">/******************************************************************************
  *                   Style sheet for the W3C specifications                   *
  *
@@ -1564,7 +1564,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 5fcd28d6d, updated Tue May 30 13:12:11 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="a68dd24f904dcc448b93b6d885ed589a8c60962e" name="document-revision">
+  <meta content="e1eebc8dea8a08b37063b6c4cb0990dcf2dd0426" name="document-revision">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -2091,8 +2091,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
  <body class="h-entry">
   <div class="head">
    <p data-fill-with="logo"></p>
-   <h1 class="p-name no-ref" id="title">D2785R1<br>Relocating prvalues</h1>
-   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Draft Proposal, <time class="dt-updated" datetime="2023-01-30">2023-01-30</time></span></h2>
+   <h1 class="p-name no-ref" id="title">D2785R2<br>Relocating prvalues</h1>
+   <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Draft Proposal, <time class="dt-updated" datetime="2023-06-12">2023-06-12</time></span></h2>
    <div data-fill-with="spec-metadata">
     <dl>
      <dt>This version:
@@ -2209,16 +2209,35 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
            <a href="#structured-reloc-get_all"><span class="secno">5.5.3.2</span> <span class="content">get_all protocol</span></a>
            <ol class="toc">
             <li><a href="#structured-reloc-tuple"><span class="secno">5.5.3.2.1</span> <span class="content">std::tuple and std::array are implementation-defined</span></a>
-            <li><a href="#structured-reloc-decompose"><span class="secno">5.5.3.2.2</span> <span class="content">std::decompose helper function</span></a>
-            <li><a href="#structured-reloc-implem"><span class="secno">5.5.3.2.3</span> <span class="content">Possible get_all implementations</span></a>
+            <li><a href="#structured-reloc-implem"><span class="secno">5.5.3.2.2</span> <span class="content">Possible get_all implementations</span></a>
            </ol>
          </ol>
        </ol>
       <li>
-       <a href="#abi"><span class="secno">5.6</span> <span class="content">ABI changes</span></a>
+       <a href="#decomposing-func"><span class="secno">5.6</span> <span class="content">Decomposing functions</span></a>
        <ol class="toc">
-        <li><a href="#callee-destroy-abi"><span class="secno">5.6.1</span> <span class="content">relocate-only function parameters</span></a>
-        <li><a href="#prvalue-assign-op-abi"><span class="secno">5.6.2</span> <span class="content">prvalue assignment operator</span></a>
+        <li><a href="#decomposing-func-declare"><span class="secno">5.6.1</span> <span class="content">Declaration</span></a>
+        <li>
+         <a href="#decomposing-func-definition"><span class="secno">5.6.2</span> <span class="content">Definition</span></a>
+         <ol class="toc">
+          <li><a href="#decomposing-func-examples"><span class="secno">5.6.2.1</span> <span class="content">Examples</span></a>
+         </ol>
+        <li>
+         <a href="#ill-formed-decomposing-func"><span class="secno">5.6.3</span> <span class="content">Ill-formed definition</span></a>
+         <ol class="toc">
+          <li><a href="#decomposing-func-aberrations"><span class="secno">5.6.3.1</span> <span class="content">Aberrations</span></a>
+          <li><a href="#decomposing-func-accessibility"><span class="secno">5.6.3.2</span> <span class="content">Accessibility</span></a>
+          <li><a href="#decomposing-func-immovable"><span class="secno">5.6.3.3</span> <span class="content">ABI requirements</span></a>
+          <li><a href="#decomposing-func-ill-formedness-criteria"><span class="secno">5.6.3.4</span> <span class="content">Ill-formedness criteria</span></a>
+         </ol>
+        <li><a href="#decomposing-lambda"><span class="secno">5.6.4</span> <span class="content">Decomposing lambda</span></a>
+       </ol>
+      <li>
+       <a href="#abi"><span class="secno">5.7</span> <span class="content">ABI changes</span></a>
+       <ol class="toc">
+        <li><a href="#callee-destroy-abi"><span class="secno">5.7.1</span> <span class="content">relocate-only function parameters</span></a>
+        <li><a href="#prvalue-assign-op-abi"><span class="secno">5.7.2</span> <span class="content">prvalue assignment operator</span></a>
+        <li><a href="#decomposing-func-abi"><span class="secno">5.7.3</span> <span class="content">Decomposing functions</span></a>
        </ol>
      </ol>
     <li>
@@ -2235,7 +2254,6 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        <a href="#std-utility-header"><span class="secno">6.2</span> <span class="content">Utility header</span></a>
        <ol class="toc">
         <li><a href="#std-relocate"><span class="secno">6.2.1</span> <span class="content">std::relocate</span></a>
-        <li><a href="#std-decompose"><span class="secno">6.2.2</span> <span class="content">std::decompose</span></a>
        </ol>
       <li>
        <a href="#stl-relocate-only"><span class="secno">6.3</span> <span class="content">Bring relocate-only type support to the STL</span></a>
@@ -2249,7 +2267,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
        <a href="#lib-change-containers"><span class="secno">6.4</span> <span class="content">Containers</span></a>
        <ol class="toc">
         <li><a href="#lib-insertion-overloads"><span class="secno">6.4.1</span> <span class="content">Insertion overloads</span></a>
-        <li><a href="#lib-pilfer-functions"><span class="secno">6.4.2</span> <span class="content">Pilfer functions</span></a>
+        <li><a href="#lib-extract-functions"><span class="secno">6.4.2</span> <span class="content">Extracting functions</span></a>
         <li><a href="#lib-relocate_out"><span class="secno">6.4.3</span> <span class="content">relocate_out</span></a>
         <li><a href="#std-vector"><span class="secno">6.4.4</span> <span class="content">std::vector</span></a>
         <li><a href="#std-deque"><span class="secno">6.4.5</span> <span class="content">std::deque</span></a>
@@ -2265,7 +2283,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <a href="#discuss"><span class="secno">7</span> <span class="content">Discussions</span></a>
      <ol class="toc">
       <li><a href="#reloc-new-keyword"><span class="secno">7.1</span> <span class="content">Why a new keyword?</span></a>
-      <li><a href="#pilfer-vs-extract"><span class="secno">7.2</span> <span class="content">Why name the extract functions pilfer and not extract in STL containers?</span></a>
+      <li>
+       <a href="#stl-api-changes"><span class="secno">7.2</span> <span class="content">STL API changes</span></a>
+       <ol class="toc">
+        <li><a href="#value-extract-api-choice"><span class="secno">7.2.1</span> <span class="content">Why add overload to the value-extracting functions in STL containers?</span></a>
+        <li><a href="#optional-extract-api-choice"><span class="secno">7.2.2</span> <span class="content">Why name the value-extracting function of optional extract?</span></a>
+       </ol>
       <li>
        <a href="#future-directions"><span class="secno">7.3</span> <span class="content">Future directions</span></a>
        <ol class="toc">
@@ -2582,7 +2605,11 @@ value) ;</p>
 move, or copy constructor ;</p>
     <li data-md>
      <p>the source object is a structured binding (and not an identifier introduced in a <a href="#structured-reloc">structured relocation declaration</a>) ;</p>
+    <li data-md>
+     <p>the source object is a lambda capture from a <a href="#decomposing-lambda">non-decomposing lambda</a> ;</p>
    </ul>
+   <p>In particular, the <code class="highlight"><c- n>reloc</c-></code> statement is well-formed if the source object is a
+member of a function-local anonymous union.</p>
    <p>For instance:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>str</c-><c- p>);</c->
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- nf>get_string</c-><c- p>();</c->
@@ -2630,6 +2657,9 @@ move, or copy constructor ;</p>
    <h4 class="heading settled" data-level="5.1.4" id="reloc-early-end-of-scope"><span class="secno">5.1.4. </span><span class="content">Early end-of-scope</span><a class="self-link" href="#reloc-early-end-of-scope"></a></h4>
    <p><code class="highlight"><c- n>reloc</c-> <c- n>obj</c-></code> simulates an early end-of-scope of <code class="highlight"><c- n>obj</c-></code>. It does so by forbidding
 any further mention of the name <code class="highlight"><c- n>obj</c-></code> which would resolve into the relocated object.</p>
+   <p>If <code class="highlight"><c- n>obj</c-></code> is a member of an anonymous union, then <code class="highlight"><c- n>reloc</c-></code> does not prevent
+name reuse; all members of that union, including the one that was relocated,
+can be reused normally.</p>
    <p>Pointers and references that pointed to <code class="highlight"><c- n>obj</c-></code> become dangling,
 and we don’t try to offer any protection against that. We only protect against
 reusing the variable that was passed to <code class="highlight"><c- n>reloc</c-></code>.</p>
@@ -2859,6 +2889,26 @@ that shadows that of the previous iteration.
 <c- p>}</c->
 </pre>
    In this scenario <code class="highlight"><c- k>goto</c-></code> is placed in a way that does not trigger the reuse of relocated <code class="highlight"><c- n>var</c-></code>. 
+<pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_15</c-><c- p>()</c->
+<c- p>{</c->
+	<c- k>union</c-> <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- n>U</c-> <c- n>y</c-><c- p>;</c-> <c- p>};</c->
+	<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>x</c-><c- p>))</c->
+	<c- p>{</c->
+		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>);</c->
+		<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
+	<c- p>}</c->
+	<c- k>else</c->
+	<c- p>{</c->
+		<c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- c1>// destroy x</c->
+		<c- n>y</c-> <c- o>=</c-> <c- n>getU</c-><c- p>();</c->
+		<c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
+		<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
+	<c- p>}</c->
+	<c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
+<c- p>}</c->
+</pre>
+   <code class="highlight"><c- n>reloc</c-></code> does not prevent reusing the names of anonymous union members. 
    <h4 class="heading settled" data-level="5.1.5" id="conditional-reloc"><span class="secno">5.1.5. </span><span class="content">Conditional relocation</span><a class="self-link" href="#conditional-reloc"></a></h4>
    <p>It may happen that the <code class="highlight"><c- n>reloc</c-></code> is invoked in the some code branches and not in
 others:</p>
@@ -3376,7 +3426,7 @@ their smallest unbreakable parts.</p>
 relocation assignment operator, yielding a pointer (or reference) with (typical)
 signature <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- p>(</c-><c- n>T</c-><c- o>::</c-><c- p>)(</c-><c- n>T</c-><c- p>)</c-></code>, implying that the source object must occupy a parameter slot,
 which may not find it possible to have the same storage address as the source object,
-and/or which the caller may expect to destroy (see <a href="#abi">§ 5.6 ABI changes</a>).</p>
+and/or which the caller may expect to destroy (see <a href="#abi">§ 5.7 ABI changes</a>).</p>
    <p>Nevertheless, we mandate elision where possible:</p>
    <ul>
     <li data-md>
@@ -3612,7 +3662,7 @@ relocation from a structured binding. This is motivated by:</p>
     <li data-md>
      <p>The need to make APIs that support relocate-only types. How would we write an
 API to extract an item at an arbitrary position from a vector? We propose the 
-following API: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-><c- p>);</c-></code> (returns next valid iterator and relocated vector element) as it is consistent 
+following API: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-><c- p>);</c-></code> (returns relocated vector element and next valid iterator) as it is consistent
 with other vector APIs and complies with the <a href="https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out">core guidelines</a>. 
 Then, what can users do with the returned object as it lies in a pair, and 
 that it is forbidden to relocate a subobject? The return value 
@@ -3696,51 +3746,24 @@ matches the <em>data member</em> protocol.</p>
 the return type of <code class="highlight"><c- n>get_all</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> matches none of the two protocols.</p>
    <h6 class="heading settled" data-level="5.5.3.2.1" id="structured-reloc-tuple"><span class="secno">5.5.3.2.1. </span><span class="content">std::tuple and std::array are implementation-defined</span><a class="self-link" href="#structured-reloc-tuple"></a></h6>
    <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>array</c-></code> shall provide their own implementation
-of <code class="highlight"><c- n>get_all</c-></code>. The return type is implementation-defined.</p>
+of <code class="highlight"><c- n>get_all</c-></code>. The return type is implementation-defined (may rely on compiler magic).</p>
    <p>This allows us to write things like:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>&amp;</c-> <c- n>v</c-><c- p>)</c->
 <c- p>{</c->
-    <c- d>/* pilfer removes a vector element at given iterator,</c->
+    <c- d>/* erase(std::relocate_t) removes a vector element at given iterator,</c->
 <c- d>     * returns a pair with next valid iterator and relocated vector element. */</c->
-    <c- k>auto</c-> <c- p>[</c-><c- n>val</c-><c- p>,</c-> <c- n>it</c-><c- p>]</c-> <c- o>=</c-> <c- n>v</c-><c- p>.</c-><c- n>pilfer</c-><c- p>(</c-><c- n>v</c-><c- p>.</c-><c- n>begin</c-><c- p>()</c-> <c- o>+</c-> <c- mi>1</c-><c- p>);</c-> <c- d>/* calls get_all behind </c->
+    <c- k>auto</c-> <c- p>[</c-><c- n>val</c-><c- p>,</c-> <c- n>it</c-><c- p>]</c-> <c- o>=</c-> <c- n>v</c-><c- p>.</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate</c-><c- p>,</c-> <c- n>v</c-><c- p>.</c-><c- n>begin</c-><c- p>()</c-> <c- o>+</c-> <c- mi>1</c-><c- p>);</c-> <c- d>/* calls get_all behind</c->
 <c- d>        the scene. */</c->
     <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* can call reloc on val as it is not a structured binding */</c->
 <c- p>}</c->
 </pre>
-   <p>This code works even if <code class="highlight"><c- n>T</c-></code> is relocate-only (no copy, no move constructor).</p>
-   <h6 class="heading settled" data-level="5.5.3.2.2" id="structured-reloc-decompose"><span class="secno">5.5.3.2.2. </span><span class="content">std::decompose helper function</span><a class="self-link" href="#structured-reloc-decompose"></a></h6>
-   <p>We propose to add a new helper function, backed-up by compiler magic: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code>.
-The aim of this function is to safely decompose an object, passed by value, into
-smaller parts. The parts to retrieve are passed as template parameters.</p>
-   <p>The template parameters of <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> are either direct base classes or
-pointers to non-static data members of the object to decompose.</p>
-   <p>For instance, with <code class="highlight"><c- k>struct</c-> <c- nc>Person</c-> <c- o>:</c-> <c- k>public</c-> <c- n>Entry</c-> <c- p>{</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>name</c-><c- p>;</c-> <c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>Details</c-><c- o>></c-> <c- n>details</c-><c- p>;</c-> <c- p>};</c-></code>, we can
-write: <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-><c- o>&lt;</c-><c- n>Entry</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>Person</c-><c- o>::</c-><c- n>details</c-><c- o>></c-><c- p>(</c-><c- n>reloc</c-> <c- n>person</c-><c- p>);</c-></code></p>
-   <p>The return value of <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> is implementation-defined. In practice, it needs
-to be a struct that complies with the <em>data member</em> protocol. The returned object
-contains the desired subobjects, constructed by relocation or synthesized relocation.
-The subobjects of the source objects that did not get relocated are destroyed.</p>
-   <p>Special considerations are taken with regards to who should be allowed to call <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code>, and of the risks of inadvertently breaking class invariants.
-We believe the following rules are enough to ensure code-safety:</p>
-   <ul>
-    <li data-md>
-     <p>if the class has any non-empty potentially overlapping direct subobjects
-(i.e., virtual bases or anonymous union members, but not EBO bases and <code class="highlight"><c- p>[[</c-><c- n>no_unique_address</c-><c- p>]]</c-></code> members), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> is ill-formed ;</p>
-    <li data-md>
-     <p>otherwise, if it has any user-declared (i.e. not declared as defaulted) special
-member functions (copy, move, relocation constructors and assignment 
-operators and destructor), 
-or if it has any private direct subobjects, then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> can only 
-be called by members of the class and its friends ;</p>
-    <li data-md>
-     <p>otherwise, if it has any protected direct subobjects, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> can
-only be called by members of the class, its friends, and its derived classes ;</p>
-    <li data-md>
-     <p>otherwise, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> can be called from anywhere.</p>
-   </ul>
-   <h6 class="heading settled" data-level="5.5.3.2.3" id="structured-reloc-implem"><span class="secno">5.5.3.2.3. </span><span class="content">Possible get_all implementations</span><a class="self-link" href="#structured-reloc-implem"></a></h6>
-   <p>Thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>decompose</c-></code> and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>'s <code class="highlight"><c- n>get_all</c-></code> we can easily write
+   <p>This code works even if <code class="highlight"><c- n>T</c-></code> is relocate-only.</p>
+   <h6 class="heading settled" data-level="5.5.3.2.2" id="structured-reloc-implem"><span class="secno">5.5.3.2.2. </span><span class="content">Possible get_all implementations</span><a class="self-link" href="#structured-reloc-implem"></a></h6>
+   <p>Most of the time, <code class="highlight"><c- n>get_all</c-></code> functions will want to be <a href="#decomposing-func">§ 5.6 Decomposing functions</a>.
+A <code class="highlight"><c- n>get_all</c-></code> implementation as a decomposing function is provided in the mentioned
+section.</p>
+   <p>Thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>'s <code class="highlight"><c- n>get_all</c-></code> we can easily write
 a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom class:</p>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>MyType</c->
 <c- p>{</c->
@@ -3749,11 +3772,10 @@ a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom 
     <c- n>MyType</c-><c- p>(</c-><c- n>MyType</c-><c- p>);</c->
 
     <c- c1>// Possible implementation:</c->
-    <c- k>static</c-> <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>MyType</c-> <c- n>tp</c-><c- p>)</c->
+    <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>MyType</c-> <c- n>self</c-><c- p>)</c->
     <c- p>{</c->
-        <c- b>bool</c-> <c- k>const</c-> <c- n>empty</c-> <c- o>=</c-> <c- n>tp</c-><c- p>.</c-><c- n>_nodes</c-><c- p>.</c-><c- n>empty</c-><c- p>();</c->
-        <c- k>auto</c-> <c- p>[</c-><c- n>nm</c-><c- p>,</c-> <c- n>flg</c-><c- p>]</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>decompose</c-><c- o>&lt;&amp;</c-><c- n>MyType</c-><c- o>::</c-><c- n>_name</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>MyType</c-><c- o>::&amp;</c-><c- n>_flag</c-><c- o>></c-><c- p>(</c-><c- n>reloc</c-> <c- n>tp</c-><c- p>);</c->
-        <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>tuple</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>relocate</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>nm</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>flg</c-><c- p>,</c-> <c- o>!</c-><c- n>empty</c-><c- p>};</c->
+        <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>tuple</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>relocate</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>self</c-><c- p>.</c-><c- n>_name</c-><c- p>),</c-> <c- n>self</c-><c- p>.</c-><c- n>_flag</c-><c- p>,</c->
+            <c- o>!</c-><c- n>self</c-><c- p>.</c-><c- n>_nodes</c-><c- p>.</c-><c- n>empty</c-><c- p>()};</c->
     <c- p>}</c->
 
 <c- n>private</c-><c- o>:</c->
@@ -3776,12 +3798,246 @@ a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom 
    <p><code class="highlight"><c- n>MyType</c-></code>'s <code class="highlight"><c- n>get_all</c-></code> returns a tuple. <code class="highlight"><c- n>get_all</c-></code> is defined for tuples as well, so
 it is called again. The second return type won’t have a <code class="highlight"><c- n>get_all</c-></code> defined, hence
 the recursion stops and the <em>data member</em> protocol is used.</p>
-   <h3 class="heading settled" data-level="5.6" id="abi"><span class="secno">5.6. </span><span class="content">ABI changes</span><a class="self-link" href="#abi"></a></h3>
+   <h3 class="heading settled" data-level="5.6" id="decomposing-func"><span class="secno">5.6. </span><span class="content">Decomposing functions</span><a class="self-link" href="#decomposing-func"></a></h3>
+   <p>We established that <code class="highlight"><c- n>reloc</c-></code> can only be used to relocate function-local variables.
+Thus it follows that <code class="highlight"><c- n>reloc</c-></code> cannot be used on data-members, which is impractical
+when we consider <a href="#structured-reloc">§ 5.5 Structured relocation</a> and user-defined <code class="highlight"><c- n>get_all</c-></code> functions:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>MyClass</c->
+<c- p>{</c->
+    <c- n>gsl</c-><c- o>::</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>_reloc_only</c-><c- p>;</c->
+
+    <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>MyClass</c-> <c- n>self</c-><c- p>)</c->
+    <c- p>{</c->
+        <c- k>return</c-> <c- n>reloc</c-> <c- n>self</c-><c- p>.</c-><c- n>_reloc_only</c-><c- p>;</c-> <c- c1>// ill-formed, cannot relocate data members</c->
+    <c- p>}</c->
+<c- p>}</c->
+</pre>
+   <p>We introduce a special kind of member functions, called <em>decomposing functions</em>,
+to enable relocation of data-members. A decomposing function is a member
+function that takes an explicit <code class="highlight"><c- k>this</c-></code> parameter by value and whose name is <code class="highlight"><c- n>reloc</c-></code>:</p>
+<pre class="language-c++ highlight"><c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>T</c-> <c- n>reloc</c-><c- p>)</c->
+</pre>
+   <h4 class="heading settled" data-level="5.6.1" id="decomposing-func-declare"><span class="secno">5.6.1. </span><span class="content">Declaration</span><a class="self-link" href="#decomposing-func-declare"></a></h4>
+   <p>The decomposing trait of a function may not appear in the declaration if the
+parameter name is omitted or different than <code class="highlight"><c- n>reloc</c-></code>. The decomposing trait
+is an implementation detail and it does not need to appear in the declaration.</p>
+   <p>A decomposing function does not bear any constraints on the number and types of
+parameters, except for its first parameter. The first parameter must be an
+explicit object parameter passed by value, possibly cv-qualified.</p>
+   <p>Further constraints apply to the type of the first parameter. For instance
+the type must be same as, or derive from the class-type the function is a
+member of. However those constraints are only checked in the context of the definition,
+not the declaration. See also <a href="#decomposing-func-ill-formedness-criteria">here</a>).</p>
+   <h4 class="heading settled" data-level="5.6.2" id="decomposing-func-definition"><span class="secno">5.6.2. </span><span class="content">Definition</span><a class="self-link" href="#decomposing-func-definition"></a></h4>
+   <p>A decomposing function decomposes its <code class="highlight"><c- k>this</c-></code> parameter into subobjects before
+the function body is entered. It is subject to the following rules:</p>
+   <ul>
+    <li data-md>
+     <p>The explicit <code class="highlight"><c- k>this</c-></code> object is inaccessible in the function body ;</p>
+    <li data-md>
+     <p>Upon calling the function, before the function body is entered, <code class="highlight"><c- o>*</c-><c- k>this</c-></code> is decomposed into individual objects for each direct base and
+non-static data member. This decomposition is a no-op: all subobjects of <code class="highlight"><c- o>*</c-><c- k>this</c-></code> merely get considered as distinct complete objects. In particular the
+decomposition does not odr-use any of the copy, move or relocation constructor
+of the subobjects.</p>
+    <li data-md>
+     <p>Although the lifetime of <code class="highlight"><c- o>*</c-><c- k>this</c-></code> ends once decomposed, its destructor is never
+called ;</p>
+    <li data-md>
+     <p>The direct base objects have no identifiers, and can only be accessed once
+through the <code class="highlight"><c- n>reloc</c-> <c- n>Base</c-></code> expression (<code class="highlight"><c- n>Base</c-></code> being a direct base of the
+class-type). In particular, base data members are inaccessible in the
+function body ;</p>
+    <li data-md>
+     <p>The non-static data member objects are identified by their name in the class
+declaration and can be accessed normally. If disambiguation is necessary then
+the data members can be accessed with the syntax <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>datamember</c-></code>, <code class="highlight"><c- n>T</c-></code> being
+the type of the <code class="highlight"><c- k>this</c-></code> parameter, and <code class="highlight"><c- n>datamember</c-></code> being the name of the
+data member.</p>
+   </ul>
+   <p>Special considerations are taken for overlapping subobjects:</p>
+   <ul>
+    <li data-md>
+     <p><strong>EBO bases and</strong> <code class="highlight"><c- p>[[</c-><c- n>no_unique_address</c-><c- p>]]</c-></code> <strong>members:</strong> Obey the above rules.</p>
+    <li data-md>
+     <p><strong>Anonymous unions:</strong> Obey the above rules. <code class="highlight"><c- n>reloc</c-></code> rules pertaining to function-local
+anonymous union members apply.</p>
+    <li data-md>
+     <p><strong>Virtual bases (and bases with virtual bases):</strong> are unrelocatable. They cannot
+be accessed by the <code class="highlight"><c- n>reloc</c-> <c- n>Base</c-></code> expression (ill-formed).</p>
+   </ul>
+   <p>Since subobjects have become complete objects, they can be relocated like any
+function-local variable; otherwise, their destructor is called on exit from function scope.</p>
+   <h5 class="heading settled" data-level="5.6.2.1" id="decomposing-func-examples"><span class="secno">5.6.2.1. </span><span class="content">Examples</span><a class="self-link" href="#decomposing-func-examples"></a></h5>
+   <p><strong>A possible get_all implementation with a relocate-only type</strong></p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>Addr</c->
+<c- p>{</c->
+    <c- n>gsl</c-><c- o>::</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>_addr</c-><c- p>;</c->
+
+    <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>Addr</c-> <c- n>reloc</c-><c- p>)</c-> <c- p>{</c-> <c- k>return</c-> <c- n>_addr</c-><c- p>;</c-> <c- p>}</c->
+<c- p>};</c->
+<c- k>struct</c-> <c- nc>T</c-> <c- o>:</c-> <c- n>Addr</c->
+<c- p>{</c->
+    <c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- n>_data</c-><c- p>;</c->
+
+    <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>T</c-> <c- n>reloc</c-><c- p>)</c->
+    <c- p>{</c->
+        <c- k>auto</c-> <c- k>const</c-> <c- p>[</c-><c- n>addr</c-><c- p>]</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>Addr</c-><c- p>;</c->
+        <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- p>{</c-><c- n>reloc</c-> <c- n>addr</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>_data</c-><c- p>};</c->
+    <c- p>}</c->
+<c- p>};</c->
+</pre>
+   <p><strong>Curiously Recurring Template Pattern</strong></p>
+<pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Derived</c-><c- o>></c->
+<c- k>struct</c-> <c- nc>ExtractAddr</c->
+<c- p>{</c->
+    <c- k>auto</c-> <c- n>get_addr</c-><c- p>(</c-><c- n>this</c-> <c- n>Derived</c-> <c- n>reloc</c-><c- p>)</c-> <c- p>{</c-> <c- k>return</c-> <c- n>Derived</c-><c- o>::</c-><c- n>_addr</c-><c- p>;</c-> <c- p>}</c->
+<c- p>};</c->
+<c- k>struct</c-> <c- nc>ExtractAddr2</c->
+<c- p>{</c->
+    <c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Derived</c-><c- o>></c->
+    <c- k>auto</c-> <c- n>get_addr</c-><c- p>(</c-><c- n>this</c-> <c- n>Derived</c-> <c- n>reloc</c-><c- p>)</c-> <c- p>{</c-> <c- k>return</c-> <c- n>Derived</c-><c- o>::</c-><c- n>_addr</c-><c- p>;</c-> <c- p>}</c->
+<c- p>};</c->
+<c- k>struct</c-> <c- nc>A</c-> <c- o>:</c-> <c- n>ExtractAddr</c-><c- o>&lt;</c-><c- n>A</c-><c- o>></c->
+<c- p>{</c->
+    <c- n>gsl</c-><c- o>::</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>_addr</c-><c- p>;</c->
+    <c- c1>// [...]</c->
+<c- p>};</c->
+<c- k>struct</c-> <c- nc>B</c-> <c- o>:</c-> <c- n>ExtractAddr2</c->
+<c- p>{</c->
+    <c- n>gsl</c-><c- o>::</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>_addr</c-><c- p>;</c->
+    <c- c1>// [...]</c->
+<c- p>};</c->
+</pre>
+   <p>Note that, in the above example, if we have a <code class="highlight"><c- n>DA</c-></code> structure that inherits
+from <code class="highlight"><c- n>A</c-></code> and a <code class="highlight"><c- n>DB</c-></code> structure that inherits from <code class="highlight"><c- n>B</c-></code>,
+then <code class="highlight"><c- n>DA</c-><c- p>{}.</c-><c- n>get_addr</c-><c- p>()</c-></code> is well-formed while <code class="highlight"><c- n>DB</c-><c- p>{}.</c-><c- n>get_addr</c-><c- p>()</c-></code> is not.
+Indeed <code class="highlight"><c- n>_addr</c-></code> is not a direct member of <code class="highlight"><c- n>DB</c-></code> (type deduced in <code class="highlight"><c- n>ExtractAddr2</c-><c- o>::</c-><c- n>get_addr</c-></code>)
+and hence is not directly accessible this way.</p>
+   <p><strong>A possible implementation of a putative unique_ptr::release (not proposed)</strong></p>
+<pre class="language-c++ highlight"><c- n>T</c-><c- o>*</c-> <c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-><c- n>D</c-><c- o>>::</c-><c- n>release</c-><c- p>(</c-><c- n>this</c-> <c- n>unique_ptr</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- d>/* the "owned" pointer is loose at this point because of the decomposition */</c->
+    <c- k>return</c-> <c- n>_ptr</c-><c- p>;</c->
+<c- p>}</c->
+</pre>
+   <h4 class="heading settled" data-level="5.6.3" id="ill-formed-decomposing-func"><span class="secno">5.6.3. </span><span class="content">Ill-formed definition</span><a class="self-link" href="#ill-formed-decomposing-func"></a></h4>
+   <p>If not forbidden, there are several ways where decomposition functions can be
+misused and lead to problems. In this section we will see those cases and 
+they will serve as motivation to the ill-formedness criteria.</p>
+   <h5 class="heading settled" data-level="5.6.3.1" id="decomposing-func-aberrations"><span class="secno">5.6.3.1. </span><span class="content">Aberrations</span><a class="self-link" href="#decomposing-func-aberrations"></a></h5>
+   <p>As mentioned in <a data-link-type="biblio" href="#biblio-p0847r6" title="Deducing this">[P0847R6]</a>, in the <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases">pathological cases section</a>,
+code like this is possible:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>A</c->
+<c- p>{</c->
+    <c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- o>></c->
+    <c- k>auto</c-> <c- n>foo</c-><c- p>(</c-><c- n>this</c-> <c- n>T</c-> <c- n>self</c-><c- p>);</c->
+<c- p>};</c->
+
+<c- k>auto</c-> <c- n>func</c-> <c- o>=</c-> <c- o>&amp;</c-><c- n>A</c-><c- o>::</c-><c- n>foo</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-><c- p>;</c->
+<c- n>func</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>make_unique</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-><c- p>(</c-><c- mi>0</c-><c- p>));</c->
+</pre>
+   <p>This remains acceptable in the context of P0847R6, but may lead to dangerous code
+with decomposing functions. We don’t want the following code to be valid:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>Sink</c->
+<c- p>{</c->
+    <c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- o>></c->
+    <c- b>void</c-> <c- n>sink</c-><c- p>(</c-><c- n>this</c-> <c- n>T</c-> <c- n>reloc</c-><c- p>)</c-> <c- p>{}</c-> <c- d>/* prevent dtor call, </c->
+<c- d>        although each subobject is destroyed individually */</c->
+<c- p>};</c->
+
+<c- k>auto</c-> <c- n>func</c-> <c- o>=</c-> <c- o>&amp;</c-><c- n>Sink</c-><c- o>::</c-><c- n>sink</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-><c- p>;</c->
+<c- n>func</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>make_unique</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-><c- p>(</c-><c- mi>0</c-><c- p>));</c-> <c- c1>// leak</c->
+</pre>
+   <p>We don’t want users to decompose types that were never designed to support
+decomposition. Ideally, a decomposing function should be defined for the same
+source object type it is declared in (i.e. the explicit <code class="highlight"><c- k>this</c-></code> parameter type should
+match the class-type which the function is a member of).
+However we feel this is too
+restrictive, especially when considering template code and the CRTP pattern.</p>
+   <p>Hence we require the source object type to be the same as or to inherit from
+the class-type the decomposing function is a member of,
+or else the definition of the decomposing function is ill-formed.</p>
+   <h5 class="heading settled" data-level="5.6.3.2" id="decomposing-func-accessibility"><span class="secno">5.6.3.2. </span><span class="content">Accessibility</span><a class="self-link" href="#decomposing-func-accessibility"></a></h5>
+   <p>Let’s imagine for a moment that the source object has inaccessible subobjects
+from the context of the decomposing function.</p>
+   <p>Upon entering the function, all subobjects are promoted to complete objects.
+As we don’t want to break accessibility rules, we may forbid access to the objects
+that previously were inaccessible subobjects.</p>
+   <p>However this is not necessary. If they are never accessed, then it means that
+their destructor will be called when the function exits. Calling the destructor
+requires them to be accessible in the first place.</p>
+   <p>Hence, we further mandate that all subobjects of the source object be accessible
+from the context of the decomposing function.</p>
+   <p>Note that this condition is fulfilled in the nominal case, where the decomposing
+function is merely a member function of the source object, and hence is granted
+access to all of its subobjects.</p>
+   <h5 class="heading settled" data-level="5.6.3.3" id="decomposing-func-immovable"><span class="secno">5.6.3.3. </span><span class="content">ABI requirements</span><a class="self-link" href="#decomposing-func-immovable"></a></h5>
+   <p>The decomposing trait does not appear in the function declaration, and as such
+a decomposing function does not have any specific ABI. In particular it shares
+the same ABI as any explicit <code class="highlight"><c- k>this</c-></code> member function where the <code class="highlight"><c- k>this</c-></code> paramater is
+passed by value.</p>
+   <p>Some ABIs may not natively be compatible with decomposing functions, especially
+if the ABI specifies that the destruction of the source object happens at the
+call site and not in the decomposing function.</p>
+   <p>To support such cases, we need to allow implementors to silently and transparently
+make a temporary copy of the source object, and pass that temporary copy
+to the decomposing function (see <a href="#decomposing-func-abi">§ 5.7.3 Decomposing functions</a>).</p>
+   <p>This requires the source object to have at least one of the copy, move or
+relocation constructor.</p>
+   <p>Note that, for regular functions, function parameters passed by value can only
+be passed to <code class="highlight"><c- n>reloc</c-></code> if they provide at least one of the three constructors.
+This requirement follows the same spirit.</p>
+   <h5 class="heading settled" data-level="5.6.3.4" id="decomposing-func-ill-formedness-criteria"><span class="secno">5.6.3.4. </span><span class="content">Ill-formedness criteria</span><a class="self-link" href="#decomposing-func-ill-formedness-criteria"></a></h5>
+   <p>Now that we have seen motivating cases, let us summarize the ill-formedness
+criteria for a decomposing function.
+Let a decomposing function be defined in a class-type <code class="highlight"><c- n>T</c-></code>, which takes
+an explicit <code class="highlight"><c- k>this</c-></code> parameter (the source object) of type <code class="highlight"><c- n>S</c-></code>.
+The definition is ill-formed if:</p>
+   <ul>
+    <li data-md>
+     <p>the explicit <code class="highlight"><c- k>this</c-></code> parameter is not passed by value and is named <code class="highlight"><c- n>reloc</c-></code> ;</p>
+    <li data-md>
+     <p>or the decomposing function is not a member function ;</p>
+    <li data-md>
+     <p>or <code class="highlight"><c- n>S</c-></code> has any inaccessible subobjects with regards to the decomposing
+function ;</p>
+    <li data-md>
+     <p>or <code class="highlight"><c- n>S</c-></code> is not the same as <code class="highlight"><c- n>T</c-></code>, and does not derive from <code class="highlight"><c- n>T</c-></code> ;</p>
+    <li data-md>
+     <p>or <code class="highlight"><c- n>S</c-></code> has no accessible relocation constructor, no accessible move
+constructor and no accessible copy constructor (none of the three).</p>
+   </ul>
+   <h4 class="heading settled" data-level="5.6.4" id="decomposing-lambda"><span class="secno">5.6.4. </span><span class="content">Decomposing lambda</span><a class="self-link" href="#decomposing-lambda"></a></h4>
+   <p>A decomposing lambda is a lambda function that takes an explicit <code class="highlight"><c- k>this</c-></code> parameter by value and whose name is <code class="highlight"><c- n>reloc</c-></code>.</p>
+   <p>As for decomposing functions, a decomposing lambda is ill-formed if:</p>
+   <ul>
+    <li data-md>
+     <p>the type of the <code class="highlight"><c- k>this</c-></code> parameter is not passed by value ;</p>
+    <li data-md>
+     <p>or the parameter type is not the same as, or does not derive from
+the type of the lambda (see <a href="#decomposing-func-aberrations">§ 5.6.3.1 Aberrations</a>) ;</p>
+    <li data-md>
+     <p>or the parameter type has no relocation, move and copy constructors
+(none of the three).</p>
+   </ul>
+   <p>A decomposing lambda acts as a decomposing function: when called, before the
+lambda body is entered, all the lambda captures are considered as distinct
+complete objects. As such, the lambda captures can be relocated.</p>
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>reloc_only_t</c-><c- p>);</c->
+
+<c- n>reloc_only_t</c-> <c- n>var</c-><c- p>;</c->
+<c- k>auto</c-> <c- n>func</c-> <c- o>=</c-> <c- p>[</c-><c- n>v</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>var</c-><c- p>](</c-><c- n>this</c-> <c- k>auto</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>v</c-><c- p>);</c->
+<c- p>};</c->
+<c- p>(</c-><c- n>reloc</c-> <c- n>func</c-><c- p>)();</c-> <c- c1>// well-formed</c->
+</pre>
+   <h3 class="heading settled" data-level="5.7" id="abi"><span class="secno">5.7. </span><span class="content">ABI changes</span><a class="self-link" href="#abi"></a></h3>
    <p>As noted above (<a href="#unowned-parameter">§ 3.3 Unowned parameter</a>), some platforms have a <em>caller-destroy</em> ABI
 where the <em>calling</em> function expects to destroy nontrivial parameters passed by
 value. This poses a problem for functions that wish to relocate from such
 parameters, and a potential ABI break.</p>
-   <h4 class="heading settled" data-level="5.6.1" id="callee-destroy-abi"><span class="secno">5.6.1. </span><span class="content">relocate-only function parameters</span><a class="self-link" href="#callee-destroy-abi"></a></h4>
+   <h4 class="heading settled" data-level="5.7.1" id="callee-destroy-abi"><span class="secno">5.7.1. </span><span class="content">relocate-only function parameters</span><a class="self-link" href="#callee-destroy-abi"></a></h4>
    <p>We propose the following requirement on functions:
 if a function takes a parameter by value, whose type is relocate-only, then
 the function is responsible for the destruction of that parameter.</p>
@@ -3834,7 +4090,7 @@ symbol is emitted only if the function does not in actual fact relocate from
 its parameters, in which case the new symbol is emitted, and its implementation 
 forwards to the old and then destructs its relocatable parameters on exit ;</p>
    </ul>
-   <h4 class="heading settled" data-level="5.6.2" id="prvalue-assign-op-abi"><span class="secno">5.6.2. </span><span class="content">prvalue assignment operator</span><a class="self-link" href="#prvalue-assign-op-abi"></a></h4>
+   <h4 class="heading settled" data-level="5.7.2" id="prvalue-assign-op-abi"><span class="secno">5.7.2. </span><span class="content">prvalue assignment operator</span><a class="self-link" href="#prvalue-assign-op-abi"></a></h4>
    <p>As mentioned above, if the class-type is relocate-only, then it may have an
 impact on existing prvalue-assignment operators (like it does to any function).
 However this change is purely opt-in. If there is an existing prvalue-assignment 
@@ -3861,6 +4117,38 @@ remains visible nonetheless, then no ABI breaks are introduced ;</p>
     <li data-md>
      <p>otherwise the ABI break happens, but remains detectable at link-time.</p>
    </ul>
+   <h4 class="heading settled" data-level="5.7.3" id="decomposing-func-abi"><span class="secno">5.7.3. </span><span class="content">Decomposing functions</span><a class="self-link" href="#decomposing-func-abi"></a></h4>
+   <p>A decomposing function has an extra ABI requirement: the function must be in
+charge of the lifetime of its explicit <code class="highlight"><c- k>this</c-></code> parameter. How this requirement is
+satisfied is up to compiler vendors.</p>
+   <p>Some tricks are possible for ABIs that do not natively meet this requirement.
+An attractive solution is to proceed as with the relocation assignment operator;
+when a decomposing function is defined, two functions are emitted:</p>
+   <ul>
+    <li data-md>
+     <p>an eliding one: this function takes the explicit <code class="highlight"><c- k>this</c-></code> parameter as if by reference
+and is in charge of its lifetime. Its body is the body of the decomposing
+function provided by the user.</p>
+    <li data-md>
+     <p>a non-eliding one:</p>
+     <ul>
+      <li data-md>
+       <p>If the explicit <code class="highlight"><c- k>this</c-></code> parameter is not an <em>unowned parameter</em>, then it simply calls
+the eliding one, passing the <code class="highlight"><c- k>this</c-></code> parameter object as if by reference.</p>
+      <li data-md>
+       <p>Otherwise it makes a temporary copy of the source object, and calls the
+eliding one, passing the copy as if by reference. Upon function exit,
+the destructor of the copy is not called as its lifetime already ended
+when it was passed the eliding function.</p>
+      <li data-md>
+       <p>In all cases, it forwards as return value whatever the decomposing function
+returns.</p>
+     </ul>
+   </ul>
+   <p>The attentive reader will have noticed that a program with a decomposing function
+is ill-formed if the class-type does not provide a relocation, move or copy
+constructor. Hence, the non-eliding function is able to perform a copy if necessary
+without adding extra requirements on the class-type.</p>
    <h2 class="heading settled" data-level="6" id="proposed-lib-changes"><span class="secno">6. </span><span class="content">Proposed library changes</span><a class="self-link" href="#proposed-lib-changes"></a></h2>
    <h3 class="heading settled" data-level="6.1" id="std-mem-header"><span class="secno">6.1. </span><span class="content">Memory header</span><a class="self-link" href="#std-mem-header"></a></h3>
    <h4 class="heading settled" data-level="6.1.1" id="std-construct_at"><span class="secno">6.1.1. </span><span class="content">std::construct_at</span><a class="self-link" href="#std-construct_at"></a></h4>
@@ -3892,7 +4180,7 @@ afterwards ;</p>
    <p>This function is intended to be used by library authors, to enable relocation
 from a memory address. For instance, extracting a value out of an optional just 
 becomes:</p>
-<pre class="language-c++ highlight"><c- n>T</c-> <c- n>optional</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>()</c->
+<pre class="language-c++ highlight"><c- n>T</c-> <c- n>optional</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>extract</c-><c- p>()</c->
 <c- p>{</c->
     <c- n>_has_value</c-> <c- o>=</c-> false<c- p>;</c->
     <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-><c- p>(</c-><c- n>_value_addr</c-><c- p>());</c-> 
@@ -3959,8 +4247,6 @@ all constructed objects in the output iterator.</p>
 </pre>
    <p class="note" role="note"><span class="marker">Note:</span> this facility would be unnecessary if the <a href="#future-capture-value">§ 7.3.1 More perfect forwarding</a> direction were to be adopted; instead the existing signatures should be
 altered to use the <code class="highlight"><c- k>decltype</c-><c- p>(</c-><c- k>auto</c-><c- p>)</c-></code> placeholder.</p>
-   <h4 class="heading settled" data-level="6.2.2" id="std-decompose"><span class="secno">6.2.2. </span><span class="content">std::decompose</span><a class="self-link" href="#std-decompose"></a></h4>
-   <p>See description of the function <a href="#structured-reloc-decompose">here</a>.</p>
    <h3 class="heading settled" data-level="6.3" id="stl-relocate-only"><span class="secno">6.3. </span><span class="content">Bring relocate-only type support to the STL</span><a class="self-link" href="#stl-relocate-only"></a></h3>
    <h4 class="heading settled" data-level="6.3.1" id="std-pair-tuple"><span class="secno">6.3.1. </span><span class="content">std::pair and std::tuple</span><a class="self-link" href="#std-pair-tuple"></a></h4>
    <p>We propose to add a default relocation constructor and a default relocation
@@ -4006,7 +4292,7 @@ relocation can only happen from matching types.</p>
 <c- d> * \throws std::bad_optional_access if the optional did not contain any value.</c->
 <c- d> */</c->
 <c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- o>></c->
-<c- n>T</c-> <c- n>optional</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>();</c->
+<c- n>T</c-> <c- n>optional</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>extract</c-><c- p>();</c->
 </pre>
    <h4 class="heading settled" data-level="6.3.3" id="std-variant"><span class="secno">6.3.3. </span><span class="content">std::variant</span><a class="self-link" href="#std-variant"></a></h4>
 <pre class="language-c++ highlight"><c- c1>// relocation constructor</c->
@@ -4053,17 +4339,18 @@ to insert as a reference parameter, while relocation requires to pass elements
 by value.</p>
    <p>As such we suggest adding overloads to all insertion functions, where the
 element to insert is passed by value.</p>
-   <h4 class="heading settled" data-level="6.4.2" id="lib-pilfer-functions"><span class="secno">6.4.2. </span><span class="content">Pilfer functions</span><a class="self-link" href="#lib-pilfer-functions"></a></h4>
+   <h4 class="heading settled" data-level="6.4.2" id="lib-extract-functions"><span class="secno">6.4.2. </span><span class="content">Extracting functions</span><a class="self-link" href="#lib-extract-functions"></a></h4>
    <p>The STL does not provide any function to erase an element
 from a container and return it as return value.</p>
    <p>Consider a container of relocate-only types. If an element of that container is to be
 "moved out" of it, it could only happen through relocation as it is
 the only operation supported by the type. Hence the relocated element must
 necessarily be simultaneously erased from the container as its lifetime ended.</p>
-   <p>This is why we propose to add various "pilfer" functions to existing containers,
-that erase an element and return it. The return value will be constructed by
+   <p>This is why we propose to add various "value-extracting" functions to existing
+containers, which erase an element and return it. Those functions are overloads
+over existing <code class="highlight"><c- n>pop</c-><c- o>*</c-><c- p>()</c-></code> and <code class="highlight"><c- n>erase</c-><c- p>()</c-></code> functions, but they take the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-></code> <a href="#std-relocate">tag type</a> as first parameter. The return value will be constructed by
 relocation (likely thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code>).</p>
-   <p>All pilfer functions will operate the same way. First, the return value is constructed
+   <p>All extracting functions will operate the same way. First, the return value is constructed
 as if by <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>destroy_relocate</c-></code> from the container element. Second, the container
 adjusts its size and memory to effectively erase the contained element from
 its internal data structures.</p>
@@ -4072,17 +4359,20 @@ to erase its element nonetheless (as if in the second step) and then propagates
 the exception.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
+caught during the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
    <h4 class="heading settled" data-level="6.4.3" id="lib-relocate_out"><span class="secno">6.4.3. </span><span class="content">relocate_out</span><a class="self-link" href="#lib-relocate_out"></a></h4>
-   <p>We further propose to add a <code class="highlight"><c- n>relocate_out</c-></code> function to some containers. <code class="highlight"><c- n>relocate_out</c-></code> takes three iterators as parameters. The first two are iterators
-that belong to the container, and define the range to relocate. The last parameter
+   <p>We further propose to add a <code class="highlight"><c- n>relocate_out</c-></code> function to some containers. <code class="highlight"><c- n>relocate_out</c-></code> takes three iterators as parameters. The first two iterators
+belong to the container and define the range to relocate. The last parameter
 is an output iterator where the relocated elements will be constructed.
 This is similar the <code class="highlight"><c- n>erase</c-></code> functions that take a range of elements, except that
-an extra output iterator is provided.</p>
+an extra output iterator is provided.
+It returns a pair of iterators, whose first iterator is the next valid iterator
+in the container (similar to what <code class="highlight"><c- n>erase</c-></code> returns), and whose second iterator
+is the output iterator, past the last element copied (similar to what <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>copy</c-></code> returns).</p>
    <p><code class="highlight"><c- n>relocate_out</c-></code> is proposed to improve support of relocate-only types. Without this,
 it would not be possible to move a range of relocate-only elements from one container to
-another, without writing complex and inefficient loops calling <code class="highlight"><c- n>pilfer</c-></code> at
-each iteration.</p>
+another, without writing complex and inefficient loops calling some value-extracting
+function at each iteration.</p>
    <p>Note that there is less need for a <code class="highlight"><c- n>relocate_in</c-></code> function as the <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>insert_iterator</c-></code> family will have an overload to enable relocation.</p>
    <p><code class="highlight"><c- n>relocate_out</c-></code> proceeds as follows:</p>
    <ol>
@@ -4099,7 +4389,7 @@ to erase from the container all the elements that are in a <em>destructed state<
 , and the exception is propagated.
 If an exception is emitted during the second step
 (regardless of whether the second step was triggered normally of by an exception
-caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
+caught in the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>terminate</c-></code> is called.</p>
    <h4 class="heading settled" data-level="6.4.4" id="std-vector"><span class="secno">6.4.4. </span><span class="content">std::vector</span><a class="self-link" href="#std-vector"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
@@ -4111,19 +4401,19 @@ caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c->
 
 <c- c1>// removes the last item from the vector and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_back</c-><c- p>();</c->
+<c- n>T</c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_back</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 
 <c- c1>// removes the item from the vector and returns it with the next valid iterator</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
 
 <c- c1>// relocates items in [from, to[ into out, </c->
 <c- c1>// as if by doing iteratively: *out++ = std::destroy_relocate(&amp;*src++);</c->
 <c- c1>// items within range are removed from *this.</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
-<c- n>OutputIterator</c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
+	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.5" id="std-deque"><span class="secno">6.4.5. </span><span class="content">std::deque</span><a class="self-link" href="#std-deque"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
@@ -4138,20 +4428,20 @@ caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c->
 
 <c- c1>// removes the last item from the queue and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_back</c-><c- p>();</c->
+<c- n>T</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_back</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 <c- c1>// removes the first item from the queue and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_front</c-><c- p>();</c->
+<c- n>T</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_front</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 <c- c1>// removes the item from the queue and returns it with the next valid iterator</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
 
 <c- c1>// relocates items in [from, to[ into out. </c->
 <c- c1>// items within range are removed from *this.</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
-<c- n>OutputIterator</c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
+	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.6" id="std-list"><span class="secno">6.4.6. </span><span class="content">std::list</span><a class="self-link" href="#std-list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
@@ -4166,20 +4456,20 @@ caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c->
 
 <c- c1>// removes the last item from the list and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_back</c-><c- p>();</c->
+<c- n>T</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_back</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 <c- c1>// removes the first item from the list and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_front</c-><c- p>();</c->
+<c- n>T</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_front</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 <c- c1>// removes the item from the list and returns it with the next valid iterator</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
 
 <c- c1>// relocates items in [from, to[ into out. </c->
 <c- c1>// items within range are removed from *this.</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
-<c- n>OutputIterator</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
+	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.7" id="std-forward_list"><span class="secno">6.4.7. </span><span class="content">std::forward_list</span><a class="self-link" href="#std-forward_list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// inserts a value by relocation</c->
@@ -4191,34 +4481,36 @@ caught the first step), then <code class="highlight"><c- n>std</c-><c- o>::</c->
 
 <c- c1>// removes the first item from the list and returns it</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>T</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_front</c-><c- p>();</c->
+<c- n>T</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pop_front</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 <c- c1>// removes the item after pos from the list and returns it with the iterator following pos</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
-<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>pilfer_after</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>erase_after</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>pos</c-><c- p>);</c->
 
 <c- c1>// relocates items in ]from, to[ into out. </c->
 <c- c1>// items within range are removed from *this.</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
 <c- n>OutputIterator</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_after</c-><c- p>(</c->
-	<c- n>iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.8" id="std-set-and-map"><span class="secno">6.4.8. </span><span class="content">set and map containers</span><a class="self-link" href="#std-set-and-map"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// std::set, std::multiset, std::map, std::multimap,</c->
+<c- c1>// std::flat_set, std::flat_multiset, std::flat_map, std::flat_multimap,</c->
 <c- c1>// std::unordered_set, std::unordered_multiset, std::unordered_map</c->
 <c- c1>// and std::unordered_multimap, all aliased as 'map':</c->
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- b>bool</c-><c- o>></c-> <c- n>map</c-><c- o>::</c-><c- n>insert</c-><c- p>(</c-><c- n>value_type</c-> <c- n>value</c-><c- p>);</c->
 <c- n>iterator</c-> <c- nf>map::insert</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>hint</c-><c- p>,</c-> <c- n>value_type</c-> <c- n>value</c-><c- p>);</c->
 
 <c- c1>// extract the stored value from the container</c->
-<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>value_type</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>map</c-><c- o>::</c-><c- n>pilfer</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>position</c-><c- p>);</c->
+<c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>value_type</c-><c- p>,</c-> <c- n>iterator</c-><c- o>></c-> <c- n>map</c-><c- o>::</c-><c- n>erase</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>position</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.9" id="std-queues"><span class="secno">6.4.9. </span><span class="content">queues</span><a class="self-link" href="#std-queues"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// for std::stack, std::queue, std::priority_queue, aliased queue below:</c->
 <c- b>void</c-> <c- nf>queue::push</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
 
-<c- c1>// removes the next element from the queue</c->
-<c- n>T</c-> <c- nf>queue::pilfer</c-><c- p>();</c->
+<c- c1>// removes the next element from the queue, calling the appropriate pop function</c->
+<c- c1>// on the underlying container with std::relocate as parameter</c->
+<c- n>T</c-> <c- nf>queue::pop</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.10" id="std-iterator"><span class="secno">6.4.10. </span><span class="content">Iterator library</span><a class="self-link" href="#std-iterator"></a></h4>
    <p>We propose to add the following overloads:</p>
@@ -4354,10 +4646,35 @@ lines:  887,768 ; words:  31,766,641; commit: 97dde51a9b3f</p>
 The impact seems to be minimal, where only a few files might need to be fixed 
 here and there. To smooth the transition, compilers may also warn that existing 
 code will break as <code class="highlight"><c- n>reloc</c-></code> will become a keyword in a next C++ version.</p>
-   <h3 class="heading settled" data-level="7.2" id="pilfer-vs-extract"><span class="secno">7.2. </span><span class="content">Why name the extract functions pilfer and not extract in STL containers?</span><a class="self-link" href="#pilfer-vs-extract"></a></h3>
-   <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>set</c-></code> and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>map</c-></code> already have their <code class="highlight"><c- n>extract</c-></code> function, which don’t do
-exactly what we want, so that’s why we introduced <code class="highlight"><c- n>pilfer</c-></code> instead. We prefer to 
-have the same API across all containers to make it easier to write generic code.</p>
+   <h3 class="heading settled" data-level="7.2" id="stl-api-changes"><span class="secno">7.2. </span><span class="content">STL API changes</span><a class="self-link" href="#stl-api-changes"></a></h3>
+   <h4 class="heading settled" data-level="7.2.1" id="value-extract-api-choice"><span class="secno">7.2.1. </span><span class="content">Why add overload to the value-extracting functions in STL containers?</span><a class="self-link" href="#value-extract-api-choice"></a></h4>
+   <p>In the original draft, all value-extracting functions were named <code class="highlight"><c- n>pilfer</c-></code> (or <code class="highlight"><c- n>pilfer_back</c-></code> and so on). However we felt it was better to reuse the function names that already
+exist.</p>
+   <p>We thought of simply changing the return value of existing functions: <code class="highlight"><c- n>vector</c-><c- o>::</c-><c- n>pop_back</c-><c- p>()</c-></code> would return the erased value. C++17 already changed the return value of <code class="highlight"><c- n>vector</c-><c- o>::</c-><c- n>emplace_back</c-></code>.
+It caused no ABI issue (the return type of template member function is part of the mangling),
+and no performance hit (as template functions are inlined,
+when the reference returned from <code class="highlight"><c- n>vector</c-><c- o>::</c-><c- n>emplace_back</c-></code> is not used, then the
+instructions that return the reference are not emitted).</p>
+   <p>We could have done the same with <code class="highlight"><c- n>vector</c-><c- o>::</c-><c- n>pop_back</c-><c- p>()</c-></code>. However, doing so would require
+that the type stored in the container to have one of the three constructors
+(relocation, move or copy). This is a requirement that doesn’t exist today
+for node-based containers (<code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>list</c-></code>, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>set</c-></code> etc...).
+To state it otherwise, making an <code class="highlight"><c- n>T</c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>pop_back</c-><c- p>()</c-></code> will add unwanted
+constraints on what can be stored in a list.</p>
+   <p>In order to preserve a consistent API across all STL containers, we opted in favor
+of <code class="highlight"><c- n>pop</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>)</c-></code> overloads.</p>
+   <h4 class="heading settled" data-level="7.2.2" id="optional-extract-api-choice"><span class="secno">7.2.2. </span><span class="content">Why name the value-extracting function of optional extract?</span><a class="self-link" href="#optional-extract-api-choice"></a></h4>
+   <p>As mentioned we introduce <code class="highlight"><c- n>T</c-> <c- n>optional</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>::</c-><c- n>extract</c-><c- p>()</c-></code> to relocate a value out of
+the optional.</p>
+   <p>Alternatively, this function could have been named <code class="highlight"><c- n>pop</c-></code> if
+we want to stay consistent with what’s done with containers.</p>
+   <p>However a container <code class="highlight"><c- n>pop</c-><c- p>()</c-></code> function doesn’t return anything, only the <code class="highlight"><c- n>pop</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>)</c-></code> overload does.</p>
+   <p>We prefer <code class="highlight"><c- n>extract</c-><c- p>()</c-></code> over <code class="highlight"><c- n>pop</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>)</c-></code> for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>optional</c-></code>, as it
+better conveys the intent, is easier to write, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>optional</c-></code> is not after
+all a container.</p>
+   <p>Another alternative would be to name all value-extracting functions with a new
+name, and have it in common with <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>optional</c-></code> (like <code class="highlight"><c- n>pilfer</c-><c- p>()</c-></code>), however we
+prefer to stick with existing API for containers.</p>
    <h3 class="heading settled" data-level="7.3" id="future-directions"><span class="secno">7.3. </span><span class="content">Future directions</span><a class="self-link" href="#future-directions"></a></h3>
    <p>We removed some of the changes we initilialy had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for 
@@ -4567,6 +4884,8 @@ moved-from state understanding problem, as well as used-after-move errors
    <dd>Denis Bider. <a href="http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf"><cite>Relocator: Efficiently moving objects</cite></a>. April 2016. URL: <a href="http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf">http://open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0023r0.pdf</a>
    <dt id="biblio-p0308r0">[P0308R0]
    <dd>Peter Dimov. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html"><cite>Valueless Variants Considered Harmful</cite></a>. March 2016. URL: <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html</a>
+   <dt id="biblio-p0847r6">[P0847R6]
+   <dd>Gašper Ažman; et al. <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html"><cite>Deducing this</cite></a>. January 2021. URL: <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html</a>
    <dt id="biblio-p1029r3">[P1029R3]
    <dd>Niall Douglas. <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf"><cite>move = bitcopies</cite></a>. January 2020. URL: <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf">http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p1029r3.pdf</a>
   </dl>
