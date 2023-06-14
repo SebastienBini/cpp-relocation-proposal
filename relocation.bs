@@ -116,7 +116,7 @@ member function declaration.
 
 Finally, relocation and especially trivial relocation will bring performance boosts
 in many situations. Other proposals make fine work at enumerating all the gains to be had
-from trivial relocation (see in particular [[D1144R6]]). To summarize, the performance gains
+from trivial relocation (see in particular [[P1144R8]]). To summarize, the performance gains
 are mainly in containers (std::vector::resize and the likes)
 and code size gains from functions that use `std::swap`.
 
@@ -188,9 +188,9 @@ could not happen, and we are left with a suboptimized move and destruct.
 The relocation constructor that we propose offers a customization point, and
 especially allow for a more optimized relocation technique than move and destruct.
 
-## D1144R6: Object relocation in terms of move plus destroy by Arthur O'Dwyer ## {#compare-D1144R6}
+## P1144R8: Object relocation in terms of move plus destroy by Arthur O'Dwyer ## {#compare-P1144R8}
 
-[[D1144R6]] puts the focus on trivially relocatable types, and offers ways to 
+[[P1144R8]] puts the focus on trivially relocatable types, and offers ways to 
 mark a type as trivially relocatable.
 
 The current proposal has its own take on trivial relocatability that does not 
@@ -205,7 +205,7 @@ This approach is not prone to errors when compared to a class attribute,
 which could be mistakenly overriden by some users on classes that are not 
 trivially relocatable.
 
-Also, [[D1144R6]] does not account for relocate-only types. To some extend, trivially 
+Also, [[P1144R8]] does not account for relocate-only types. To some extend, trivially 
 relocatable types have minimal support as they could be trivially relocated in the
 places where "move plus destroy" can be optimized. However:
 
@@ -217,7 +217,7 @@ places where "move plus destroy" can be optimized. However:
     This renders the enclosing class impractical to use without proper support
     for relocate-only types.
 
-In this proposal we reuse [[D1144R6]]'s `std::relocate` function, except that we 
+In this proposal we reuse [[P1144R8]]'s `std::relocate` function, except that we 
 name it `std::destroy_relocate`.
 
 ## P0023R0: Relocator: Efficiently moving objects by Denis Bider ## {#compare-P0023R0}
@@ -304,7 +304,7 @@ It has several drawbacks :
 [[P1029R3]] enables a special bitcopies move constructor for types that are trivially relocatable.
 
 Like the other proposals [[P1029R3]] does not provide support for relocate-only types 
-(it suffers from the same drawbacks as [[D1144R6]] in that regard).
+(it suffers from the same drawbacks as [[P1144R8]] in that regard).
 
 ## P0308R0: Valueless Variants Considered Harmful by Peter Dimov ## {#compare-P0308R0}
 
@@ -2838,13 +2838,13 @@ moved-from state understanding problem, as well as used-after-move errors
 
 <pre class=biblio>
 {
-  "D1144R6": {
+  "P1144R8": {
     "authors": [
       "Arthur O'Dwyer"
     ],
-    "title": "Object relocation in terms of move plus destroy",
-    "href": "https://rawgit.com/Quuxplusone/draft/gh-pages/d1144-object-relocation.html",
-    "date": "June 2022"
+    "title": "std::is_trivially_relocatable",
+    "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p1144r8.html",
+    "date": "May 2023"
   },
   "P0023R0": {
     "authors": [ "Denis Bider" ],
