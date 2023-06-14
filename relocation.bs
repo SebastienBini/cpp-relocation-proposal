@@ -1521,6 +1521,9 @@ destructor on the source object.
 
 ## Overload resolution ## {#overload-resolution}
 
+Note: Compare [[P2665R0]] "Allow calling overload sets containing T,
+const T&".
+
 The current overload resolution rules are not suitable for relocation by prvalue.
 
 Indeed, consider the following scenario:
@@ -2871,6 +2874,12 @@ moved-from state understanding problem, as well as used-after-move errors
     "title": "Nontrivial Relocation via a New owning reference Type",
     "href": "https://isocpp.org/files/papers/D2839R1.html",
     "date": "June 2023"
+  },
+  "P2665R0": {
+    "authors": [ "Bengt Gustafsson" ],
+    "title": "Allow calling overload sets containing T, const T&",
+    "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2665r0.pdf",
+    "date": "October 2022"
   }
 }
 </pre>
