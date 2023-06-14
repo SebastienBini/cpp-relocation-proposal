@@ -341,6 +341,10 @@ and liable to be eliminated via optimization, while our model offers the possibi
 of improved locality, since the relocated object will reside directly in the leafmost
 function's stack as opposed to being accessible only via indirection.
 
+Otherwise, the paper has some minor differences in naming (e.g. `std::force_relocate`
+for what we call `std::destroy_relocate`) that could easily be reconciled in either
+direction.
+
 # Proposed language changes # {#lg-changes}
 
 ## reloc operator ## {#reloc-operator}
