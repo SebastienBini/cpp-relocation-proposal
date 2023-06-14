@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Relocating prvalues
-Revision: 2
+Revision: 3
 Audience: LEWG, EWG
-Status: D
+Status: P
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
-Shortname: D2785
+Shortname: P2785
 Editor:
   Sébastien Bini, Stormshield, sebastien.bini@gmail.com
   Ed Catmur, ed@catmur.uk
@@ -17,48 +17,53 @@ Abstract:
 Date: 2023-06-14
 </pre>
 
-# Introduction # {#intro}
+# Overview # {#intro}
 
-C++11 introduced rvalue-references, move constructor and move-assignment operators. 
+C++11 introduced rvalue references, move constructor and move-assignment operators. 
 While these have improved C++ in many ways, there is still one operation that is 
 unsupported: relocation. By "relocation", we mean the operation to construct a 
 new object while simultaneously destructing the source object. Some other proposals
 look at this as "move + destruct", while we see this as a unique, different, 
 and optionally better optimized operation.
 
-This new operation brings several benefits, namely in terms of performance and
+This new operation brings several benefits, principally in terms of performance and
 code correctness. This proposal has its own take on trivial relocatibility 
 (which allows to optimize the relocation operation into a simple `memcpy`). 
 It also supports relocate-only types (such as `gsl::not_null<std::unique_ptr<int>>`)
 and enables to relocate constant objects.
 
-The proposal brings:
+The proposal introduces:
 
-- two new specials member functions: a relocation constructor `T(T)` and a relocation 
+- two new special member functions: a relocation constructor `T(T)` and a relocation 
     assignment operator `T& operator=(T)` ;
 - a new keyword: `reloc` ;
-- slightly changes overload resolution rules ;
+- slight changes to overload resolution rules ;
 - might introduce ABI breaks of some functions ;
-- library evolutions to support relocation. 
+- library evolution to support relocation. 
 
 The proposal does not introduce a new value type; instead relocation will happen from prvalues.
 
 # Motivation # {#motivation}
 
-C++ lacks the support for relocate-only types. Let's us consider the 
+## Never-empty types ## {#motivation-never-empty}
+
+C++ lacks support for relocate-only types. Let's us consider the 
 `gsl::not_null<std::unique_ptr<T>>` case for a moment. `gsl::not_null` inhibits
 the move constructor, as a moved-from pointer would be null and break the class invariant.
 In turn `std::unique_ptr` inhibits the copy constructor because of its ownership policy. 
-Hence this type is non-copyable and non-movable. Those objects are legitimate for
-they provide code correctness.
+Hence this type is non-copyable and non-movable. Those objects are legitimate since
+they improve code correctness (the user need not check whether they are empty) and performance
+(the compiler need not check whether they are empty).
 
 Unfortunately those objects are quite impractical to handle in C++: they cannot be moved around
-in the program memory (passed down to function, stored and removed from containers, etc...), 
-while in practice there is no good reason to prevent that. With the relocation
+in program memory (passed down to function, stored and removed from containers, etc...), 
+while in principle there is no good reason to prevent that. With the relocation
 semantics in mind this would be allowed: each time the `gsl::not_null<std::unique_ptr<T>>`
 is moved in memory, it simultaneously destroys the previous instance (in practice, 
 this simply means the memory occupied by the source object just becomes uninitialized, 
 and in particular, the source object's destructor is not called).
+
+## Constant objects ## {#motivation-constant-objects}
 
 Another place where C++ falls short is with constant objects. As of today, constant
 objects cannot be moved in C++ as the move constructor cannot steal the resources
@@ -69,12 +74,48 @@ This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.
 
+Automatic objects are recommended by various guidelines to be constant, since a constant object
+will not change throughout its lifetime, simplifying reasoning about program state both for
+humans (coders, reviewers, maintainers) and for machines (compilers, tooling). Allowing an object
+to be `const` throughout its lifetime but give up its resources at the end of its lifetime allows
+for better, safer code.
+
 As we will see other proposals about relocation provide little support for 
 relocate-only types, and even less for constant objects.
 They only partly improve their support in a limited way.
 
+## Teachability ## {#motivation-teachability}
+
+It is a matter of some confusion for learners that a "moved-from" object still exists and is
+accessible, but has an unspecified state. This leads to so-called "use-after-move" bugs, and
+requires static analysis passes and coding guidelines to prevent. "What does `std::move` do?"
+is, regrettably, a common "gotcha" question in a certain style of coding interview. In this
+matter C++ compares unfavorably to other languages where the "move" operation is destructive
+(if trivial) and bars further access to the source object.
+
+## Versus trivial relocation ## {#motivation-vs-trivial-relocation}
+
+As will be seen below, trivial relocation provides an incomplete solution to the issues
+presented in this section. The primary concern is that of composability; an aggregate of
+a self-referential type that cannot be trivially relocated (e.g. `std::string` in some
+implementations) and a relocate-only type (e.g. a non-null `unique_ptr`) can neither be
+relocated by move-and-destroy nor trivially relocated. Thus non-trivial relocation
+emerges as a requirement.
+
+## Helper types ## {#motivation-helper-types}
+
+In framework code it is a relatively everyday task to write helper classes that are
+constructed to own some resource, passed around from place to place, and then destroyed,
+cleaning up the resource in the destructor. Move semantics for such classes requires
+identifying or adding an appropriate empty state, writing a move constructor, and
+adding checks to the destructor; all of these inhibit performance and are opportunities
+to introduce bugs. Relocation would replace all of this with a single defaulted special
+member function declaration.
+
+## Library performance ## {#motivation-performance}
+
 Finally, relocation and especially trivial relocation will bring performance boosts
-in many situations. Other proposals make a fine work at enumerating all the gains
+in many situations. Other proposals make fine work at enumerating all the gains to be had
 from trivial relocation (see in particular [[D1144R6]]). To summarize, the performance gains
 are mainly in containers (std::vector::resize and the likes)
 and code size gains from functions that use `std::swap`.
