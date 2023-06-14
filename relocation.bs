@@ -324,6 +324,23 @@ We believe a language solution is best suited here:
 - trivial relocation is not possible with pilfering, which makes [[P0308R0]] miss
     the performance boost that is so longed for.
 
+## D2839R1: Nontrivial Relocation via a New *owning reference* Type by Brian Bi and Joshua Berne ## {#compare-D2839}
+
+[[D2839R1]] is very close in spirit and mechanism to this paper. We consider the
+addition of an "owning reference" to be an unnecessary complication to the type
+system that would impose a burden throughout library code. We refute the claim
+that a prvalue occupying storage constitutes a fourth value category; in our
+model, the lvalue that previously occupied that storage ceases to exist and a
+new prvalue is formed, which may come to occupy that storage (if relocation is
+elided) or distinct storage (in the general case).
+
+We are intrigued by the claim that an owning reference can provided superior
+performance when passing a variable up the stack, compared to repeatedly relocating
+it from caller to callee, but believe that in practice such gains would be minimal
+and liable to be eliminated via optimization, while our model offers the possibility
+of improved locality, since the relocated object will reside directly in the leafmost
+function's stack as opposed to being accessible only via indirection.
+
 # Proposed language changes # {#lg-changes}
 
 ## reloc operator ## {#reloc-operator}
@@ -2848,6 +2865,12 @@ moved-from state understanding problem, as well as used-after-move errors
     "title": "IIFE for Complex Initialization - C++ Stories",
     "href": "https://www.cppstories.com/2016/11/iife-for-complex-initialization/",
     "date": "October 2016"
+  },
+  "D2839R1": {
+    "authors": [ "Brian Bi", "Joshua Berne" ],
+    "title": "Nontrivial Relocation via a New owning reference Type",
+    "href": "https://isocpp.org/files/papers/D2839R1.html",
+    "date": "June 2023"
   }
 }
 </pre>
