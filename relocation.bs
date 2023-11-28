@@ -7,7 +7,8 @@ Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
 Shortname: PXXXX
 Editor:
-  Sébastien Bini, Stormshield, sebastien.bini@gmail.com
+  Sébastien Bini, Amadeus, sebastien.bini@gmail.com
+  Ed Catmur, ed@catmur.uk
 Markup Shorthands: markdown yes, biblio yes, markup yes
 Abstract:
   This paper proposes several mechanisms to enable real relocation in C++.
@@ -19,27 +20,27 @@ Date: 2023-06-14
 # Overview # {#intro}
 
 Move semantics have been around since C++11, and have improved the language in
-many aspects. However move-semantics also bring their lot of defects:
+many aspects. However move-semantics have also brought their lot of defects:
 
 - `std::move` does not move ;
 - moved-from objects are in an unspecified state, and more often than not, must not reused ;
 - constant objects cannot be moved ;
 - classes that want to support move-semantics must either have a natural empty
-  state (like strings, containers or smart pointers)
-  or force one into their design, usually creating a loophole in their class invariant.
+    state (like strings, containers or smart pointers)
+    or force one into their design, usually creating a loophole in their class invariant.
 
 We propose to resolve all these issues with a new kind of operation: "relocation".
 Relocation is the operation of constructing a
 new target object while simultaneously destructing the source object.
-Relocation will happen thanks to a new keywork `reloc` and a new constructor.
+Relocation will happen thanks to a new keyword `reloc` and a new constructor.
 
-This tackles every flaws not solved by move-semantics:
+This tackles every flaw not solved by move-semantics:
 
 - `reloc` does perform the relocation ;
 - relocated objects cannot be reused, or else the program is ill-formed ;
 - relocation disregards cv-qualifiers, so constant objects can be relocated ;
 - classes that to support relocation can do so without breaking their class invariant,
-  as the relocated-fron object is simultaneously destructed.
+    as the relocated-from object is simultaneously destructed.
 
 The proposal introduces:
 
@@ -47,7 +48,7 @@ The proposal introduces:
     assignment operator `T& operator=(T)` ;
 - a new keyword: `reloc` ;
 - slight changes to overload resolution rules ;
-- might introduce ABI breaks of some functions (opt-in).
+- might introduce ABI breaks to some functions (opt-in).
 
 The proposal does not introduce a new value type; instead relocation will happen from prvalues.
 
@@ -61,19 +62,20 @@ safety, performance optimization on some occasions, and last, in class design,
 enable to explicitly write some class invariants.
 
 However its usefulness is greatly diminished because of move-semantics.
-The move constructor cannot work with a constant source object, hence the program
+The move constructor cannot work with a constant source object.
+Hence for those, the program
 either
-silently falls back to calling the copy constructor, or is simply ill-formed...
+silently falls back to calling their copy constructor, or is simply ill-formed...
 
 Declaring an object with `const` may have unwanted side-effects. As a consequence:
 
 - some developers will use `const` to naively declare constant objects, as you would
-  expect from the language, while being unaware of the side-effects. This may
-  lead to unoptimized code, with the copy constructor being called *silently*
-  when `std::move` is used ;
+    expect from the language, while being unaware of the side-effects. This may
+    lead to unoptimized code, with the copy constructor being called *silently*
+    when `std::move` is used ;
 - knowledgeable developpers will rather not to use it if they can foresee the
-  negative side-effect, which leads to poorer code (see the benefits of `const`
-  described above), but can make use of the move constructor.
+    negative side-effect, which leads to poorer code (see the benefits of `const`
+    described above), but can make use of the move constructor.
 
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
@@ -97,58 +99,52 @@ Consider the two code snippets:
 <table>
 <tr><th>Before</th><th>After</th></tr>
 <tr>
-<td valign="top"><pre lang="cpp">
+<td valign="top">
+```c++
 void foo(A a, B b, C c);
 
 void bar()
 {
-    A a = getA();
-    a.fetchData();
-    a.processData();
+  A a = getA();
 
+  B b = getB(a);
+  b.processData();
+
+  C c = getC(a.token(), b);
+  c.fetchAll();
+  c.processData();
+  c.finalize();
+
+  foo(std::move(a), std::move(b), std::move(c));
+}
+```
+</td>
+<td valign="top">
+```c++
+void foo(A a, B b, C c);
+
+void bar()
+{
+  A const a = getA();
+
+  B const b = std::invoke([&] {
     B b = getB(a);
     b.processData();
+    return b;
+  });
 
+  C const c = std::invoke([&] {
     C c = getC(a.token(), b);
     c.fetchAll();
     c.processData();
     c.finalize();
+    return c;
+  });
 
-    foo(std::move(a), std::move(b), std::move(c));
+  foo(reloc a, reloc b, reloc c);
 }
-</pre></td>
-<td valign="top"><pre lang="cpp">
-void foo(A a, B b, C c);
-
-void bar()
-{
-    A const a = std::invoke([]
-    {
-        A a = getA();
-        a.fetchData();
-        a.processData();
-        return a;
-    });
-
-    B const b = std::invoke([&]
-    {
-        B b = getB(a);
-        b.processData();
-        return b;
-    });
-
-    C const c = std::invoke([&]
-    {
-        C c = getC(a.token(), b);
-        c.fetchAll();
-        c.processData();
-        c.finalize();
-        return c;
-    });
-
-    foo(reloc a, reloc b, reloc c);
-}
-</pre></td>
+```
+</td>
 </tr></table>
 
 The code on the right can benefit from constant variables. Their initialization code
@@ -182,7 +178,7 @@ private:
 ```
 
 Here the developper innocently qualified `_key1` and `_key2` as constant.
-In his mind, their value were never to change in the lifetime of the object.
+In their mind, their value was never to change in the lifetime of the object.
 This being part of the class invariant, it only feels natural to enforce the
 class invariant in the code, with the `const` qualifier.
 
@@ -198,39 +194,45 @@ This issue is solved with relocation:
 <table>
 <tr><th>Before</th><th>After</th></tr>
 <tr>
-<td valign="top"><pre lang="cpp">
+<td valign="top">
+```c++
 class SomeType
 {
 public:
-    // some parameterized constructor
-    // SomeType(...)
+  // some parameterized constructor
+  // SomeType(...)
 
-    SomeType(SomeType&&) = default;
+  SomeType(SomeType&&) = default;
 
 private:
-    std::string _key1; /* constant but cannot mark it so
-        because of the move constructor */
-    std::string _key2; /* constant but cannot mark it so
-        because of the move constructor */
+  std::string _key1; /* constant but cannot
+    mark it so because of the
+    move constructor */
+  std::string _key2; /* constant but cannot
+    mark it so because of the
+    move constructor */
 
-    int _val;
+  int _val;
 };
-</pre></td>
-<td valign="top"><pre lang="cpp">
+```
+</td>
+<td valign="top">
+```c++
 class SomeType
 {
 public:
-    // some parameterized constructor
-    // SomeType(...)
+  // some parameterized constructor
+  // SomeType(...)
 
-    SomeType(SomeType) = default;
+  SomeType(SomeType) = default;
 
 private:
-    std::string const _key1;
-    std::string const _key2;
-    int _val;
+  std::string const _key1;
+  std::string const _key2;
+  int _val;
 };
-</pre></td>
+```
+</td>
 </tr></table>
 
 See how the code becomes clearer: class invariant can be written in the code
@@ -238,7 +240,7 @@ instead of comments, which leads to a code that is both more readable and
 robust.
 
 This is not an isolated example. In fact, we invite the reader to think of all
-the places they could have written a constant data member but didn't because
+the places that could have benefited from a constant data member but didn't because
 of this issue. How much clearer the code would have been, had you been able
 to write `const`?
 
@@ -289,9 +291,10 @@ Those objects are legitimate since
 they improve code correctness (the user need not check whether they are empty,
 or are sure the pointed address hasn't changed) and performance. However, we
 choose not to use such types in our code when we know they need to be moved.
+
 This is once again a missed opportunity ; our proposal fixes this issue.
 With the relocation
-semantics in mind this would be allowed: each time `gsl::not_null<std::unique_ptr<T>>`
+semantics in mind, this would be allowed: each time `gsl::not_null<std::unique_ptr<T>>`
 or `std::unique_ptr<T> const`
 are moved in memory, the previous instance is simultaneously destroyed (in practice,
 this simply means the memory occupied by the source object just becomes uninitialized, 

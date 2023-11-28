@@ -2,7 +2,7 @@
  <head>
   <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
   <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
-  <title>P2785R3: Relocating prvalues</title>
+  <title>PXXXXR0: Relocating prvalues</title>
 <style data-fill-with="stylesheet">/******************************************************************************
  *                   Style sheet for the W3C specifications                   *
  *
@@ -1561,10 +1561,10 @@ Possible extra rowspan handling
     blockquote c-[vi] { color: inherit; } /* Name.Variable.Instance */
     blockquote c-[il] { color: inherit; } /* Literal.Number.Integer.Long */
   </style>
-  <meta content="Bikeshed version 5fcd28d6d, updated Tue May 30 13:12:11 2023 -0700" name="generator">
+  <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="b28d6d3e7ece4f80589cf96de0558804470df26f" name="document-revision">
+  <meta content="db605efb19596ee75821aaeed782bd3e2858eb76" name="document-revision">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -2091,7 +2091,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
  <body class="h-entry">
   <div class="head">
    <p data-fill-with="logo"></p>
-   <h1 class="p-name no-ref" id="title">P2785R3<br>Relocating prvalues</h1>
+   <h1 class="p-name no-ref" id="title">PXXXXR0<br>Relocating prvalues</h1>
    <h2 class="no-num no-toc no-ref heading settled" id="profile-and-date"><span class="content">Published Proposal, <time class="dt-updated" datetime="2023-06-14">2023-06-14</time></span></h2>
    <div data-fill-with="spec-metadata">
     <dl>
@@ -2099,12 +2099,12 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <dd><a class="u-url" href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html">https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html</a>
      <dt class="editor">Authors:
      <dd class="editor p-author h-card vcard"><span class="p-name fn"></span>
-     <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:sebastien.bini@gmail.com">Sébastien Bini</a> (<span class="p-org org">Stormshield</span>)
+     <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:sebastien.bini@gmail.com">Sébastien Bini</a> (<span class="p-org org">Amadeus</span>)
      <dd class="editor p-author h-card vcard"><a class="p-name fn u-email email" href="mailto:ed@catmur.uk">Ed Catmur</a>
      <dt>Audience:
      <dd>LEWG, EWG
      <dt>Project:
-     <dd>ISO/IEC JTC1/SC22/WG21 14882: Programming Language — C++
+     <dd>ISO/IEC 14882 Programming Languages — C++, ISO/IEC JTC1/SC22/WG21
     </dl>
    </div>
    <div data-fill-with="warning"></div>
@@ -2124,12 +2124,18 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
     <li>
      <a href="#motivation"><span class="secno">2</span> <span class="content">Motivation</span></a>
      <ol class="toc">
-      <li><a href="#motivation-never-empty"><span class="secno">2.1</span> <span class="content">Never-empty types</span></a>
-      <li><a href="#motivation-constant-objects"><span class="secno">2.2</span> <span class="content">Constant objects</span></a>
-      <li><a href="#motivation-teachability"><span class="secno">2.3</span> <span class="content">Teachability</span></a>
-      <li><a href="#motivation-vs-trivial-relocation"><span class="secno">2.4</span> <span class="content">Versus trivial relocation</span></a>
-      <li><a href="#motivation-helper-types"><span class="secno">2.5</span> <span class="content">Helper types</span></a>
-      <li><a href="#motivation-performance"><span class="secno">2.6</span> <span class="content">Library performance</span></a>
+      <li>
+       <a href="#const-vs-move"><span class="secno">2.1</span> <span class="content">constness versus move</span></a>
+       <ol class="toc">
+        <li><a href="#const-var"><span class="secno">2.1.1</span> <span class="content">Constant local variables cannot be moved</span></a>
+        <li><a href="#const-data-members"><span class="secno">2.1.2</span> <span class="content">Constant data-members</span></a>
+       </ol>
+      <li><a href="#motivation-accidental-relocate-only-types"><span class="secno">2.2</span> <span class="content">Accidental relocate-only types</span></a>
+      <li><a href="#motivation-never-empty"><span class="secno">2.3</span> <span class="content">Move constructor breaks class invariant</span></a>
+      <li><a href="#motivation-never-empty①"><span class="secno">2.4</span> <span class="content">safety against use-after-move</span></a>
+      <li><a href="#motivation-teachability"><span class="secno">2.5</span> <span class="content">Teachability</span></a>
+      <li><a href="#motivation-vs-trivial-relocation"><span class="secno">2.6</span> <span class="content">Versus trivial relocation</span></a>
+      <li><a href="#motivation-performance"><span class="secno">2.7</span> <span class="content">Library performance</span></a>
      </ol>
     <li>
      <a href="#nomenclature"><span class="secno">3</span> <span class="content">Nomenclature</span></a>
@@ -2316,17 +2322,36 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   </nav>
   <main>
    <h2 class="heading settled" data-level="1" id="intro"><span class="secno">1. </span><span class="content">Overview</span><a class="self-link" href="#intro"></a></h2>
-   <p>C++11 introduced rvalue references, move constructor and move-assignment operators.
-While these have improved C++ in many ways, there is still one operation that is 
-unsupported: relocation. By "relocation", we mean the operation to construct a 
-new object while simultaneously destructing the source object. Some other proposals
-look at this as "move + destruct", while we see this as a unique, different, 
-and optionally better optimized operation.</p>
-   <p>This new operation brings several benefits, principally in terms of performance and
-code correctness. This proposal has its own take on trivial relocatibility 
-(which allows to optimize the relocation operation into a simple <code class="highlight"><c- n>memcpy</c-></code>). 
-It also supports relocate-only types (such as <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-></code>)
-and enables to relocate constant objects.</p>
+   <p>Move semantics have been around since C++11, and have improved the language in
+many aspects. However move-semantics have also brought their lot of defects:</p>
+   <ul>
+    <li data-md>
+     <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code> does not move ;</p>
+    <li data-md>
+     <p>moved-from objects are in an unspecified state, and more often than not, must not reused ;</p>
+    <li data-md>
+     <p>constant objects cannot be moved ;</p>
+    <li data-md>
+     <p>classes that want to support move-semantics must either have a natural empty
+state (like strings, containers or smart pointers)
+or force one into their design, usually creating a loophole in their class invariant.</p>
+   </ul>
+   <p>We propose to resolve all these issues with a new kind of operation: "relocation".
+Relocation is the operation of constructing a
+new target object while simultaneously destructing the source object.
+Relocation will happen thanks to a new keyword <code class="highlight"><c- n>reloc</c-></code> and a new constructor.</p>
+   <p>This tackles every flaw not solved by move-semantics:</p>
+   <ul>
+    <li data-md>
+     <p><code class="highlight"><c- n>reloc</c-></code> does perform the relocation ;</p>
+    <li data-md>
+     <p>relocated objects cannot be reused, or else the program is ill-formed ;</p>
+    <li data-md>
+     <p>relocation disregards cv-qualifiers, so constant objects can be relocated ;</p>
+    <li data-md>
+     <p>classes that to support relocation can do so without breaking their class invariant,
+as the relocated-from object is simultaneously destructed.</p>
+   </ul>
    <p>The proposal introduces:</p>
    <ul>
     <li data-md>
@@ -2337,57 +2362,218 @@ assignment operator <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- k>o
     <li data-md>
      <p>slight changes to overload resolution rules ;</p>
     <li data-md>
-     <p>might introduce ABI breaks of some functions ;</p>
-    <li data-md>
-     <p>library evolution to support relocation.</p>
+     <p>might introduce ABI breaks to some functions (opt-in).</p>
    </ul>
    <p>The proposal does not introduce a new value type; instead relocation will happen from prvalues.</p>
    <h2 class="heading settled" data-level="2" id="motivation"><span class="secno">2. </span><span class="content">Motivation</span><a class="self-link" href="#motivation"></a></h2>
-   <h3 class="heading settled" data-level="2.1" id="motivation-never-empty"><span class="secno">2.1. </span><span class="content">Never-empty types</span><a class="self-link" href="#motivation-never-empty"></a></h3>
-   <p>C++ lacks support for relocate-only types. Let’s us consider the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> case for a moment. <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-></code> inhibits
-the move constructor, as a moved-from pointer would be null and break the class invariant.
-In turn <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-></code> inhibits the copy constructor because of its ownership policy. 
-Hence this type is non-copyable and non-movable. Those objects are legitimate since
-they improve code correctness (the user need not check whether they are empty) and performance
-(the compiler need not check whether they are empty).</p>
-   <p>Unfortunately those objects are quite impractical to handle in C++: they cannot be moved around
-in program memory (passed down to function, stored and removed from containers, etc...), 
-while in principle there is no good reason to prevent that. With the relocation
-semantics in mind this would be allowed: each time the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> is moved in memory, it simultaneously destroys the previous instance (in practice, 
-this simply means the memory occupied by the source object just becomes uninitialized, 
-and in particular, the source object’s destructor is not called).</p>
-   <h3 class="heading settled" data-level="2.2" id="motivation-constant-objects"><span class="secno">2.2. </span><span class="content">Constant objects</span><a class="self-link" href="#motivation-constant-objects"></a></h3>
-   <p>Another place where C++ falls short is with constant objects. As of today, constant
-objects cannot be moved in C++ as the move constructor cannot steal the resources
-of a constant object. As such, never-modified objects that
-end their life by being moved (e.g. via <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code>, or implicitly by return-value optimization
-where complete elision is not viable) cannot be marked as <code class="highlight"><c- k>const</c-></code>. 
-This is a missed opportunity and it leads to poorer code. The
+   <h3 class="heading settled" data-level="2.1" id="const-vs-move"><span class="secno">2.1. </span><span class="content">constness versus move</span><a class="self-link" href="#const-vs-move"></a></h3>
+   <p>Unlike some other languages, C++ provides the <code class="highlight"><c- k>const</c-></code> keyword to declare constant
+objects. This is an extremely valuable feature, as it provides better code readibility,
+safety, performance optimization on some occasions, and last, in class design,
+enable to explicitly write some class invariants.</p>
+   <p>However its usefulness is greatly diminished because of move-semantics.
+The move constructor cannot work with a constant source object.
+Hence for those, the program
+either
+silently falls back to calling their copy constructor, or is simply ill-formed...</p>
+   <p>Declaring an object with <code class="highlight"><c- k>const</c-></code> may have unwanted side-effects. As a consequence:</p>
+   <ul>
+    <li data-md>
+     <p>some developers will use <code class="highlight"><c- k>const</c-></code> to naively declare constant objects, as you would
+expect from the language, while being unaware of the side-effects. This may
+lead to unoptimized code, with the copy constructor being called <em>silently</em> when <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code> is used ;</p>
+    <li data-md>
+     <p>knowledgeable developpers will rather not to use it if they can foresee the
+negative side-effect, which leads to poorer code (see the benefits of <code class="highlight"><c- k>const</c-></code> described above), but can make use of the move constructor.</p>
+   </ul>
+   <p>This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.</p>
+   <h4 class="heading settled" data-level="2.1.1" id="const-var"><span class="secno">2.1.1. </span><span class="content">Constant local variables cannot be moved</span><a class="self-link" href="#const-var"></a></h4>
    <p>Automatic objects are recommended by various guidelines to be constant, since a constant object
 will not change throughout its lifetime, simplifying reasoning about program state both for
 humans (coders, reviewers, maintainers) and for machines (compilers, tooling). Allowing an object
 to be <code class="highlight"><c- k>const</c-></code> throughout its lifetime but give up its resources at the end of its lifetime allows
 for better, safer code.</p>
-   <p>As we will see other proposals about relocation provide little support for
-relocate-only types, and even less for constant objects.
-They only partly improve their support in a limited way.</p>
-   <h3 class="heading settled" data-level="2.3" id="motivation-teachability"><span class="secno">2.3. </span><span class="content">Teachability</span><a class="self-link" href="#motivation-teachability"></a></h3>
-   <p>It is a matter of some confusion for learners that a "moved-from" object still exists and is
-accessible, but has an unspecified state. This leads to so-called "use-after-move" bugs, and
-requires static analysis passes and coding guidelines to prevent. "What does <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code> do?"
-is, regrettably, a common "gotcha" question in a certain style of coding interview. In this
-matter C++ compares unfavorably to other languages where the "move" operation is destructive
-(if trivial) and bars further access to the source object.</p>
-   <h3 class="heading settled" data-level="2.4" id="motivation-vs-trivial-relocation"><span class="secno">2.4. </span><span class="content">Versus trivial relocation</span><a class="self-link" href="#motivation-vs-trivial-relocation"></a></h3>
-   <p>As will be seen below, trivial relocation provides an incomplete solution to the issues
-presented in this section. The primary concern is that of composability; an aggregate of
-a self-referential type that cannot be trivially relocated (e.g. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>string</c-></code> in some
-implementations) and a relocate-only type (e.g. a non-null <code class="highlight"><c- n>unique_ptr</c-></code>) can neither be
-relocated by move-and-destroy nor trivially relocated. Thus non-trivial relocation
-emerges as a requirement.</p>
-   <h3 class="heading settled" data-level="2.5" id="motivation-helper-types"><span class="secno">2.5. </span><span class="content">Helper types</span><a class="self-link" href="#motivation-helper-types"></a></h3>
+   <p>We also have to consider that the Immediately Invoked Function Expressions (IIFE)
+decouples the possibilities to declare constant variables (even when they have
+a complex initialization routine), were they not hindered down
+by <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code>.</p>
+   <p>Consider the two code snippets:</p>
+   <table>
+    <tbody>
+     <tr>
+      <th>Before
+      <th>After
+     <tr>
+      <td valign="top">
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>A</c-> <c- n>a</c-><c- p>,</c-> <c- n>B</c-> <c- n>b</c-><c- p>,</c-> <c- n>C</c-> <c- n>c</c-><c- p>);</c->
+
+<c- b>void</c-> <c- nf>bar</c-><c- p>()</c->
+<c- p>{</c->
+  <c- n>A</c-> <c- n>a</c-> <c- o>=</c-> <c- n>getA</c-><c- p>();</c->
+
+  <c- n>B</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getB</c-><c- p>(</c-><c- n>a</c-><c- p>);</c->
+  <c- n>b</c-><c- p>.</c-><c- n>processData</c-><c- p>();</c->
+
+  <c- n>C</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getC</c-><c- p>(</c-><c- n>a</c-><c- p>.</c-><c- n>token</c-><c- p>(),</c-> <c- n>b</c-><c- p>);</c->
+  <c- n>c</c-><c- p>.</c-><c- n>fetchAll</c-><c- p>();</c->
+  <c- n>c</c-><c- p>.</c-><c- n>processData</c-><c- p>();</c->
+  <c- n>c</c-><c- p>.</c-><c- n>finalize</c-><c- p>();</c->
+
+  <c- n>foo</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>a</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>b</c-><c- p>),</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>c</c-><c- p>));</c->
+<c- p>}</c->
+</pre>
+      <td valign="top">
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>A</c-> <c- n>a</c-><c- p>,</c-> <c- n>B</c-> <c- n>b</c-><c- p>,</c-> <c- n>C</c-> <c- n>c</c-><c- p>);</c->
+
+<c- b>void</c-> <c- nf>bar</c-><c- p>()</c->
+<c- p>{</c->
+  <c- n>A</c-> <c- k>const</c-> <c- n>a</c-> <c- o>=</c-> <c- n>getA</c-><c- p>();</c->
+
+  <c- n>B</c-> <c- k>const</c-> <c- n>b</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c-> <c- p>{</c->
+    <c- n>B</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getB</c-><c- p>(</c-><c- n>a</c-><c- p>);</c->
+    <c- n>b</c-><c- p>.</c-><c- n>processData</c-><c- p>();</c->
+    <c- k>return</c-> <c- n>b</c-><c- p>;</c->
+  <c- p>});</c->
+
+  <c- n>C</c-> <c- k>const</c-> <c- n>c</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c-> <c- p>{</c->
+    <c- n>C</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getC</c-><c- p>(</c-><c- n>a</c-><c- p>.</c-><c- n>token</c-><c- p>(),</c-> <c- n>b</c-><c- p>);</c->
+    <c- n>c</c-><c- p>.</c-><c- n>fetchAll</c-><c- p>();</c->
+    <c- n>c</c-><c- p>.</c-><c- n>processData</c-><c- p>();</c->
+    <c- n>c</c-><c- p>.</c-><c- n>finalize</c-><c- p>();</c->
+    <c- k>return</c-> <c- n>c</c-><c- p>;</c->
+  <c- p>});</c->
+
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>a</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>b</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>c</c-><c- p>);</c->
+<c- p>}</c->
+</pre>
+   </table>
+   <p>The code on the right can benefit from constant variables. Their initialization code
+is strictly enclosed in the lambda expressions. By looking at the code, we
+know that each variable will remain unmodified for the remaining of the function,
+even when used in the initialization of other variables.</p>
+   <p>The <code class="highlight"><c- n>reloc</c-></code> keyword relocates the objects to the parameter slots of <code class="highlight"><c- n>foo</c-></code>. <code class="highlight"><c- n>a</c-></code>, <code class="highlight"><c- n>b</c-></code>, and <code class="highlight"><c- n>c</c-></code> have reached their end of life when the call to <code class="highlight"><c- n>foo</c-></code> completes and
+can no longer be used in <code class="highlight"><c- n>bar</c-></code>. In particular, their destructor will not even be
+called.</p>
+   <h4 class="heading settled" data-level="2.1.2" id="const-data-members"><span class="secno">2.1.2. </span><span class="content">Constant data-members</span><a class="self-link" href="#const-data-members"></a></h4>
+   <p>It’s not uncommon to find in production codebases things like this:</p>
+<pre class="language-c++ highlight"><c- n>class</c-> <c- n>SomeType</c->
+<c- p>{</c->
+<c- n>public</c-><c- o>:</c->
+    <c- c1>// some parameterized constructor</c->
+    <c- c1>// SomeType(...)</c->
+
+    <c- n>SomeType</c-><c- p>(</c-><c- n>SomeType</c-><c- o>&amp;&amp;</c-><c- p>)</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
+
+<c- n>private</c-><c- o>:</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-> <c- n>_key1</c-><c- p>;</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-> <c- n>_key2</c-><c- p>;</c->
+    <c- b>int</c-> <c- n>_val</c-><c- p>;</c->
+<c- p>};</c->
+</pre>
+   <p>Here the developper innocently qualified <code class="highlight"><c- n>_key1</c-></code> and <code class="highlight"><c- n>_key2</c-></code> as constant.
+In their mind, their value was never to change in the lifetime of the object.
+This being part of the class invariant, it only feels natural to enforce the
+class invariant in the code, with the <code class="highlight"><c- k>const</c-></code> qualifier.</p>
+   <p>However the experienced programmer will have noticed the incurred performance drawback:
+the move constructor, because of <code class="highlight"><c- k>const</c-></code>, will be forced to make a deep copy
+of <code class="highlight"><c- n>_key1</c-></code> and <code class="highlight"><c- n>_key2</c-></code> (via std::string’s copy constructor). This gives an even
+bitter taste when we know that
+the moved-from object will pretty likely be destructed right after, meaning
+that the deep copy will have been done for nothing.</p>
+   <p>This issue is solved with relocation:</p>
+   <table>
+    <tbody>
+     <tr>
+      <th>Before
+      <th>After
+     <tr>
+      <td valign="top">
+<pre class="language-c++ highlight"><c- n>class</c-> <c- n>SomeType</c->
+<c- p>{</c->
+<c- n>public</c-><c- o>:</c->
+  <c- c1>// some parameterized constructor</c->
+  <c- c1>// SomeType(...)</c->
+
+  <c- n>SomeType</c-><c- p>(</c-><c- n>SomeType</c-><c- o>&amp;&amp;</c-><c- p>)</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
+
+<c- n>private</c-><c- o>:</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_key1</c-><c- p>;</c-> <c- d>/* constant but cannot</c->
+<c- d>    mark it so because of the</c->
+<c- d>    move constructor */</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_key2</c-><c- p>;</c-> <c- d>/* constant but cannot</c->
+<c- d>    mark it so because of the</c->
+<c- d>    move constructor */</c->
+
+  <c- b>int</c-> <c- n>_val</c-><c- p>;</c->
+<c- p>};</c->
+</pre>
+      <td valign="top">
+<pre class="language-c++ highlight"><c- n>class</c-> <c- n>SomeType</c->
+<c- p>{</c->
+<c- n>public</c-><c- o>:</c->
+  <c- c1>// some parameterized constructor</c->
+  <c- c1>// SomeType(...)</c->
+
+  <c- n>SomeType</c-><c- p>(</c-><c- n>SomeType</c-><c- p>)</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
+
+<c- n>private</c-><c- o>:</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-> <c- n>_key1</c-><c- p>;</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-> <c- n>_key2</c-><c- p>;</c->
+  <c- b>int</c-> <c- n>_val</c-><c- p>;</c->
+<c- p>};</c->
+</pre>
+   </table>
+   <p>See how the code becomes clearer: class invariant can be written in the code
+instead of comments, which leads to a code that is both more readable and
+robust.</p>
+   <p>This is not an isolated example. In fact, we invite the reader to think of all
+the places that could have benefited from a constant data member but didn’t because
+of this issue. How much clearer the code would have been, had you been able
+to write <code class="highlight"><c- k>const</c-></code>?</p>
+   <p>Let’s illustrate this with a final example. Consider a <code class="highlight"><c- n>flat_map</c-></code> implementation.
+As a flat_map implements an associative container, we know for a fact the keys
+of that container will never change. We could write it quite easily in our class
+invariant:</p>
+<pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>Key</c-><c- p>,</c-> <c- n>class</c-> <c- n>Val</c-><c- o>></c->
+<c- n>class</c-> <c- n>MyFlatMap</c->
+<c- p>{</c->
+<c- n>public</c-><c- o>:</c->
+    <c- c1>// [...]</c->
+
+<c- n>private</c-><c- o>:</c->
+    <c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>Key</c-> <c- k>const</c-><c- p>,</c-> <c- n>Val</c-><c- o>>></c-> <c- n>_map</c-><c- p>;</c->
+<c- p>};</c->
+</pre>
+   <p>However, as of today,
+this will lead to a deep copy of some range of keys when a new item is inserted
+anywhere but at the end of <code class="highlight"><c- n>_map</c-></code>, or when <code class="highlight"><c- n>_map</c-></code> needs to grow.
+Support for relocation in the language (and in the STL) will enable to write <code class="highlight"><c- k>const</c-></code> with no drawback on performance.</p>
+   <h3 class="heading settled" data-level="2.2" id="motivation-accidental-relocate-only-types"><span class="secno">2.2. </span><span class="content">Accidental relocate-only types</span><a class="self-link" href="#motivation-accidental-relocate-only-types"></a></h3>
+   <p>Classes that have an implicitly deleted copy and move constructors are are quite
+impractical to handle in C++. They cannot be moved around
+in program memory (passed down to function, stored and removed from containers,
+etc...), while in principle there is no good reason to prevent that.</p>
+   <p>Of course some classes do need to be immovable by design (like <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>mutex</c-></code>) ;
+those types can perfectly remain so with this proposal. However there is still
+the case of some types which are accidently made immovable, because they are
+being wrapped with another type, or merely because of their cv-qualifiers
+(look no further than <code class="highlight"><c- k>const</c-></code>).</p>
+   <p>Let’s us consider the <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> case for a moment. <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-></code> inhibits
+the move constructor, as a moved-from pointer would be null and break the class invariant.
+In turn <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-></code> inhibits the copy constructor because of its ownership policy. 
+Hence this type is non-copyable and non-movable. Another example is simply <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-> <c- k>const</c-></code>, where the qualifier inhibits the move constructor...</p>
+   <p>Those objects are legitimate since
+they improve code correctness (the user need not check whether they are empty,
+or are sure the pointed address hasn’t changed) and performance. However, we
+choose not to use such types in our code when we know they need to be moved.</p>
+   <p>This is once again a missed opportunity ; our proposal fixes this issue.
+With the relocation
+semantics in mind, this would be allowed: each time <code class="highlight"><c- n>gsl</c-><c- o>::</c-><c- n>not_null</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-></code> or <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-> <c- k>const</c-></code> are moved in memory, the previous instance is simultaneously destroyed (in practice,
+this simply means the memory occupied by the source object just becomes uninitialized, 
+and in particular, the source object’s destructor is not called).</p>
+   <h3 class="heading settled" data-level="2.3" id="motivation-never-empty"><span class="secno">2.3. </span><span class="content">Move constructor breaks class invariant</span><a class="self-link" href="#motivation-never-empty"></a></h3>
    <p>In framework code it is a relatively everyday task to write helper classes that are
 constructed to own some resource, passed around from place to place, and then destroyed,
 cleaning up the resource in the destructor. Move semantics for such classes requires
@@ -2395,7 +2581,22 @@ identifying or adding an appropriate empty state, writing a move constructor, an
 adding checks to the destructor; all of these inhibit performance and are opportunities
 to introduce bugs. Relocation would replace all of this with a single defaulted special
 member function declaration.</p>
-   <h3 class="heading settled" data-level="2.6" id="motivation-performance"><span class="secno">2.6. </span><span class="content">Library performance</span><a class="self-link" href="#motivation-performance"></a></h3>
+   <h3 class="heading settled" data-level="2.4" id="motivation-never-empty①"><span class="secno">2.4. </span><span class="content">safety against use-after-move</span><a class="self-link" href="#motivation-never-empty①"></a></h3>
+   <h3 class="heading settled" data-level="2.5" id="motivation-teachability"><span class="secno">2.5. </span><span class="content">Teachability</span><a class="self-link" href="#motivation-teachability"></a></h3>
+   <p>It is a matter of some confusion for learners that a "moved-from" object still exists and is
+accessible, but has an unspecified state. This leads to so-called "use-after-move" bugs, and
+requires static analysis passes and coding guidelines to prevent. "What does <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code> do?"
+is, regrettably, a common "gotcha" question in a certain style of coding interview. In this
+matter C++ compares unfavorably to other languages where the "move" operation is destructive
+(if trivial) and bars further access to the source object.</p>
+   <h3 class="heading settled" data-level="2.6" id="motivation-vs-trivial-relocation"><span class="secno">2.6. </span><span class="content">Versus trivial relocation</span><a class="self-link" href="#motivation-vs-trivial-relocation"></a></h3>
+   <p>As will be seen below, trivial relocation provides an incomplete solution to the issues
+presented in this section. The primary concern is that of composability; an aggregate of
+a self-referential type that cannot be trivially relocated (e.g. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>string</c-></code> in some
+implementations) and a relocate-only type (e.g. a non-null <code class="highlight"><c- n>unique_ptr</c-></code>) can neither be
+relocated by move-and-destroy nor trivially relocated. Thus non-trivial relocation
+emerges as a requirement.</p>
+   <h3 class="heading settled" data-level="2.7" id="motivation-performance"><span class="secno">2.7. </span><span class="content">Library performance</span><a class="self-link" href="#motivation-performance"></a></h3>
    <p>Finally, relocation and especially trivial relocation will bring performance boosts
 in many situations. Other proposals make fine work at enumerating all the gains to be had
 from trivial relocation (see in particular <a data-link-type="biblio" href="#biblio-p1144r8" title="std::is_trivially_relocatable">[P1144R8]</a>). To summarize, the performance gains
@@ -2676,39 +2877,39 @@ member of a function-local anonymous union.</p>
 
 <c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- b>void</c-><c- p>)</c->
 <c- p>{</c->
-	<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>str</c-> <c- o>=</c-> <c- s>"test string"</c-><c- p>;</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK: relocation will happen given that std::string has a reloc ctor</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>gStr</c-><c- p>);</c-> <c- c1>// ill-formed: gStr does not have local storage</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>str</c-> <c- o>=</c-> <c- s>"test string"</c-><c- p>;</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK: relocation will happen given that std::string has a reloc ctor</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>gStr</c-><c- p>);</c-> <c- c1>// ill-formed: gStr does not have local storage</c->
 
-	<c- n>std</c-><c- o>::</c-><c- n>pair</c-> <c- n>p</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>{},</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>{}};</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>p</c-><c- p>.</c-><c- n>first</c-><c- p>);</c-> <c- c1>// ill-formed: p.first is not a complete object, and not the name of variable</c->
+  <c- n>std</c-><c- o>::</c-><c- n>pair</c-> <c- n>p</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>{},</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>{}};</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>p</c-><c- p>.</c-><c- n>first</c-><c- p>);</c-> <c- c1>// ill-formed: p.first is not a complete object, and not the name of variable</c->
 
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>get_string</c-><c- p>());</c-> <c- c1>// ill-formed: not the name of variable</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>get_strings</c-><c- p>().</c-><c- n>first</c-><c- p>);</c-> <c- c1>// ill-formed: not a complete object, and not the name of variable</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>get_string</c-><c- p>());</c-> <c- c1>// ill-formed: not the name of variable</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>get_strings</c-><c- p>().</c-><c- n>first</c-><c- p>);</c-> <c- c1>// ill-formed: not a complete object, and not the name of variable</c->
 <c- p>}</c->
 
 <c- b>void</c-> <c- nf>foobar</c-><c- p>(</c-><c- k>const</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>&amp;</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK: str is passed by reference.</c->
-	<c- c1>// Note that the lifetime of the referent of str is unaffected.</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK: str is passed by reference.</c->
+  <c- c1>// Note that the lifetime of the referent of str is unaffected.</c->
 <c- p>}</c->
 <c- b>void</c-> <c- nf>foobar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>*</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
-	<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- o>*</c-><c- n>str</c-><c- p>);</c-> <c- c1>// ill-formed: *str is not the name of variable</c->
+  <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- o>*</c-><c- n>str</c-><c- p>);</c-> <c- c1>// ill-formed: *str is not the name of variable</c->
 <c- p>}</c->
 <c- b>void</c-> <c- nf>foobar2</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>*</c-> <c- n>str</c-><c- p>)</c->
 <c- p>{</c->
-	<c- n>foobar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK, the pointer itself is relocated (not the pointed value)</c->
+  <c- n>foobar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str</c-><c- p>);</c-> <c- c1>// OK, the pointer itself is relocated (not the pointed value)</c->
 <c- p>}</c-> 
 
 <c- k>class</c-> <c- nc>A</c->
 <c- p>{</c->
-	<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_str</c-><c- p>;</c->
+  <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_str</c-><c- p>;</c->
 <c- k>public</c-><c- o>:</c->
-	<c- b>void</c-> <c- n>bar</c-><c- p>()</c->
-	<c- p>{</c->
-		<c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>_str</c-><c- p>);</c-> <c- c1>// ill-formed: _str is not a complete object and does not have local storage</c->
-	<c- p>}</c->
+  <c- b>void</c-> <c- n>bar</c-><c- p>()</c->
+  <c- p>{</c->
+    <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>_str</c-><c- p>);</c-> <c- c1>// ill-formed: _str is not a complete object and does not have local storage</c->
+  <c- p>}</c->
 <c- p>};</c->
 </pre>
    <h4 class="heading settled" data-level="5.1.4" id="reloc-early-end-of-scope"><span class="secno">5.1.4. </span><span class="content">Early end-of-scope</span><a class="self-link" href="#reloc-early-end-of-scope"></a></h4>
@@ -2752,220 +2953,220 @@ more time for code-path evaluation.</p>
    <p>Consider the following examples:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_01</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// ERROR</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// ERROR</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
 <c- p>}</c->
 </pre>
-   <code class="highlight"><c- n>var</c-></code> cannot be reused after the <code class="highlight"><c- n>reloc</c-></code> call. 
+   <p><code class="highlight"><c- n>var</c-></code> cannot be reused after the <code class="highlight"><c- n>reloc</c-></code> call.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_02</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
-	<c- p>{</c->
-		<c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR, var cannot be reused after the &lt;code data-opaque bs-autolink-syntax='`reloc`'>reloc&lt;/code> call</c->
-		<c- p>{</c->
-			<c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
-			<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-		<c- p>}</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR, var cannot be reused after the &lt;code data-opaque bs-autolink-syntax='`reloc`'>reloc&lt;/code> call</c->
-	<c- p>}</c->
-	<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
+  <c- p>{</c->
+    <c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR, var cannot be reused after the `reloc` call</c->
+    <c- p>{</c->
+      <c- k>const</c-> <c- n>T</c-> <c- n>var</c-><c- p>;</c->
+      <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+    <c- p>}</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR, var cannot be reused after the `reloc` call</c->
+  <c- p>}</c->
+  <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
 <c- p>}</c->
 </pre>
-   The second and forth calls to <code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> are allowed because the name <code class="highlight"><c- n>var</c-></code> does not resolve to the relocated object. 
+   <p>The second and forth calls to <code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> are allowed because the name <code class="highlight"><c- n>var</c-></code> does not resolve to the relocated object.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_03</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- k>else</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- k>else</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
 <c- p>}</c->
 </pre>
-   <code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> is allowed because the <code class="highlight"><c- k>else</c-></code> branch is not affected by the <code class="highlight"><c- n>reloc</c-></code> call of the <code class="highlight"><c- k>if</c-></code> branch. 
+   <p><code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> is allowed because the <code class="highlight"><c- k>else</c-></code> branch is not affected by the <code class="highlight"><c- n>reloc</c-></code> call of the <code class="highlight"><c- k>if</c-></code> branch.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_04</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- k>else</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-	<c- c1>// [...]</c->
-	<c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- k>else</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- c1>// [...]</c->
+  <c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
 <c- p>}</c->
 </pre>
-   <code class="highlight"><c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> is an error because <code class="highlight"><c- n>var</c-></code> is mentioned after the <code class="highlight"><c- n>reloc</c-></code> call. 
+   <p><code class="highlight"><c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>)</c-></code> is an error because <code class="highlight"><c- n>var</c-></code> is mentioned after the <code class="highlight"><c- n>reloc</c-></code> call.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_05</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- k>else</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- k>else</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
 <c- p>}</c->
 </pre>
-   Both <code class="highlight"><c- n>reloc</c-></code> are okay as they happen on different code paths. 
+   <p>Both <code class="highlight"><c- n>reloc</c-></code> are okay as they happen on different code paths.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_06</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- b>bool</c-> <c- n>relocated</c-> <c- o>=</c-> false<c- p>;</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
-	<c- p>{</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-		<c- n>relocated</c-> <c- o>=</c-> true<c- p>;</c->
-	<c- p>}</c->
-	<c- k>else</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-	<c- c1>// [...]</c->
-	<c- k>if</c-> <c- p>(</c-><c- o>!</c-><c- n>relocated</c-><c- p>)</c->
-		<c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- b>bool</c-> <c- n>relocated</c-> <c- o>=</c-> false<c- p>;</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
+  <c- p>{</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+    <c- n>relocated</c-> <c- o>=</c-> true<c- p>;</c->
+  <c- p>}</c->
+  <c- k>else</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- c1>// [...]</c->
+  <c- k>if</c-> <c- p>(</c-><c- o>!</c-><c- n>relocated</c-><c- p>)</c->
+    <c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
 <c- p>}</c->
 </pre>
-   It does not matter that the developer attempted to do the safe thing with the <code class="highlight"><c- n>relocated</c-></code> variable. The code-path analysis disregards run-time values and 
-explores all branches of an <code class="highlight"><c- k>if</c-></code> block (unless in the case of <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code>). 
+   <p>It does not matter that the developer attempted to do the safe thing with the <code class="highlight"><c- n>relocated</c-></code> variable. The code-path analysis disregards run-time values and 
+explores all branches of an <code class="highlight"><c- k>if</c-></code> block (unless in the case of <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code>).</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_07</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>constexpr</c-> <c- b>bool</c-> <c- n>relocated</c-> <c- o>=</c-> <c- n>my_can_relocate</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-><c- p>{}();</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- k>constexpr</c-><c- p>(</c-><c- n>relocated</c-><c- p>)</c->
-	<c- p>{</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- p>}</c->
-	<c- k>else</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-	<c- c1>// [...]</c->
-	<c- k>if</c-> <c- k>constexpr</c-><c- p>(</c-><c- o>!</c-><c- n>relocated</c-><c- p>)</c->
-		<c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- k>constexpr</c-> <c- b>bool</c-> <c- n>relocated</c-> <c- o>=</c-> <c- n>my_can_relocate</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-><c- p>{}();</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- k>constexpr</c-><c- p>(</c-><c- n>relocated</c-><c- p>)</c->
+  <c- p>{</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- p>}</c->
+  <c- k>else</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- c1>// [...]</c->
+  <c- k>if</c-> <c- k>constexpr</c-><c- p>(</c-><c- o>!</c-><c- n>relocated</c-><c- p>)</c->
+    <c- n>do_smth_else</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
 <c- p>}</c->
 </pre>
-   The above example is safe because of the use of <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code>. 
+   <p>The above example is safe because of the use of <code class="highlight"><c- k>if</c-> <c- k>constexpr</c-></code>.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_08</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
-	<c- p>{</c->
-		<c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-		<c- k>return</c-><c- p>;</c->
-	<c- p>}</c->
-	<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c->
+  <c- p>{</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+    <c- k>return</c-><c- p>;</c->
+  <c- p>}</c->
+  <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
 <c- p>}</c->
 </pre>
-   This example is also safe thanks to the <code class="highlight"><c- k>return</c-></code> statement right after the <code class="highlight"><c- n>reloc</c-></code> instruction, which prevents from running <code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-></code>. 
+   <p>This example is also safe thanks to the <code class="highlight"><c- k>return</c-></code> statement right after the <code class="highlight"><c- n>reloc</c-></code> instruction, which prevents from running <code class="highlight"><c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-></code>.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_09</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
 <c- p>}</c->
 </pre>
-   This is ill-formed as each iteration reuses <code class="highlight"><c- n>var</c-></code> which is declared before the loop body. 
+   <p>This is ill-formed as each iteration reuses <code class="highlight"><c- n>var</c-></code> which is declared before the loop body.
 Even if <code class="highlight"><c- n>i</c-></code> were compared against <code class="highlight"><c- mi>1</c-></code> or even <code class="highlight"><c- mi>0</c-></code> (for respectively one iteration, 
 or no iteration) then the program would still be ill-formed.
 Run-time values (like <code class="highlight"><c- n>i</c-></code>) are disregarded in the code-path analysis that comes 
 with <code class="highlight"><c- n>reloc</c-></code>. The analysis will report that there is an optional code jump, 
 after the <code class="highlight"><c- n>do_smth</c-></code> call (and <code class="highlight"><c- n>reloc</c-> <c- n>var</c-></code>), which jumps to before the <code class="highlight"><c- n>reloc</c-> <c- n>var</c-></code> call and after the initialization of <code class="highlight"><c- n>var</c-></code>. Although the jump is optional 
 (depends on <code class="highlight"><c- n>i</c-></code>, whose value is disregarded for this analysis) it may still 
-happen and thus such code is ill-formed. 
+happen and thus such code is ill-formed.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_10</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
-	<c- p>{</c->
-		<c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>9</c-><c- p>)</c->
-			<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
-		<c- k>else</c->
-			<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
-	<c- p>}</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
+  <c- p>{</c->
+    <c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>9</c-><c- p>)</c->
+      <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+    <c- k>else</c->
+      <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- p>}</c->
 <c- p>}</c->
 </pre>
-   This is ill-formed for the same reason as above. The code-path analysis will 
+   <p>This is ill-formed for the same reason as above. The code-path analysis will
 report that any iteration of the for-loop may take any branch of the if statement 
-and potentially reuse a relocated variable. 
+and potentially reuse a relocated variable.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_11</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
-	<c- p>{</c->
-		<c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>9</c-><c- p>)</c-> <c- p>{</c->
-			<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-			<c- k>break</c-><c- p>;</c->
-		<c- p>}</c->
-		<c- k>else</c->
-			<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-	<c- p>}</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
+  <c- p>{</c->
+    <c- k>if</c-> <c- p>(</c-><c- n>i</c-> <c- o>==</c-> <c- mi>9</c-><c- p>)</c-> <c- p>{</c->
+      <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+      <c- k>break</c-><c- p>;</c->
+    <c- p>}</c->
+    <c- k>else</c->
+      <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- p>}</c->
 <c- p>}</c->
 </pre>
-   Adding the break statement right after the <code class="highlight"><c- n>reloc</c-></code> call makes the code snippet well-formed. 
+   <p>Adding the break statement right after the <code class="highlight"><c- n>reloc</c-></code> call makes the code snippet well-formed.
 Indeed the <code class="highlight"><c- k>break</c-></code> statement forces the loop exit, which implies that the 
 conditional jump at the end of loop (that may start the next iteration) is no 
-longer part of the code path that follows the <code class="highlight"><c- n>reloc</c-></code> instruction. 
+longer part of the code path that follows the <code class="highlight"><c- n>reloc</c-></code> instruction.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_12</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
-	<c- p>{</c->
-		<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-	<c- p>}</c->
+  <c- k>for</c-> <c- p>(</c-><c- b>int</c-> <c- n>i</c-> <c- o>=</c-> <c- mi>0</c-><c- p>;</c-> <c- n>i</c-> <c- o>!=</c-> <c- mi>10</c-><c- p>;</c-> <c- o>++</c-><c- n>i</c-><c- p>)</c->
+  <c- p>{</c->
+    <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+  <c- p>}</c->
 <c- p>}</c->
 </pre>
-   <code class="highlight"><c- n>var</c-></code> is local to the for-loop body, so <code class="highlight"><c- n>reloc</c-></code> is well-formed here. The next loop 
+   <p><code class="highlight"><c- n>var</c-></code> is local to the for-loop body, so <code class="highlight"><c- n>reloc</c-></code> is well-formed here. The next loop
 iteration inspected by the code path analysis will see that <code class="highlight"><c- n>var</c-></code> is a new object
-that shadows that of the previous iteration. 
+that shadows that of the previous iteration.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_13</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
 <c- nl>from</c-><c- p>:</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// ERROR</c->
-	<c- p>{</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
-	<c- p>}</c->
-	<c- k>else</c->
-	<c- p>{</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- p>}</c->
-	<c- k>goto</c-> <c- n>from</c-><c- p>;</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// ERROR</c->
+  <c- p>{</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// ERROR</c->
+  <c- p>}</c->
+  <c- k>else</c->
+  <c- p>{</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- p>}</c->
+  <c- k>goto</c-> <c- n>from</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
-   Because of the <code class="highlight"><c- k>goto</c-></code> instruction, <code class="highlight"><c- n>var</c-></code> may be reused after <code class="highlight"><c- n>reloc</c-> <c- n>var</c-></code>. 
+   <p>Because of the <code class="highlight"><c- k>goto</c-></code> instruction, <code class="highlight"><c- n>var</c-></code> may be reused after <code class="highlight"><c- n>reloc</c-> <c- n>var</c-></code>.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_14</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>const</c-> <c- n>T</c-> <c- n>var</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
 <c- nl>from</c-><c- p>:</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// OK</c->
-	<c- p>{</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
-		<c- k>goto</c-> <c- n>from</c-><c- p>;</c->
-	<c- p>}</c->
-	<c- k>else</c->
-	<c- p>{</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
-	<c- p>}</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>var</c-><c- p>))</c-> <c- c1>// OK</c->
+  <c- p>{</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>var</c-><c- p>);</c-> <c- c1>// OK</c->
+    <c- k>goto</c-> <c- n>from</c-><c- p>;</c->
+  <c- p>}</c->
+  <c- k>else</c->
+  <c- p>{</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>var</c-><c- p>);</c->
+  <c- p>}</c->
 <c- p>}</c->
 </pre>
-   In this scenario <code class="highlight"><c- k>goto</c-></code> is placed in a way that does not trigger the reuse of relocated <code class="highlight"><c- n>var</c-></code>. 
+   <p>In this scenario <code class="highlight"><c- k>goto</c-></code> is placed in a way that does not trigger the reuse of relocated <code class="highlight"><c- n>var</c-></code>.</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>relocate_case_15</c-><c- p>()</c->
 <c- p>{</c->
-	<c- k>union</c-> <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- n>U</c-> <c- n>y</c-><c- p>;</c-> <c- p>};</c->
-	<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
-	<c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>x</c-><c- p>))</c->
-	<c- p>{</c->
-		<c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>);</c->
-		<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
-	<c- p>}</c->
-	<c- k>else</c->
-	<c- p>{</c->
-		<c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- c1>// destroy x</c->
-		<c- n>y</c-> <c- o>=</c-> <c- n>getU</c-><c- p>();</c->
-		<c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
-		<c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
-	<c- p>}</c->
-	<c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
+  <c- k>union</c-> <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- n>U</c-> <c- n>y</c-><c- p>;</c-> <c- p>};</c->
+  <c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c->
+  <c- k>if</c-> <c- p>(</c-><c- n>sometest</c-><c- p>(</c-><c- n>x</c-><c- p>))</c->
+  <c- p>{</c->
+    <c- n>do_smth</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>);</c->
+    <c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
+  <c- p>}</c->
+  <c- k>else</c->
+  <c- p>{</c->
+    <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- c1>// destroy x</c->
+    <c- n>y</c-> <c- o>=</c-> <c- n>getU</c-><c- p>();</c->
+    <c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
+    <c- n>x</c-> <c- o>=</c-> <c- n>getT</c-><c- p>();</c-> <c- c1>// well-formed</c->
+  <c- p>}</c->
+  <c- n>do_smth_else</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-> <c- c1>// well-formed</c->
 <c- p>}</c->
 </pre>
-   <code class="highlight"><c- n>reloc</c-></code> does not prevent reusing the names of anonymous union members. 
+   <p><code class="highlight"><c- n>reloc</c-></code> does not prevent reusing the names of anonymous union members.</p>
    <h4 class="heading settled" data-level="5.1.5" id="conditional-reloc"><span class="secno">5.1.5. </span><span class="content">Conditional relocation</span><a class="self-link" href="#conditional-reloc"></a></h4>
    <p>It may happen that the <code class="highlight"><c- n>reloc</c-></code> is invoked in the some code branches and not in
 others:</p>
@@ -3130,9 +3331,9 @@ and deleted like any other constructor.</p>
     <li data-md>
      <p>it is explicitly declared with <code class="highlight"><c- k>noexcept</c-><c- p>(</c->false<c- p>)</c-></code> ;</p>
     <li data-md>
-     <p>or one <code class="highlight"><c- n>T</c-></code>'s subobjects has a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->false<c- p>)</c-></code> relocation constructor ;</p>
+     <p>or one <code class="highlight"><c- n>T</c-></code>’s subobjects has a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->false<c- p>)</c-></code> relocation constructor ;</p>
     <li data-md>
-     <p>or one <code class="highlight"><c- n>T</c-></code>'s subobjects does not declare a relocation constructor and has
+     <p>or one <code class="highlight"><c- n>T</c-></code>’s subobjects does not declare a relocation constructor and has
 a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->false<c- p>)</c-></code> move constructor.</p>
    </ul>
    <p>These rules are similar to that of the destructor’s implicit exception specification.</p>
@@ -3203,7 +3404,7 @@ the library does not bypass said code by, say, using <code class="highlight"><c-
    <h4 class="heading settled" data-level="5.2.2" id="reloc-ctor-definition"><span class="secno">5.2.2. </span><span class="content">Definition</span><a class="self-link" href="#reloc-ctor-definition"></a></h4>
    <h5 class="heading settled" data-level="5.2.2.1" id="reloc-ctor-default-definition"><span class="secno">5.2.2.1. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-ctor-default-definition"></a></h5>
    <p>The default relocation constructor implementation for a class-type <code class="highlight"><c- n>T</c-></code> depends
-on <code class="highlight"><c- n>T</c-></code>'s type traits.</p>
+on <code class="highlight"><c- n>T</c-></code>’s type traits.</p>
    <p>If <code class="highlight"><c- n>T</c-></code> is trivially relocatable then the relocation constructor
 effectively (ignoring padding) performs
 a memcpy over its entire memory layout.</p>
@@ -3218,7 +3419,7 @@ by calling the relocation constructor, passing <code class="highlight"><c- n>src
 relocatable then the relocation constructor call may be optiomized into a 
 memcpy: <code class="highlight"><c- n>memcpy</c-><c- p>(</c-><c- o>&amp;</c-><c- k>this</c-><c- o>-></c-><c- n>s</c-><c- p>,</c-> <c- o>&amp;</c-><c- n>src</c-><c- p>.</c-><c- n>s</c-><c- p>,</c-> <c- k>sizeof</c-><c- p>(</c-><c- n>S</c-><c- p>))</c-></code> ;</p>
     <li data-md>
-     <p>otherwise if <code class="highlight"><c- n>S</c-></code> has an accessible move constructor and destructor, then <code class="highlight"><c- k>this</c-><c- o>-></c-><c- n>s</c-></code> is constructed by calling the move constructor, ignoring <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code>'s
+     <p>otherwise if <code class="highlight"><c- n>S</c-></code> has an accessible move constructor and destructor, then <code class="highlight"><c- k>this</c-><c- o>-></c-><c- n>s</c-></code> is constructed by calling the move constructor, ignoring <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code>’s
 cv-qualifiers. This operation is called <em>synthesized 
 relocation</em>. <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> is <strong>not</strong> in a <em>destructed state</em> ;</p>
    </ul>
@@ -3570,10 +3771,10 @@ particular, the default definition is responsible for the destruction of its
 source object.</p>
    <p>As you would expect, the default definition merely delegates to the relocation
 assignment operator of all its subobjects.</p>
-   <p>In <code class="highlight"><c- n>T</c-></code>'s default assignment operator, for all subobjects <code class="highlight"><c- n>s</c-></code> of <code class="highlight"><c- n>T</c-></code> of type <code class="highlight"><c- n>S</c-></code>:</p>
+   <p>In <code class="highlight"><c- n>T</c-></code>’s default assignment operator, for all subobjects <code class="highlight"><c- n>s</c-></code> of <code class="highlight"><c- n>T</c-></code> of type <code class="highlight"><c- n>S</c-></code>:</p>
    <ul>
     <li data-md>
-     <p>If <code class="highlight"><c- n>S</c-></code>'s relocation assignment operator mandates relocation elision at declaration level,
+     <p>If <code class="highlight"><c- n>S</c-></code>’s relocation assignment operator mandates relocation elision at declaration level,
 then call it with <code class="highlight"><c- n>src</c-><c- p>.</c-><c- n>s</c-></code> as parameter (passed as if by reference thanks to elision). 
 The source subobject is then left in a <em>destructed state</em>.</p>
     <li data-md>
@@ -3712,7 +3913,7 @@ non-static member function declared without a ref-qualifier, and either:</p>
 <c- b>int</c-> <c- n>l2</c-> <c- o>=</c-> <c- n>g2</c-><c- p>(</c-><c- n>f2</c-><c- p>());</c-> <c- c1>// calls g2(int&amp;&amp;)</c->
 <c- p>...</c->
 </pre>
-       - end example] 
+       <p>- end example]</p>
      </ul>
    </ul>
    <h3 class="heading settled" data-level="5.5" id="structured-reloc"><span class="secno">5.5. </span><span class="content">Structured relocation</span><a class="self-link" href="#structured-reloc"></a></h3>
@@ -3828,7 +4029,7 @@ of <code class="highlight"><c- n>get_all</c-></code>. The return type is impleme
    <p>Most of the time, <code class="highlight"><c- n>get_all</c-></code> functions will want to be <a href="#decomposing-func">§ 5.6 Decomposing functions</a>.
 A <code class="highlight"><c- n>get_all</c-></code> implementation as a decomposing function is provided in the mentioned
 section.</p>
-   <p>Thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>'s <code class="highlight"><c- n>get_all</c-></code> we can easily write
+   <p>Thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>’s <code class="highlight"><c- n>get_all</c-></code> we can easily write
 a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom class:</p>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>MyType</c->
 <c- p>{</c->
@@ -3854,13 +4055,13 @@ a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom 
 <pre class="language-c+++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-><c- p>...</c-> <c- n>Tp</c-><c- o>></c->
 <c- n>tuple</c-><c- o>::</c-><c- n>tuple</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-><c- p>,</c-> <c- n>Tp</c-><c- p>);</c->
 </pre>
-   which captures the tuple elements by value and relocates them inside the tuple. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-></code> is just a tag type used for overload disambiguation. 
+   <p>which captures the tuple elements by value and relocates them inside the tuple. <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>relocate_t</c-></code> is just a tag type used for overload disambiguation.</p>
    <p>Then, in following snippet:</p>
 <pre class="language-c++ highlight"><c- n>MyType</c-> <c- n>tp</c-><c- p>;</c->
 <c- k>auto</c-> <c- p>[</c-><c- n>name</c-><c- p>,</c-> <c- n>flag</c-><c- p>,</c-> <c- n>nodes</c-><c- p>]</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>tp</c-><c- p>;</c->
 <c- c1>// equivalent to: auto [name, flag, nodes] = get_all(get_all(reloc tp));</c->
 </pre>
-   <p><code class="highlight"><c- n>MyType</c-></code>'s <code class="highlight"><c- n>get_all</c-></code> returns a tuple. <code class="highlight"><c- n>get_all</c-></code> is defined for tuples as well, so
+   <p><code class="highlight"><c- n>MyType</c-></code>’s <code class="highlight"><c- n>get_all</c-></code> returns a tuple. <code class="highlight"><c- n>get_all</c-></code> is defined for tuples as well, so
 it is called again. The second return type won’t have a <code class="highlight"><c- n>get_all</c-></code> defined, hence
 the recursion stops and the <em>data member</em> protocol is used.</p>
    <h3 class="heading settled" data-level="5.6" id="decomposing-func"><span class="secno">5.6. </span><span class="content">Decomposing functions</span><a class="self-link" href="#decomposing-func"></a></h3>
@@ -4270,15 +4471,15 @@ the <code class="highlight"><c- n>memory</c-></code> header:</p>
 
 <c- n>template</c-><c- o>&lt;</c-><c- n>class</c-> <c- n>ExecutionPolicy</c-><c- p>,</c-> <c- n>class</c-> <c- n>InputIt</c-><c- p>,</c-> <c- n>class</c-> <c- n>ForwardIt</c-><c- o>></c->
 <c- n>ForwardIt</c-> <c- n>uninitialized_relocate</c-><c- p>(</c-><c- n>ExecutionPolicy</c-><c- o>&amp;&amp;</c-> <c- n>policy</c-><c- p>,</c-> <c- n>InputIt</c-> <c- n>first</c-><c- p>,</c-> <c- n>InputIt</c-> <c- n>last</c-><c- p>,</c->
-	<c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>)</c-> <c- p>;</c->
+  <c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>)</c-> <c- p>;</c->
 
 <c- n>template</c-><c- o>&lt;</c-><c- n>class</c-> <c- n>InputIt</c-><c- p>,</c-> <c- n>class</c-> <c- n>Size</c-><c- p>,</c-> <c- n>class</c-> <c- n>ForwardIt</c-><c- o>></c->
 <c- n>pair</c-><c- o>&lt;</c-><c- n>InputIt</c-><c- p>,</c-> <c- n>ForwardIt</c-><c- o>></c-> <c- n>uninitialized_relocate_n</c-><c- p>(</c-><c- n>InputIt</c-> <c- n>first</c-><c- p>,</c-> <c- n>Size</c-> <c- n>count</c-><c- p>,</c->
-	<c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>)</c-> <c- p>;</c->
+  <c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>)</c-> <c- p>;</c->
 
 <c- n>template</c-><c- o>&lt;</c-><c- n>class</c-> <c- n>ExecutionPolicy</c-><c- p>,</c-> <c- n>class</c-> <c- n>InputIt</c-><c- p>,</c-> <c- n>class</c-> <c- n>Size</c-><c- p>,</c-> <c- n>class</c-> <c- n>ForwardIt</c-><c- o>></c->
 <c- n>pair</c-><c- o>&lt;</c-><c- n>InputIt</c-><c- p>,</c-> <c- n>ForwardIt</c-><c- o>></c-> <c- n>uninitialized_relocate_n</c-><c- p>(</c->
-	<c- n>ExecutionPolicy</c-><c- o>&amp;&amp;</c-> <c- n>policy</c-><c- p>,</c-> <c- n>InputIt</c-> <c- n>first</c-><c- p>,</c-> <c- n>Size</c-> <c- n>count</c-><c- p>,</c-> <c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>);</c->
+  <c- n>ExecutionPolicy</c-><c- o>&amp;&amp;</c-> <c- n>policy</c-><c- p>,</c-> <c- n>InputIt</c-> <c- n>first</c-><c- p>,</c-> <c- n>Size</c-> <c- n>count</c-><c- p>,</c-> <c- n>ForwardIt</c-> <c- n>d_first</c-><c- p>);</c->
 </pre>
    <p>Those relocate elements from the range <code class="highlight"><c- p>[</c-><c- n>first</c-><c- p>,</c-> <c- n>last</c-><c- p>)</c-></code> (or the first <code class="highlight"><c- n>count</c-></code> elements from <code class="highlight"><c- n>first</c-></code>) to an uninitialized memory area beginning at <code class="highlight"><c- n>d_first</c-></code>. 
 Elements in the source range will be destructed at the end of the function 
@@ -4478,7 +4679,7 @@ caught in the first step), then <code class="highlight"><c- n>std</c-><c- o>::</
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+  <c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.5" id="std-deque"><span class="secno">6.4.5. </span><span class="content">std::deque</span><a class="self-link" href="#std-deque"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
@@ -4506,7 +4707,7 @@ caught in the first step), then <code class="highlight"><c- n>std</c-><c- o>::</
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>deque</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+  <c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.6" id="std-list"><span class="secno">6.4.6. </span><span class="content">std::list</span><a class="self-link" href="#std-list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// pushes a value by relocation</c->
@@ -4534,13 +4735,13 @@ caught in the first step), then <code class="highlight"><c- n>std</c-><c- o>::</
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>iterator</c-><c- p>,</c-> <c- n>OutputIterator</c-><c- o>></c-> <c- n>list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_out</c-><c- p>(</c->
-	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+  <c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.7" id="std-forward_list"><span class="secno">6.4.7. </span><span class="content">std::forward_list</span><a class="self-link" href="#std-forward_list"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// inserts a value by relocation</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- n>iterator</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>insert_after</c-><c- p>(</c-><c- n>const_iterator</c-> <c- n>pos</c-><c- p>,</c->
-	<c- n>T</c-> <c- n>value</c-><c- p>);</c->
+  <c- n>T</c-> <c- n>value</c-><c- p>);</c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- b>void</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>push_front</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>);</c->
 
@@ -4556,7 +4757,7 @@ caught in the first step), then <code class="highlight"><c- n>std</c-><c- o>::</
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>T</c-><c- p>,</c-> <c- k>class</c-> <c- nc>Alloc</c-><c- o>></c->
 <c- k>template</c-> <c- o>&lt;</c-><c- k>class</c-> <c- nc>OutputIterator</c-><c- o>></c->
 <c- n>OutputIterator</c-> <c- n>forward_list</c-><c- o>&lt;</c-><c- n>T</c-><c- p>,</c-> <c- n>Alloc</c-><c- o>>::</c-><c- n>relocate_after</c-><c- p>(</c->
-	<c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
+  <c- n>const_iterator</c-> <c- n>from</c-><c- p>,</c-> <c- n>const_iterator</c-> <c- n>to</c-><c- p>,</c-> <c- n>OutputIterator</c-> <c- n>out</c-><c- p>);</c->
 </pre>
    <h4 class="heading settled" data-level="6.4.8" id="std-set-and-map"><span class="secno">6.4.8. </span><span class="content">set and map containers</span><a class="self-link" href="#std-set-and-map"></a></h4>
 <pre class="language-cpp highlight"><c- c1>// std::set, std::multiset, std::map, std::multimap,</c->
