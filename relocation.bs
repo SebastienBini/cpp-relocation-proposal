@@ -267,6 +267,17 @@ anywhere but at the end of `_map`, or when `_map` needs to grow.
 Support for relocation in the language (and in the STL) will enable to write
 `const` with no drawback on performance.
 
+
+/!\ another example
+
+std::once_flag _once;
+std::optional<T const> _data; // some lazy init data
+
+_data is init lazily upon the first time it is accessed. the `const` here guarantees
+that the stored data will not be changed once it has been constructed.
+
+But it inhibits move ctor...
+
 ## Accidental relocate-only types ## {#motivation-accidental-relocate-only-types}
 
 Classes that have an implicitly deleted copy and move constructors are are quite
