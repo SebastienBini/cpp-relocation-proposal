@@ -1,11 +1,11 @@
 <pre class='metadata'>
 Title: Relocating prvalues
-Revision: 0
+Revision: 4
 Audience: LEWG, EWG
 Status: P
 Group: WG21
 ED: https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html
-Shortname: PXXXX
+Shortname: P2785
 Editor:
   Sébastien Bini, Amadeus, sebastien.bini@gmail.com
   Ed Catmur, ed@catmur.uk
@@ -23,7 +23,8 @@ Move semantics have been around since C++11, and have improved the language in
 many aspects. However move-semantics have also brought their lot of defects:
 
 - `std::move` does not move ;
-- moved-from objects are in an unspecified state, and more often than not, must not reused ;
+- moved-from objects are in an unspecified state, and more often than not,
+    must not be reused ;
 - constant objects cannot be moved ;
 - classes that want to support move-semantics must either have a natural empty
     state (like strings, containers or smart pointers)
@@ -39,7 +40,7 @@ This tackles every flaw not solved by move-semantics:
 - `reloc` does perform the relocation ;
 - relocated objects cannot be reused, or else the program is ill-formed ;
 - relocation disregards cv-qualifiers, so constant objects can be relocated ;
-- classes that to support relocation can do so without breaking their class invariant,
+- classes that want to support relocation can do so without breaking their class invariant,
     as the relocated-from object is simultaneously destructed.
 
 The proposal introduces:
@@ -52,20 +53,142 @@ The proposal introduces:
 
 The proposal does not introduce a new value type; instead relocation will happen from prvalues.
 
+## Changes from previous revisions of P2785
+
+### Changes from P2785R3
+
+#### Motivation
+
+The motivation section is more complete, giving more explanations, describing
+today's C++ lacks which we intend to resolve, each time illustrated with an
+example.
+
+#### Dot reloc instead of decomposing functions
+
+One of the major changes we introduced is the `.reloc` (dot reloc) operator
+that can easily decompose an object. This has several advantages:
+
+- it greatly simplifies the writing and the understanding of the relocation constructor
+    and reloc assignment operator ;
+- it simplifies the handling of relocate-only subobjects in user code ;
+- it removes the *decomposing functions* feature as they are being replaced by
+    `.reloc`.
+
+#### Value parameter ownership rule
+
+In P2785R3, we mandated that a function taking a relocate-only type as value
+parameter **must** have control over its lifetime. This might break some ABIs
+on rare occasions, but in a controlled way.
+
+This allowed to support relocate-only types, making code like this work on all
+implementations:
+```c++
+void bar(non_null<unique_ptr<int>>);
+
+void foo(non_null<unique_ptr<int>> ptr)
+{
+    *ptr *= 2;
+    bar(reloc ptr);
+}
+```
+
+Note: Here `reloc ptr` may only call the relocation constructor as it is
+the only defined constructor. Thanks to our proposition, `ptr` being
+relocate-only, `foo` must have the ownership over its lifetime, so the relocation
+constructor can be called.
+
+Note: The ABI changes that may be incurred by our proposal can be avoided
+if the `non_null` class does not define a relocation constructor (in which case
+the above example would become ill-formed).
+
+However, consider now the following code:
+
+```c++
+struct A
+{
+    // [...]
+    A(A const&) = default;
+    A(A&&) = delete;
+    A(A) = default;
+};
+
+void bar(A);
+void foo(A a)
+{
+    bar(reloc a);
+}
+```
+
+Since `A` has a copy constructor, it is not relocate-only. We have no guarantee
+that `foo` has the ownership of `a`. Hence `reloc a` here may simply call the copy
+constructor, as the ABI may not permit otherwise.
+
+To prevent such a pessimization, developers will be tempted to add a move constructor
+to `A`, ensuring that at least the move constructor is called in such cases.
+Doing so goes against what we are trying to achieve with this proposal. One
+of our main motivation points is that the move constructor doesn't fit all classes
+that could yet still be moved. We don't want users to declare one anyway to avoid pitfalls.
+
+For this reason, the parameter ownership rule is now as follows: *any function
+that takes a parameter by value, whose type provides a relocation constructor*
+**but no move constructor**, *must have control over the lifetime of that parameter.*
+Note that this still covers relocate-only types, and library vendors still have
+control over their ABI by choosing to define the relocation constructor or not.
+
+With this updated rule, `reloc a` from our previous example will effectively
+call the relocation constructor. And users can safely migrate from the move
+constructor to the relocation constructor if they wish to without any gotchas.
+
+Note that this rule is still isn't optimal. Consider the following code,
+having in mind a putative `std::pair` with a relocation constructor:
+
+```c++
+void bar(pair<const string, int>);
+
+void foo(pair<const string, int> val)
+{
+    val.second *= 2;
+    bar(reloc val);
+}
+```
+
+`val` has the three constructors, so our rule does not apply. The ownership
+of `val` by `foo` is implementation-defined. If `foo` doesn't own `val`, then
+`reloc val` will call the move constructor, making a full string copy
+(because of `const`). Contrary to our previous example which motivated us to
+update the parameter ownership rule,
+here `reloc` may call `std::move` so we haven't worsened the situation.
+
+We could strengthen the rule and propose that any function taking a value parameter
+which defines a relocation constructor must have ownership over its lifetime.
+However we fear this would propagate ABI changes with too little control,
+and the proposal would meet to much resistance to go further.
+
+### Changes from older revisions
+
+P2785R0, P2785R1 and P2785R2 revisions are internal versions bumps that were
+never formerly presented.
+
 # Motivation # {#motivation}
 
-## constness versus move ## {#const-vs-move}
+## Allow constness where we intend to ## {#const-vs-move}
 
 Unlike some other languages, C++ provides the `const` keyword to declare constant
-objects. This is an extremely valuable feature, as it provides better code readibility,
+objects. This is an extremely valuable feature, as it provides better code readability,
 safety, performance optimization on some occasions, and last, in class design,
 enable to explicitly write some class invariants.
 
 However its usefulness is greatly diminished because of move-semantics.
 The move constructor cannot work with a constant source object.
-Hence for those, the program
-either
+Hence for those, the program either
 silently falls back to calling their copy constructor, or is simply ill-formed...
+
+```c++
+// with: void bar(A);
+
+A const a = someFunc();
+bar(std::move(a)); // silently calls A's copy ctor, performing a deep copy...
+```
 
 Declaring an object with `const` may have unwanted side-effects. As a consequence:
 
@@ -73,13 +196,18 @@ Declaring an object with `const` may have unwanted side-effects. As a consequenc
     expect from the language, while being unaware of the side-effects. This may
     lead to unoptimized code, with the copy constructor being called *silently*
     when `std::move` is used ;
-- knowledgeable developpers will rather not to use it if they can foresee the
+- knowledgeable developers will rather not use it if they can foresee the
     negative side-effect, which leads to poorer code (see the benefits of `const`
     described above), but can make use of the move constructor.
 
 This is a missed opportunity and it leads to poorer code. The
 proposed relocation semantics solves this problem: constant objects can be relocated,
 they are just destroyed when done so.
+
+```c++
+A const a = someFunc();
+bar(reloc a);
+```
 
 ### Constant local variables cannot be moved ### {#const-var}
 
@@ -97,7 +225,7 @@ by `std::move`.
 Consider the two code snippets:
 
 <table>
-<tr><th>Before</th><th>After</th></tr>
+<tr><th>Before</th><th>Constified + relocation</th></tr>
 <tr>
 <td valign="top">
 ```c++
@@ -159,7 +287,7 @@ called.
 
 ### Constant data-members ### {#const-data-members}
 
-It's not uncommon to find in production codebases things like this:
+It's not uncommon to find in production codebase things like this:
 
 ```c++
 class SomeType
@@ -177,12 +305,12 @@ private:
 };
 ```
 
-Here the developper innocently qualified `_key1` and `_key2` as constant.
+Here the developer innocently qualified `_key1` and `_key2` as constant.
 In their mind, their value was never to change in the lifetime of the object.
 This being part of the class invariant, it only feels natural to enforce the
 class invariant in the code, with the `const` qualifier.
 
-However the experienced programmer will have noticed the incurred performance drawback:
+However the experienced developer will have noticed the incurred performance drawback:
 the move constructor, because of `const`, will be forced to make a deep copy
 of `_key1` and `_key2` (via std::string's copy constructor). This gives an even
 bitter taste when we know that
@@ -267,34 +395,23 @@ anywhere but at the end of `_map`, or when `_map` needs to grow.
 Support for relocation in the language (and in the STL) will enable to write
 `const` with no drawback on performance.
 
-
-/!\ another example
-
-std::once_flag _once;
-std::optional<T const> _data; // some lazy init data
-
-_data is init lazily upon the first time it is accessed. the `const` here guarantees
-that the stored data will not be changed once it has been constructed.
-
-But it inhibits move ctor...
-
 ## Accidental relocate-only types ## {#motivation-accidental-relocate-only-types}
 
-Classes that have an implicitly deleted copy and move constructors are are quite
+Classes that have an implicitly deleted copy and move constructors are quite
 impractical to handle in C++. They cannot be moved around
 in program memory (passed down to function, stored and removed from containers,
 etc...), while in principle there is no good reason to prevent that.
 
 Of course some classes do need to be immovable by design (like `std::mutex`) ;
 those types can perfectly remain so with this proposal. However there is still
-the case of some types which are accidently made immovable, because they are
+the case of some types which are accidentally made immovable, because they are
 being wrapped with another type, or merely because of their cv-qualifiers
 (look no further than `const`).
 
 Let's us consider the
 `gsl::not_null<std::unique_ptr<T>>` case for a moment. `gsl::not_null` inhibits
 the move constructor, as a moved-from pointer would be null and break the class invariant.
-In turn `std::unique_ptr` inhibits the copy constructor because of its ownership policy. 
+In turn `std::unique_ptr` inhibits the copy constructor because of its ownership policy.
 Hence this type is non-copyable and non-movable. Another example is simply
 `std::unique_ptr<T> const`, where the qualifier inhibits the move constructor...
 
@@ -307,21 +424,116 @@ This is once again a missed opportunity ; our proposal fixes this issue.
 With the relocation
 semantics in mind, this would be allowed: each time `gsl::not_null<std::unique_ptr<T>>`
 or `std::unique_ptr<T> const`
-are moved in memory, the previous instance is simultaneously destroyed (in practice,
-this simply means the memory occupied by the source object just becomes uninitialized, 
+are moved in memory, the previous instance is simultaneously destroyed (very often in practice,
+this simply means the memory occupied by the source object just becomes uninitialized,
 and in particular, the source object's destructor is not called).
 
 ## Move constructor breaks class invariant ## {#motivation-never-empty}
 
 In framework code it is a relatively everyday task to write helper classes that are
 constructed to own some resource, passed around from place to place, and then destroyed,
-cleaning up the resource in the destructor. Move semantics for such classes requires
+cleaning up the resource in the destructor.
+
+Move semantics for such classes requires
 identifying or adding an appropriate empty state, writing a move constructor, and
 adding checks to the destructor; all of these inhibit performance and are opportunities
 to introduce bugs. Relocation would replace all of this with a single defaulted special
 member function declaration.
 
+For instance, consider a TCP connection class, which creates a socket and
+connects it in its constructor (throws in case of failure), and closes it in its destructor.
+
+<table>
+<tr><th>Before</th><th>After</th></tr>
+<tr>
+<td valign="top">
+```c++
+class TcpConnection
+{
+public:
+  // some parameterized constructor, which
+  // guarantees _fd != -1 or else throws
+  // TcpConnection(...)
+
+  ~TcpConnection()
+  { if (_fd != -1) ::close(_fd); }
+
+  TcpConnection(TcpConnection&& rhs) noexcept :
+    _fd{std::exchange(rhs._fd, -1)} {}
+
+  TcpConnection&
+    operator=(TcpConnection&& rhs) noexcept
+  {
+    _fd = std::exchange(rhs._fd, -1);
+    return *this;
+  }
+
+private:
+  int _fd;
+};
+```
+</td>
+<td valign="top">
+```c++
+class TcpConnection
+{
+public:
+  // some parameterized constructor, which
+  // guarantees _fd != -1 or else throws
+  // TcpConnection(...)
+
+  ~TcpConnection() { ::close(_fd); }
+
+  TcpConnection(TcpConnection) noexcept
+    = default;
+  TcpConnection&
+    operator=(TcpConnection) noexcept
+      = default;
+
+private:
+  int _fd;
+};
+```
+</td>
+</tr></table>
+
+The code on the right is easier to write, to maintain and to understand.
+This is because there is no need to handle the *moved-from* state in which
+`_fd == -1`. But first and foremost, the version with relocation benefits from
+an **improved class-invariant**: it provides at all times an open connection. This
+simplifies reasoning and usability throughout the code.
+
+We didn't have this guarantee before because of the move-constructor: the `TcpConnection`
+class might not have held an open connection, had it been moved-from before.
+
 ## safety against use-after-move ## {#motivation-never-empty}
+
+Moved-from objects are in an unspecified yet valid state. This is true even
+in cases where there exists a natural empty state (like for `std::string` or
+`std::vector`). For this reason, it is advised not to reuse a moved-from object
+(that is to say, we let it die). However the language does not prevent from
+reusing such objects,
+which leaves the door open for mistaken uses, ... and sometimes with
+disastrous consequences.
+
+Consider for instance the *p-impl* idiom, which is commonly used by
+library vendors to guard against ABI breaks. The `impl` pointer is allocated
+in the constructor, but what about the move constructor? Understandably, to
+avoid unnecessary allocations, library
+vendors often choose to leave the `impl` pointer of the moved-from object set to the
+null pointer. Unless the moved-from object is re-assigned to something valid,
+any further access to its data will trigger the program termination!
+
+This issue is fixed with relocation, as the language will forbid any reuse
+of a relocated object. Reconsidering any *p-impl* implementation, the move
+constructor could simply be dropped in favor of the relocation constructor, and
+the `impl` pointer would always be valid.
+
+External tools do exist to detect such `use-after-move` errors. However we believe
+the language can only be improved if we reduce its reliance on external tools,
+especially for things as embarrassing as memory safety. Also, tools are fallible
+(they may not detect all issues, or may not at all be ran in some companies),
+which is less true for compilers (you cannot not run a compiler).
 
 ## Teachability ## {#motivation-teachability}
 
@@ -372,66 +584,69 @@ An object is to be in a *destructed state* if its lifetime has ended because:
 - its destructor was called, or ;
 - it was passed to as source object to its relocation constructor.
 
-It is a 
-programming error to call the destructor of an object if it is already in a 
+It is a
+programming error to call the destructor of an object if it is already in a
 *destructed state*.
 As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
 this has undefined behavior unless the object type is trivial, in which case its destructor
 or pseudo-destructor is a no-op.
 
-## Unowned parameter ## {#unowned-parameter}
+## Parameter ownership ## {#parameter-ownership}
 
-An object is said to be an *unowned parameter* with regards to a function `f` 
-if the object is a parameter of the function, passed by value, but the
-function `f` does not have control over its lifetime.
-
-The lifetime of function parameters is implementation-defined in C++, but it 
+The lifetime of function parameters is implementation-defined in C++, but it
 is of most importance with relocation. Depending on the function call convention
 or ABI, the function may or may not be in charge of the lifetime of its parameters.
 
-We denote two main parameter passing conventions: 
+An object is said to be an *owned parameter* (respectively, an
+*unowned parameter*) with regards to a function `f`
+if the object is a parameter of `f`, passed by value, and that `f`
+has control (respectively, does not have control) over its lifetime.
 
-- *caller-destroy*: the call site is in charge of the lifetime of the parameter passed in the function call ;
-- *callee-destroy*: the function itself is in charge of the lifetime of its parameters ;
+We denote two main parameter passing conventions:
+
+- *caller-destroy*: the call site is in charge of the lifetime of the value parameter passed in the function call ;
+- *callee-destroy*: the function itself is in charge of the lifetime of its value parameters ;
 
 Depending on the ABI choice, the convention can be per parameter, or apply
 to all the function parameters. Other conventions may exist, and they are
 still compatible with this proposal.
 
-For instance, in a function with caller-destroy convention, all its value 
+For instance, in a function with caller-destroy convention, all its value
 parameters are *unowned parameters*.
-Likewise, with callee-destroy, none of its parameters are *unowned parameters*.
+Likewise, with callee-destroy, all of its parameters are *owned parameters*.
 
 # Comparison with existing proposals # {#compare}
 
-This proposal introduces the `reloc` keyword, which allows users to explicitly 
+This proposal introduces the `reloc` keyword, which allows users to explicitly
 and safely relocate local variables in their code base.
 
-This proposal is also one of the few (with [[P0308R0]]), to tackle the case of 
-relocate-only types. The `reloc` keyword thus becomes necessary to safely pass 
+This proposal is also one of the few (with [[P0308R0]]), to tackle the case of
+relocate-only types. The `reloc` keyword thus becomes necessary to safely pass
 around such objects in user code.
 
-Also, all these proposals (but [[P0308R0]]) aim to optimize the move and destruct 
-operations into a single memcpy. But there are places where this optimization 
-could not happen, and we are left with a suboptimized move and destruct. 
+Also, all these proposals (but [[P0308R0]]) aim to optimize the move and destruct
+operations into a single memcpy. But there are places where this optimization
+could not happen, and we are left with suboptimized move constructor and destructor calls.
+
 The relocation constructor that we propose offers a customization point, and
 especially allow for a more optimized relocation technique than move and destruct.
+If trivial, then it can be optimized into a `memcpy`.
 
 ## P1144R8: Object relocation in terms of move plus destroy by Arthur O'Dwyer ## {#compare-P1144R8}
 
 [[P1144R8]] puts the focus on trivially relocatable types, and offers ways to
 mark a type as trivially relocatable.
 
-The current proposal has its own take on trivial relocatability that does not 
+The current proposal has its own take on trivial relocatability that does not
 rely on a class attribute. Instead the trivial relocatability
 trait flows naturally from the new relocation constructor that we introduce. In short:
 if a class type has a relocation constructor that is (explicitly) declared as defaulted or
-is implicitly defined and not defaulted as deleted, and all of 
+is implicitly defined and not defaulted as deleted, and all of
 its subobjects are trivially relocatable (or fully trivial), then the type
 is trivially relocatable.
 
-This approach is not prone to errors when compared to a class attribute, 
-which could be mistakenly overriden by some users on classes that are not 
+This approach is not prone to errors when compared to a class attribute,
+which could be mistakenly overridden by some users on classes that are not
 trivially relocatable.
 
 Also, [[P1144R8]] does not account for relocate-only types. To some extend, trivially
@@ -440,9 +655,9 @@ places where "move plus destroy" can be optimized. However:
 
 - this only concerns trivially relocatable types ;
 - there are places where the optimization cannot happen, and as such the object cannot be "relocated" ;
-- this poses a composability issue. If a relocate-only (non-movable and non-copyable), trivially-relocatable type 
+- this poses a composability issue. If a relocate-only (non-movable and non-copyable), trivially-relocatable type
     is a data member of a class that also has other non-trivially-relocatable data members, then the
-    enclosing class becomes non trivially relocatable, while remaining relocate-only. 
+    enclosing class becomes non trivially relocatable, while remaining relocate-only.
     This renders the enclosing class impractical to use without proper support
     for relocate-only types.
 
@@ -466,18 +681,18 @@ void sink(T);
 void foo(T x) { sink(x); }
 ```
 
-Here, under the terms of [[P0023R0]], relocation may not happen because of ABI 
+Here, under the terms of [[P0023R0]], relocation may not happen because of ABI
 constraints (if `x` is an unowned parameter).
 This will cause `foo` to fallback to a move+deferred detroy paradigm.
 
-This proposal has another take on this issue: if `T` is relocate-only, then any 
+This proposal has another take on this issue: if `T` is relocate-only, then any
 function
-that takes a `T` parameter by value is required to have an ABI that allows it to 
-relocate 
+that takes a `T` parameter by value is required to have an ABI that allows it to
+relocate
 its input parameter (e.g. callee-destroy ABI).
 
 This proposal also introduces the `reloc` keyword that is here to trigger
-the relocation, and protect against the reuse of the relocated object. 
+the relocation, and protect against the reuse of the relocated object.
 The solution then becomes:
 
 ```c++
@@ -513,17 +728,17 @@ of `x` has finished, so the destructor only of `y` is called at scope exit.
 
 ## N4158: Destructive Move by Pablo Halpern ## {#compare-N4158}
 
-[[N4158]] proposes a customizable function `std::uninitialized_destructive_move`, 
+[[N4158]] proposes a customizable function `std::uninitialized_destructive_move`,
 that is somewhat similar to the relocation constructor, but is a pure library solution.
 
 It has several drawbacks :
 
-- relocation can only happen if this function is called explicitly. Typically this function 
-    would be called in container implementation. But then we cannot relocate 
+- relocation can only happen if this function is called explicitly. Typically this function
+    would be called in container implementation. But then we cannot relocate
     local variables with this.
 - users can write their own `uninitialized_destructive_move` overload, but this
-    is terrible for composability. Classes that have a subobject with a 
-    custom `uninitialized_destructive_move` overload do not get a 
+    is terrible for composability. Classes that have a subobject with a
+    custom `uninitialized_destructive_move` overload do not get a
     `uninitialized_destructive_move` overload generated for free.
 - `uninitialized_destructive_move` cannot be default-generated with memberwise
     relocation.
@@ -532,22 +747,22 @@ It has several drawbacks :
 
 [[P1029R3]] enables a special bitcopies move constructor for types that are trivially relocatable.
 
-Like the other proposals [[P1029R3]] does not provide support for relocate-only types 
+Like the other proposals [[P1029R3]] does not provide support for relocate-only types
 (it suffers from the same drawbacks as [[P1144R8]] in that regard).
 
 ## P0308R0: Valueless Variants Considered Harmful by Peter Dimov ## {#compare-P0308R0}
 
-We only consider the "pilfering" proposition from [[P0308R0]]. 
-P0308R0's pilfering shares some similarities with the current proposal, 
+We only consider the "pilfering" proposition from [[P0308R0]].
+P0308R0's pilfering shares some similarities with the current proposal,
 as it is an attempt to support relocate-only types as a pure library solution.
 
 We believe a language solution is best suited here:
 
-- the source object is effectively destroyed by the relocation: its destructor 
+- the source object is effectively destroyed by the relocation: its destructor
     is not called. This can hardly be achieved by a library solution ;
-- the `reloc` keyword makes sure the relocated object is not reused, 
+- the `reloc` keyword makes sure the relocated object is not reused,
     while `std::pilfer` does not ;
-- the pilfering constructor is inconvenient to write as we need to unwrap from 
+- the pilfering constructor is inconvenient to write as we need to unwrap from
     `std::pilfered` and rewrap to propagate to base classes and data-members ;
 - as a library solution, the pilfering constructor cannot be defaulted ;
 - trivial relocation is not possible with pilfering, which makes [[P0308R0]] miss
@@ -563,7 +778,7 @@ model, the lvalue that previously occupied that storage ceases to exist and a
 new prvalue is formed, which may come to occupy that storage (if relocation is
 elided) or distinct storage (in the general case).
 
-We are intrigued by the claim that an owning reference can provided superior
+We are intrigued by the claim that an owning reference can provide superior
 performance when passing a variable up the stack, compared to repeatedly relocating
 it from caller to callee, but believe that in practice such gains would be minimal
 and liable to be eliminated via optimization, while our model offers the possibility
@@ -588,9 +803,9 @@ identifiers introduced through the syntax of structured binding declarations).
 
 - if `obj` is ref-qualified, then performs perfect-forwarding
     (as if by `static_cast<decltype(obj)>(obj)`);
-- otherwise returns a temporary obtained from the source object, leaving 
+- otherwise returns a temporary obtained from the source object, leaving
     it in a *destructed state* or a "*pending-destruction*" state ;
-- in all cases, marks the "early" end-of-scope of the variable `obj`, preventing 
+- in all cases, marks the "early" end-of-scope of the variable `obj`, preventing
     from use-after-relocation errors.
 
 ### reloc to perfectly forward all value categories ### {#reloc-perfect-fwd}
@@ -599,44 +814,44 @@ identifiers introduced through the syntax of structured binding declarations).
 If the source object is ref-qualified, then it performs the following cast:
 `static_cast<decltype(obj)>(obj)`.
 
-This makes `reloc` the one operator to use to perfectly forward lvalues, xvalues 
+This makes `reloc` the one operator to use to perfectly forward lvalues, xvalues
 and prvalues. It also prevents from use-after-move and use-after-relocation errors.
 
 ### reloc returns a temporary ### {#reloc-value-change}
 
-The main use case of `reloc` is to change the value category of an object to a 
-prvalue. This happens by creating a temporary from the given source object, 
+The main use case of `reloc` is to change the value category of an object to a
+prvalue. This happens by creating a temporary from the given source object,
 when the source object is not ref-qualified.
 
-This temporary may or may not be materialized, depending on the context of the 
+This temporary may or may not be materialized, depending on the context of the
 expression.
 
 If materialized, then the temporary is initialized as follows:
 
-- if the source object is not an *unowned parameter*, then the temporary is 
+- if the source object is not an *unowned parameter*, then the temporary is
     initialized using its relocation, move or copy constructor:
     - the relocation constructor is called if accessible. This is a destructive
-        operation for the source object: when the constructor returns, the 
+        operation for the source object: when the constructor returns, the
         source object is considered to be in a *destructed state*.
-    - otherwise, either the move or copy constructor is called, ignoring the 
-        cv-qualifiers on the source object. The destructor of the source object 
+    - otherwise, either the move or copy constructor is called, ignoring the
+        cv-qualifiers on the source object. The destructor of the source object
         is then called at the end of the full-expression evaluation.
     - In all cases, the destructor of the source object is no longer called when
         its end of scope is reached.
-- otherwise (the source object is an *unowned parameter*), then the temporary is 
-    initialized using its move or copy constructor, ignoring the 
-    cv-qualifiers on the source object. The destructor of the 
-    source object is deferred until the function returns. Typically we expect 
+- otherwise (the source object is an *unowned parameter*), then the temporary is
+    initialized using its move or copy constructor, ignoring the
+    cv-qualifiers on the source object. The destructor of the
+    source object is deferred until the function returns. Typically we expect
     the source object to be in a "moved-from" state, waiting to be destructed.
 
-If the temporary is not materialized and that the source object is not an 
-*unowned parameter*, then the destructor of the source object is called at the 
+If the temporary is not materialized and that the source object is not an
+*unowned parameter*, then the destructor of the source object is called at the
 end of the full-expression evaluation, at the same time as temporary objects are destroyed.
-See [Discarded reloc expressions](#discarded-reloc-expr) for more details on 
+See [Discarded reloc expressions](#discarded-reloc-expr) for more details on
 unmaterialized temporaries from `reloc` statements.
 
 Note that an object passed to `reloc` is guaranteed to be either in a *destructed state*
-at the end of the expression evaluation if it is not an *unowned parameter*, 
+at the end of the expression evaluation if it is not an *unowned parameter*,
 or else in a "*pending-destruction*" state.
 
 ### Illegal uses of reloc ### {#reloc-illegal-uses}
@@ -645,7 +860,7 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
 
 - its parameter is not the name of a variable ;
 - the source object is not a *complete object* ;
-- the source object is not ref-qualified and does not have local storage 
+- the source object is not ref-qualified and does not have local storage
     (i.e. not a local function variable and not a function parameter passed by
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
@@ -690,7 +905,7 @@ void foobar(std::string* str)
 void foobar2(std::string* str)
 {
 	foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
-} 
+}
 
 class A
 {
@@ -705,7 +920,7 @@ public:
 
 ### Early end-of-scope ### {#reloc-early-end-of-scope}
 
-`reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding 
+`reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding
 any further mention of the name `obj` which would resolve into the relocated object.
 
 If `obj` is a member of an anonymous union, then `reloc` does not prevent
@@ -716,29 +931,29 @@ Pointers and references that pointed to `obj` become dangling,
 and we don't try to offer any protection against that. We only protect against
 reusing the variable that was passed to `reloc`.
 
-The program is ill-formed if `reloc obj` is used in an instruction and any of 
+The program is ill-formed if `reloc obj` is used in an instruction and any of
 the following is true:
 
-- in at least one code path from after the instruction that contained `reloc obj` up 
-    to the natural end-of-scope of said `obj`, the name `obj` is reused and it 
+- in at least one code path from after the instruction that contained `reloc obj` up
+    to the natural end-of-scope of said `obj`, the name `obj` is reused and it
     resolves to the object that was passed to `reloc` ;
-- within the instruction where `reloc obj` is used, the name `obj` is reused in 
+- within the instruction where `reloc obj` is used, the name `obj` is reused in
     the same conditional branch.
 
-The code path evaluation performed to detect such ill-formed programs is 
+The code path evaluation performed to detect such ill-formed programs is
 based only on compile-time evaluations, disregarding run-time values:
 
-- For any non-constexpr `if` block encountered in the code path, the true branch 
+- For any non-constexpr `if` block encountered in the code path, the true branch
     must be considered as well as the else branch (if it exists).
 - If an `if constexpr` block is encountered, only the branch that evaluates to true
     is considered.
 - Any `for` or `while` loop body is considered to be entered once if `reloc`
     is used before the `for`/`while` block or in the init-statement of the `for`
-    loop. 
+    loop.
 - If `reloc` is used within a loop body, a loop condition, or a for-loop
-    iteration expression, and that there exists a code path from the `reloc` 
-    instruction up to the next iteration of the loop (i.e. no `return` statement, 
-    no `break` statement that applies to that loop, or no `goto` statement that 
+    iteration expression, and that there exists a code path from the `reloc`
+    instruction up to the next iteration of the loop (i.e. no `return` statement,
+    no `break` statement that applies to that loop, or no `goto` statement that
     jumps after that loop) then the loop is considered to happen one
     more time for code-path evaluation.
 
@@ -770,7 +985,7 @@ void relocate_case_02()
 	do_smth(var); // OK
 }
 ```
-The second and forth calls to `do_smth(var)` are allowed because the name `var` 
+The second and forth calls to `do_smth(var)` are allowed because the name `var`
 does not resolve to the relocated object.
 ```cpp
 void relocate_case_03()
@@ -782,7 +997,7 @@ void relocate_case_03()
 		do_smth(var); // OK
 }
 ```
-`do_smth(var)` is allowed because the `else` branch is not affected by the 
+`do_smth(var)` is allowed because the `else` branch is not affected by the
 `reloc` call of the `if` branch.
 ```cpp
 void relocate_case_04()
@@ -825,8 +1040,8 @@ void relocate_case_06()
 		do_smth_else(var); // ERROR
 }
 ```
-It does not matter that the developer attempted to do the safe thing with the 
-`relocated` variable. The code-path analysis disregards run-time values and 
+It does not matter that the developer attempted to do the safe thing with the
+`relocated` variable. The code-path analysis disregards run-time values and
 explores all branches of an `if` block (unless in the case of `if constexpr`).
 ```cpp
 void relocate_case_07()
@@ -857,7 +1072,7 @@ void relocate_case_08()
 	do_smth(var); // OK
 }
 ```
-This example is also safe thanks to the `return` statement right after the 
+This example is also safe thanks to the `return` statement right after the
 `reloc` instruction, which prevents from running `do_smth(var);`.
 ```cpp
 void relocate_case_09()
@@ -867,14 +1082,14 @@ void relocate_case_09()
 		do_smth(reloc var); // ERROR
 }
 ```
-This is ill-formed as each iteration reuses `var` which is declared before the loop body. 
-Even if `i` were compared against `1` or even `0` (for respectively one iteration, 
+This is ill-formed as each iteration reuses `var` which is declared before the loop body.
+Even if `i` were compared against `1` or even `0` (for respectively one iteration,
 or no iteration) then the program would still be ill-formed.
-Run-time values (like `i`) are disregarded in the code-path analysis that comes 
-with `reloc`. The analysis will report that there is an optional code jump, 
-after the `do_smth` call (and `reloc var`), which jumps to before the `reloc var` 
-call and after the initialization of `var`. Although the jump is optional 
-(depends on `i`, whose value is disregarded for this analysis) it may still 
+Run-time values (like `i`) are disregarded in the code-path analysis that comes
+with `reloc`. The analysis will report that there is an optional code jump,
+after the `do_smth` call (and `reloc var`), which jumps to before the `reloc var`
+call and after the initialization of `var`. Although the jump is optional
+(depends on `i`, whose value is disregarded for this analysis) it may still
 happen and thus such code is ill-formed.
 ```cpp
 void relocate_case_10()
@@ -889,8 +1104,8 @@ void relocate_case_10()
 	}
 }
 ```
-This is ill-formed for the same reason as above. The code-path analysis will 
-report that any iteration of the for-loop may take any branch of the if statement 
+This is ill-formed for the same reason as above. The code-path analysis will
+report that any iteration of the for-loop may take any branch of the if statement
 and potentially reuse a relocated variable.
 ```cpp
 void relocate_case_11()
@@ -907,9 +1122,9 @@ void relocate_case_11()
 	}
 }
 ```
-Adding the break statement right after the `reloc` call makes the code snippet well-formed. 
-Indeed the `break` statement forces the loop exit, which implies that the 
-conditional jump at the end of loop (that may start the next iteration) is no 
+Adding the break statement right after the `reloc` call makes the code snippet well-formed.
+Indeed the `break` statement forces the loop exit, which implies that the
+conditional jump at the end of loop (that may start the next iteration) is no
 longer part of the code path that follows the `reloc` instruction.
 ```cpp
 void relocate_case_12()
@@ -921,7 +1136,7 @@ void relocate_case_12()
 	}
 }
 ```
-`var` is local to the for-loop body, so `reloc` is well-formed here. The next loop 
+`var` is local to the for-loop body, so `reloc` is well-formed here. The next loop
 iteration inspected by the code path analysis will see that `var` is a new object
 that shadows that of the previous iteration.
 ```cpp
@@ -982,7 +1197,7 @@ void relocate_case_15()
 
 ### Conditional relocation ### {#conditional-reloc}
 
-It may happen that the `reloc` is invoked in the some code branches and not in 
+It may happen that the `reloc` is invoked in the some code branches and not in
 others:
 
 ```c++
@@ -997,19 +1212,19 @@ void foo()
 }
 ```
 
-This code is well-formed. `obj` is relocated in the `if` branch (left in a 
+This code is well-formed. `obj` is relocated in the `if` branch (left in a
 *destructed state*), and not in the
 `else` branch. When `obj` reaches its end of scope, the function needs to know
 whether `obj` is in a *destructed state* in order to elide its destructor call.
 
-This requires extra tracking, which will probably take the form of extra flags 
-in the function stack. Given a source object, this tracking is only necessary 
+This requires extra tracking, which will probably take the form of extra flags
+in the function stack. Given a source object, this tracking is only necessary
 if all the following conditions are met:
 
 - the source object is not an *unowned parameter* ;
 - the source object is not trivial (its destructor is not a no-op) ;
 - in conditional branches, `reloc` is used in at least one branch and not used
-    in at least one branch as well (taking into account the potentially empty 
+    in at least one branch as well (taking into account the potentially empty
     `else` branch).
 
 We prefer to leave the details of this tracking implementation-defined.
@@ -1041,27 +1256,27 @@ void g() {
 
 ### Discarded reloc expressions ### {#discarded-reloc-expr}
 
-Under some conditions the following expression is well-formed: `reloc obj;` 
+Under some conditions the following expression is well-formed: `reloc obj;`
 (note the semi-colon).
 
-Given the rules we established for `reloc`, this statement returns a temporary 
+Given the rules we established for `reloc`, this statement returns a temporary
 constructed from the source object. The temporary is then destructed at the end
 of the expression evaluation.
 
-However, materializing a temporary whose only goal is to be destroyed is 
+However, materializing a temporary whose only goal is to be destroyed is
 suboptimal. Hence, it is authorized for implementations to (as above)
 elide the creation
-of the temporary object, 
+of the temporary object,
 effectively only calling the destructor of the source
-object at the end of the expression evaluation. If this optimization is done, 
+object at the end of the expression evaluation. If this optimization is done,
 the temporary returned by `reloc` is not materialized.
 
 This means that `reloc obj;` has the following behavior:
 
 - if `obj` is not an *unowned parameter* then:
-    - The temporary is likely elided, effectively only calling the 
+    - The temporary is likely elided, effectively only calling the
         destructor of `obj`.
-    - Otherwise a temporary is initialized from the 
+    - Otherwise a temporary is initialized from the
         source object, and then destructed.
 - otherwise (`obj` is an *unowned parameter*):
     - A temporary is created from the move or copy constructor, and then destructed.
@@ -1077,7 +1292,7 @@ void do_something_01(std::mutex& m)
     std::lock_guard guard{m};
     if (!some_test())
     {
-        reloc guard; // ill-formed: no relocation or move constructor
+        reloc guard; // ill-formed: no relocation, move or copy constructor
         log("thread ", std::this_thread::get_id(), " failed");
         return;
     }
@@ -1087,8 +1302,8 @@ void do_something_02(std::unique_lock<std::mutex> guard)
 {
     if (!some_test())
     {
-        reloc guard; /* well-formed: lock is released, either by calling the 
-            destructor directly, or by constructing a temporary from 
+        reloc guard; /* well-formed: lock is released, either by calling the
+            destructor directly, or by constructing a temporary from
             guard (by relocation or move) and destructing it. */
         log("thread ", std::this_thread::get_id(), " failed");
         return;
@@ -1100,7 +1315,7 @@ void do_something_03(std::mutex& m)
     std::unique_lock guard{m};
     if (!some_test())
     {
-        reloc guard; /* well-formed: temporary is likely elided regardless of 
+        reloc guard; /* well-formed: temporary is likely elided regardless of
             do_something_03's ABI, only calling the destructor of guard. */
         log("thread ", std::this_thread::get_id(), " failed");
         return;
@@ -1110,13 +1325,38 @@ void do_something_03(std::mutex& m)
 }
 ```
 
+## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
+
+NOTE: in a relocation constructor, the source object already starts in a decomposed
+state, even if the user implementation never calls `.reloc`. This means
+that the source object destructor is not called, but all its subobject destructors
+are called unless relocated.
+
+Also beware of decomposition is defined.
+If, within a reloc constructor, the source object starts decomposed, then
+it means that we cannot call any member function, while potentially .reloc
+has not been used yet...
+
+We need to define an intermediary decomposed state where calling member functions
+is still possible.
+
+Decomposed => ok to call member functions, purely a no-op
+Object changes its state after first .reloc call, which becomes the decomposed
+state as defined before.
+
+Ghost object?
+
+Or semi-decomposed (starting state of relocation ctor) / fully-decomposed => better
+
+semi-decomposed => starting state of dtor as well, but not proposed here.
+
 ## Relocation constructor ## {#reloc-ctor}
 
-We introduce the relocation constructor. As relocation happens from prvalues, 
+We introduce the relocation constructor. As relocation happens from prvalues,
 the constructor takes a prvalue as parameter: `T(T)`.
 
-This signature was picked as it completes the C++ tripartite value system. 
-The copy constructor creates a new instance from an lvalue, the move constructor 
+This signature was picked as it completes the C++ tripartite value system.
+The copy constructor creates a new instance from an lvalue, the move constructor
 from an xvalue, and then the relocation constructor from a prvalue.
 
 Note: a further benefit of this syntax is that it is currently ill-formed
@@ -1138,7 +1378,7 @@ ended and so use of a pointer or reference referring to the source object has
 undefined behavior, except as provided by [basic.life] and [class.cdtor].
 
 Note: this behavior matches that for the destructor of a class type; see
-<a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1. 
+<a href="https://wg21.link/basic.life#1.4">[basic.life]</a> paragraph 1.
 
 This intuition is only useful in so far as the ABI for a relocation
 constructor prvalue parameter is likely to be the same as that for a copy or move
@@ -1162,15 +1402,15 @@ operator was used).
 
 ### Declaration ### {#reloc-ctor-declaration}
 
-The relocation constructor can be declared (implicitly or explicitly), defaulted 
+The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.
 
-The relocation constructor of a class-type `T` implicitly gets a `noexcept(true)` 
+The relocation constructor of a class-type `T` implicitly gets a `noexcept(true)`
 exception specification unless:
 
 - it is explicitly declared with `noexcept(false)` ;
 - or one `T`'s subobjects has a `noexcept(false)` relocation constructor ;
-- or one `T`'s subobjects does not declare a relocation constructor and has 
+- or one `T`'s subobjects does not declare a relocation constructor and has
     a `noexcept(false)` move constructor.
 
 These rules are similar to that of the destructor's implicit exception specification.
@@ -1180,7 +1420,7 @@ ABI. See the [ABI section](#abi).
 
 #### Implicit declaration #### {#reloc-ctor-declaration-implicit}
 
-If a class-type follows the Rule of Zero (updated to account for the relocation 
+If a class-type follows the Rule of Zero (updated to account for the relocation
 constructor and relocation assignment operator), then the compiler will declare
 a non-explicit inline public relocation constructor,
 i.e. if none of the following are user-declared:
@@ -1197,11 +1437,11 @@ i.e. if none of the following are user-declared:
 The implicitly-declared or defaulted relocation constructor for class `T` is defined as deleted:
 
 - if `T` has subobjects that explicitly declare a deleted relocation constructor ;
-- or `T` has subobjects with missing relocation and move constructors (i.e. 
+- or `T` has subobjects with missing relocation and move constructors (i.e.
     that are deleted, inaccessible, or ambiguous).
 - or `T` has subobjects with deleted or unaccessible destructor.
 
-As for move constructors, a defaulted relocation constructor that is deleted is 
+As for move constructors, a defaulted relocation constructor that is deleted is
 ignored by overload resolution.
 
 Note: this means that a class with an explictly deleted relocation constructor
@@ -1238,7 +1478,7 @@ the library does not bypass said code by, say, using `memmove`.
 
 #### Default definition #### {#reloc-ctor-default-definition}
 
-The default relocation constructor implementation for a class-type `T` depends 
+The default relocation constructor implementation for a class-type `T` depends
 on `T`'s type traits.
 
 If `T` is trivially relocatable then the relocation constructor
@@ -1248,21 +1488,21 @@ a memcpy over its entire memory layout.
 Otherwise in the nominal case, the constructor implementation performs
 memberwise relocations.
 
-In the relocation constructor `T(T src)`, for each subobject `s` (of type `S`) 
+In the relocation constructor `T(T src)`, for each subobject `s` (of type `S`)
 of `T`, in declaration order:
 
 - if `S` has an accessible relocation constructor, then `this->s` is constructed
     by calling the relocation constructor, passing `src.s` as source object.
-    `src.s` is then left in a *destructed state*. Note that if `S` is trivially 
-    relocatable then the relocation constructor call may be optiomized into a 
+    `src.s` is then left in a *destructed state*. Note that if `S` is trivially
+    relocatable then the relocation constructor call may be optiomized into a
     memcpy: `memcpy(&this->s, &src.s, sizeof(S))` ;
-- otherwise if `S` has an accessible move constructor and destructor, then 
+- otherwise if `S` has an accessible move constructor and destructor, then
     `this->s` is constructed by calling the move constructor, ignoring `src.s`'s
-    cv-qualifiers. This operation is called *synthesized 
+    cv-qualifiers. This operation is called *synthesized
     relocation*. `src.s` is **not** in a *destructed state* ;
 
-When all target subobjects have been constructed, the destructors all of 
-source subobjects are called, in reversed declaration order, omitting those 
+When all target subobjects have been constructed, the destructors all of
+source subobjects are called, in reversed declaration order, omitting those
 that are already in a *destructed state*.
 
 #### User-provided definition #### {#reloc-ctor-user-definition}
@@ -1272,20 +1512,20 @@ Special rules apply to the relocation constructor's member initialization list:
 subobjects that have no user-provided initialization will be constructed by
 relocation or synthesized relocation, instead of being default-constructed.
 
-In other terms, subobjects that are omitted in the member initializer list are 
-not constructed using their default constructor, but instead are constructed 
+In other terms, subobjects that are omitted in the member initializer list are
+not constructed using their default constructor, but instead are constructed
 using relocation from the matching source subobject. That relocation is performed
 either by the relocation constructor or by synthesized relocation, using the rules
-described in the default relocation constructor implementation. If synthesized 
-relocation happened for a subobject, then the source subobject is not in a 
+described in the default relocation constructor implementation. If synthesized
+relocation happened for a subobject, then the source subobject is not in a
 *destructed state* yet.
 
-Before the relocation constructor body is entered, the destructors of all the 
-source subobjects are called in reversed declaration order, omitting those 
+Before the relocation constructor body is entered, the destructors of all the
+source subobjects are called in reversed declaration order, omitting those
 that are in a *destructed state*.
-In particular a source subobject 
-is not in a *destructed state* if the target subobject has a user-provided 
-initialization in the member initialization list, hence the destructor of such 
+In particular a source subobject
+is not in a *destructed state* if the target subobject has a user-provided
+initialization in the member initialization list, hence the destructor of such
 subobject is always called before the constructor body is entered.
 
 At the end of the member initialization list, the whole source object is left
@@ -1312,7 +1552,7 @@ struct U
 {
     std::string _a, _b;
     U(U src) {} /*
-        U relocation constructor behaves like the default definition, although it 
+        U relocation constructor behaves like the default definition, although it
         counts as user-provided.
     */
 };
@@ -1333,12 +1573,12 @@ private:
 ```
 
 Alternatively, if the user calls a delegating constructor in place of a member
-initializer list, then the destructor of the source object is called right after 
+initializer list, then the destructor of the source object is called right after
 the delegating constructor call completes.
 
 This further means that the source object is fully destructed by the time the
 relocation constructor body is entered. Any operation on it may result in
-undefined behavior. However the source object name can still be accessed for 
+undefined behavior. However the source object name can still be accessed for
 debugging purposes (like printing its address somewhere).
 Compilers can still emit warnings when undefined uses of the source object
 are done in the constructor body.
@@ -1347,36 +1587,36 @@ It is not possible for users to explicitly call the relocation constructor on su
 This is because there is no existing syntax to do so:
 
 - `T(T src) : _a{src._a}` calls the copy constructor.
-- `T(T src) : _a{auto{src._a}}` calls the copy constructor to make a temporary, 
+- `T(T src) : _a{auto{src._a}}` calls the copy constructor to make a temporary,
     which then gets passed to the relocation constructor.
 - `T(T src) : _a{reloc src._a}` is not permitted as we cannot call `reloc` on a subobject.
-- `T(T src) : _a{std::destroy_relocate(&src._a)}` is erroneous as well, as `src._a` 
+- `T(T src) : _a{std::destroy_relocate(&src._a)}` is erroneous as well, as `src._a`
     will be destructed at the end of the member initializer list.
 
-This is the reason why omitted subobjects are automatically constructed by relocation, 
+This is the reason why omitted subobjects are automatically constructed by relocation,
 and not using their default constructor. If users want to default-construct some subobject,
-then they can write it explicitly: `T(T src) : _a{} {}` (in which case the source subobject 
+then they can write it explicitly: `T(T src) : _a{} {}` (in which case the source subobject
 is destroyed at the end of the initializer list).
 
 It is for safety reasons that the relocation constructor ensures that
 the source object is entirely destroyed by the time the constructor's body is reached.
 Had it been otherwise, then it would have been the responsibility of the users to destroy
-the subobjects that did not get relocated. This would likely lead to programming errors, 
+the subobjects that did not get relocated. This would likely lead to programming errors,
 especially when we consider synthesized relocation.
 
 #### Exception handling #### {#reloc-ctor-exceptions}
 
-The relocation constructor is able to handle exceptions. If an exception leaks 
-through the relocation constructor then it guarantees that the *target* is not 
+The relocation constructor is able to handle exceptions. If an exception leaks
+through the relocation constructor then it guarantees that the *target* is not
 constructed and the *source* object is destroyed.
 
 **This is in general undesirable, which is why the relocation constructor is
 `noexcept` if at all possible.**
 
-As we have seen above, the relocation constructor acts in three stages: 
-(a) target subobjects construction, 
-(b) destruction in reversed declaration order on any source subobject 
-that is not in a *destructed state* (because of synthesized relocation or 
+As we have seen above, the relocation constructor acts in three stages:
+(a) target subobjects construction,
+(b) destruction in reversed declaration order on any source subobject
+that is not in a *destructed state* (because of synthesized relocation or
 user-provided initialization), (c) the function body.
 
 **Stage A: target subobjects construction**
@@ -1384,18 +1624,18 @@ user-provided initialization), (c) the function body.
 If an exception leaks through in stage (a) then:
 
 1. in reversed declaration order, call the destructor of all initialized subobjects.
-2. in reversed declaration order, call the destructor of the source subobjects 
+2. in reversed declaration order, call the destructor of the source subobjects
     that are not in a *destructed state*:
     - all subobjects whose corresponding target subobject *didn't* get initialized ;
-    - all subobjects whose corresponding target subobject *did* get initialized, 
+    - all subobjects whose corresponding target subobject *did* get initialized,
         but through synthesized relocation or user-provided initialization ;
-    - if the initialization that threw did not happen through a relocation 
-        constructor call, 
-        then the matching subobject. (If the initialization happened by 
-        relocation then we know that the source subobject is in a 
+    - if the initialization that threw did not happen through a relocation
+        constructor call,
+        then the matching subobject. (If the initialization happened by
+        relocation then we know that the source subobject is in a
         *destructed state*.)
 
-We call the destructor on the target subobjects first as they were 
+We call the destructor on the target subobjects first as they were
 constructed more recently.
 
 **Stage B: source subobjects destruction**
@@ -1403,20 +1643,20 @@ constructed more recently.
 If an exception leaks through in stage (b) then:
 
 - All target subobjects are destroyed in reversed declaration order.
-- All the remaining destructors of the source subobjects are called in reversed 
+- All the remaining destructors of the source subobjects are called in reversed
     declaration order.
 
 **Stage C: constructor body**
 
-If an exception leaks through in stage (c) then all target subobjects are 
+If an exception leaks through in stage (c) then all target subobjects are
 destroyed in reversed declaration order, like it is the case for any constructor.
 
 **Delegating constructor case**
 
-If an exception leaks through the delegating constructor then the source object 
+If an exception leaks through the delegating constructor then the source object
 is destructor is called and the exception is propagated.
 
-Note that the target object needs not to be destroyed as the delegating 
+Note that the target object needs not to be destroyed as the delegating
 constructor already took care of that.
 
 #### Additional parameters #### {#reloc-ctor-additional-params}
@@ -1521,19 +1761,19 @@ The relocation constructor may also be invoked by library functions, for example
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
 We further introduce the relocation assignment operator. Its signature shall be:
-`T& T::operator=(T)`. Such operators may already be defined in existing codebases, 
+`T& T::operator=(T)`. Such operators may already be defined in existing codebases,
 but the proposed changes will not interfere with them.
 
-Sometimes we also make mentions to the *prvalue-assignment operator*. 
-It refers to the same function, 
+Sometimes we also make mentions to the *prvalue-assignment operator*.
+It refers to the same function,
 but further indicates that this function existed prior to the proposal.
 
 ### Declaration ### {#reloc-assign-declaration}
 
-The relocation assignment operator becomes a special member function. As such, 
+The relocation assignment operator becomes a special member function. As such,
 declaring one breaks the Rule of Zero, which was not the case previously.
 
-The relocation assignment operator may be implicitly declared, and may be 
+The relocation assignment operator may be implicitly declared, and may be
 defaulted or deleted.
 
 #### Implicit declaration #### {#reloc-assign-operator-implicit}
@@ -1550,7 +1790,7 @@ The implicitly-declared or defaulted relocation assignment operator for class `T
 - or `T` has subobjects that have inaccessible relocation or move assignment operators ;
 - or `T` has subobjects with deleted or unaccessible destructor.
 
-A defaulted relocation assignment operator that is deleted is ignored by overload 
+A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.
 
 ### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
@@ -1571,53 +1811,53 @@ and/or which the caller may expect to destroy (see [[#abi]]).
 
 Nevertheless, we mandate elision where possible:
 
-- If the class-type (possibly implicitly) declares a non-deleted relocation constructor, 
-    or declares a defaulted relocation assignment operator, then elision is 
+- If the class-type (possibly implicitly) declares a non-deleted relocation constructor,
+    or declares a defaulted relocation assignment operator, then elision is
     mandated at declaration level ;
-- Otherwise, if the class-type defines a relocation assignment operator as 
+- Otherwise, if the class-type defines a relocation assignment operator as
     defaulted, then elision is mandated at definition level ;
 - Otherwise elision is not mandated.
 
-Elision is performed in such a way as to avoid ABI break (more on that on the [ABI 
+Elision is performed in such a way as to avoid ABI break (more on that on the [ABI
 section](#prvalue-assign-op-abi)).
 
 #### Elision at declaration level #### {#aliased-reloc-assign-declaration}
 
-If elision is mandated at declaration level, then the assignment operator 
+If elision is mandated at declaration level, then the assignment operator
 declaration actually declares two member functions:
 
-- the non-eliding one, which takes its input parameter by value. 
-    This is the function that will get called when user-code calls the 
-    assignment operator. It is the prvalue-assignment operator as we know it 
+- the non-eliding one, which takes its input parameter by value.
+    This is the function that will get called when user-code calls the
+    assignment operator. It is the prvalue-assignment operator as we know it
     today ;
-- the eliding one, which takes its input parameter as if by reference, and has the 
-    same return type as the non-eliding one. The eliding 
+- the eliding one, which takes its input parameter as if by reference, and has the
+    same return type as the non-eliding one. The eliding
     function has no identifier and does not participate in overload resolution.
     Users cannot take its address and this function cannot be called directly in
     user-code.
-    The eliding operator is in charge of destructing its source object, by 
+    The eliding operator is in charge of destructing its source object, by
     relocation or destructor call.
 
-The definition of the assignment operator (which is user-provided or 
+The definition of the assignment operator (which is user-provided or
 defaulted) will serve as the definition of the eliding operator.
 
-The non-eliding operator definition is generated by the compiler, and merely wraps 
+The non-eliding operator definition is generated by the compiler, and merely wraps
 the call to the eliding one:
 
-- If the source object passed to the non-eliding operator is not an *unowned parameter*, 
+- If the source object passed to the non-eliding operator is not an *unowned parameter*,
     then the operator:
     1.  Calls the eliding operator, passing the source object as if by reference.
     2.  It forwards as return value whatever the eliding operator returns.
-    3.  Upon function exit, it does not destroy the source object as it is 
+    3.  Upon function exit, it does not destroy the source object as it is
         already in a *destructed state*.
 - Otherwise (the source object is an *unowned parameter*), then the operator:
     1.  Creates a copy of the source object, using move or copy constructor.
     2.  Calls the eliding operator, passing that copy by reference.
     3.  It forwards as return value whatever the eliding operator returns.
-    4.  Upon function exit, it does not destroy the copy as it is 
+    4.  Upon function exit, it does not destroy the copy as it is
         already in a *destructed state*.
 
-If the address of the assignment operator is queried, then the address of the 
+If the address of the assignment operator is queried, then the address of the
 non-eliding version is returned. If the assignment operator is virtual, then only
 the non-eliding version is considered to be `virtual` and is added to the vtable entry.
 
@@ -1628,7 +1868,7 @@ are generated (eliding and non-eliding) in the translation unit where the operat
 is defined. The visibility of the eliding operator symbol to other translation
 units is implementation-defined.
 
-The definition of the two functions are the same as if elision was mandated at 
+The definition of the two functions are the same as if elision was mandated at
 declaration level.
 
 ### Definition ### {#reloc-assign-definition}
@@ -1639,29 +1879,29 @@ The default definition of the operator, given the rules above, benefits from eli
 particular, the default definition is responsible for the destruction of its
 source object.
 
-As you would expect, the default definition merely delegates to the relocation 
+As you would expect, the default definition merely delegates to the relocation
 assignment operator of all its subobjects.
 
 In `T`'s default assignment operator, for all subobjects `s` of `T` of type `S`:
 
-- If `S`'s relocation assignment operator mandates relocation elision at declaration level, 
-    then call it with `src.s` as parameter (passed as if by reference thanks to elision). 
+- If `S`'s relocation assignment operator mandates relocation elision at declaration level,
+    then call it with `src.s` as parameter (passed as if by reference thanks to elision).
     The source subobject is then left in a *destructed state*.
 - Otherwise if `S` provides an non-eliding relocation assignment operator but
     has an accessible relocation constructor,
     then call the operator, if necessary relocating `src.s` into the parameter slot.
     The source subobject is then left in a *destructed state*.
-- Otherwise if `S` provides an non-eliding relocation assignment operator 
-    and no accessible relocation constructor, then 
-    call the operator by passing a temporary copy of `src.s`. This temporary is 
+- Otherwise if `S` provides an non-eliding relocation assignment operator
+    and no accessible relocation constructor, then
+    call the operator by passing a temporary copy of `src.s`. This temporary is
     move-or-copy-constructed, ignoring the potential cv-qualifiers on `s`.
     The source subobject is *not* destructed.
 - Otherwise if `S` provides a move assignment or copy assignment operator, then
     call the operator: `this->s.operator=(std::move(src.s));`.
     The source subobject is *not* destructed.
 
-After all the assignment operator calls have been made, 
-the destructors of all source subobjects that are not in a *destructed state* 
+After all the assignment operator calls have been made,
+the destructors of all source subobjects that are not in a *destructed state*
 are called in reversed declaration order.
 
 This subobject destruction phase also happens as-is during stack-unwinding if one
@@ -1670,11 +1910,11 @@ will be left in a *destructed state*.
 
 #### Possible user definitions #### {#reloc-assign-user-definition}
 
-Unlike the relocation constructor, the relocation assignment operator does not 
+Unlike the relocation constructor, the relocation assignment operator does not
 rely on some special member initialization list. Instead, the assignment
 operator relies on existing mechanisms.
 
-The two patterns commonly used to implement the assignment operator still work 
+The two patterns commonly used to implement the assignment operator still work
 as expected.
 
 **relocate-and-swap**
@@ -1693,7 +1933,7 @@ T& operator=(T src)
 ```c++
 constexpr T& operator=(T src) noexcept
 {
-    static_assert(std::is_nothrow_destructible_v<T> && 
+    static_assert(std::is_nothrow_destructible_v<T> &&
         std::is_nothrow_relocatable_v<T>);
 
     std::destroy_at(this);
@@ -1708,22 +1948,22 @@ Let's have a look at what happens in this function:
     version ;
 - The provided definition will be used for the eliding version of the operator ;
 - As its relocation is elided, `src` is not an unowned parameter. As a consequence, `reloc src`
-    will effectively call the relocation constructor, as it is able to elide 
+    will effectively call the relocation constructor, as it is able to elide
     the destructor call of `src` ;
-- The `src` parameter may be provided by the non-eliding version. This `src` 
+- The `src` parameter may be provided by the non-eliding version. This `src`
     may be a copy of the actual source object that was originally passed to the
     assignment operator in user code. Whether a copy is made depends on whether
-    the non-eliding version is in charge of destroying its parameter. If not 
+    the non-eliding version is in charge of destroying its parameter. If not
     (`src` is an *unowned parameter* with regards to the non-eliding operator) then
-    a copy is made, and the destructor of the source object is called at 
+    a copy is made, and the destructor of the source object is called at
     call-site, after the assignment operator returns.
 
 This approach is likely the most efficient one, although it is not exception-safe.
-We recommend either the `noexcept` specification or the static assertions to be 
+We recommend either the `noexcept` specification or the static assertions to be
 part of the implementation to make sure of that.
 
 If `T` is trivially
-relocatable, then the operator is as optimal as we would like, as it merely 
+relocatable, then the operator is as optimal as we would like, as it merely
 translates into a destructor call and a memcpy call.
 
 **Union trick**
@@ -1735,7 +1975,7 @@ on the source object, it is still possible to perform the "union trick":
 T& operator=(T src)
 {
     union { T tmp } = { .tmp = reloc src; };
-    /* do some stuff with tmp (like calling std::destroy_relocate), 
+    /* do some stuff with tmp (like calling std::destroy_relocate),
      * knowing its destructor will not be called by the language */
     return *this;
 }
@@ -1750,15 +1990,15 @@ x = reloc y;
 
 Every call to the relocation assignment operator follows normal rules.
 
-If the call site detects that an eliding version of the operator is available 
+If the call site detects that an eliding version of the operator is available
 (either because the eliding happened at declaration level, or because it
-happened at definition level and the call site is in the same 
+happened at definition level and the call site is in the same
 translation unit as the definition, or through link-time optimization),
 then which version of the operator
 is called is implementation-defined.
 
 The nominal case is to call the non-eliding version. The implementation is allowed
-to call the eliding version instead, as long as it can elide the call to the 
+to call the eliding version instead, as long as it can elide the call to the
 destructor on the source object.
 
 ## Overload resolution ## {#overload-resolution}
@@ -1779,12 +2019,12 @@ void foo(T val)
 }
 ```
 
-Hence we propose a change in the overload resolution rules to prefer passing by 
+Hence we propose a change in the overload resolution rules to prefer passing by
 value for prvalue arguments.
 
 Specifically, we would amend [over.ics.rank]/3.2.3 to read:
 
-- neither of S1 and S2 bind a reference to an implicit object parameter of a 
+- neither of S1 and S2 bind a reference to an implicit object parameter of a
     non-static member function declared without a ref-qualifier, and either:
     - S1 binds an lvalue reference to an lvalue, and S2 does not, or:
     - S1 binds an rvalue reference to an xvalue, and S2 does not, or:
@@ -1809,31 +2049,31 @@ Specifically, we would amend [over.ics.rank]/3.2.3 to read:
 
 ### Discussion ### {#structured-reloc-discussion}
 
-`auto [x, y] = foo(); sink(reloc y);`, if ill-formed given the rules we 
+`auto [x, y] = foo(); sink(reloc y);`, if ill-formed given the rules we
 established for `reloc`. `x` and `y` are not complete objects but aliases to some anonymous
 object the language creates behind the scene.
 
-The proposal aims to provide support for relocate-only types. This support 
-would be partial, if not impractical, without allowing some form of 
+The proposal aims to provide support for relocate-only types. This support
+would be partial, if not impractical, without allowing some form of
 relocation from a structured binding. This is motivated by:
 
-- The need to make APIs that support relocate-only types. How would we write an 
-    API to extract an item at an arbitrary position from a vector? We propose the 
+- The need to make APIs that support relocate-only types. How would we write an
+    API to extract an item at an arbitrary position from a vector? We propose the
     following API: `std::pair<T, iterator> vector<T>::erase(std::relocate_t, const_iterator);`
     (returns relocated vector element and next valid iterator) as it is consistent
-    with other vector APIs and complies with the 
-    [core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out). 
-    Then, what can users do with the returned object as it lies in a pair, and 
-    that it is forbidden to relocate a subobject? The return value 
+    with other vector APIs and complies with the
+    [core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out).
+    Then, what can users do with the returned object as it lies in a pair, and
+    that it is forbidden to relocate a subobject? The return value
     is unusable for relocate-only types, unless we provide some support for it.
-- In our experience, most C++ developers believe that a structured binding is 
+- In our experience, most C++ developers believe that a structured binding is
     a complete, separate object, and not a name alias to some subobject. As such
     it would feel unnatural for them if they cannot relocate from a structured binding.
 
 ### Structured relocation declaration ### {#structured-reloc-declaration}
 
-A structured relocation declaration is syntactically identical to a structured 
-binding, with the exception that no ref-qualifiers are allowed after the `auto` 
+A structured relocation declaration is syntactically identical to a structured
+binding, with the exception that no ref-qualifiers are allowed after the `auto`
 type specifier.
 
 ```c++
@@ -1848,21 +2088,21 @@ auto const [w, z] = bar(); // matches structured relocation declaration
 auto&& [a, b] = foobar(); // structured bindings will be used
 ```
 
-The structured relocation declaration further requires that the type of the 
-expression that is used to initialize it 
+The structured relocation declaration further requires that the type of the
+expression that is used to initialize it
 supports [object decomposition](#structured-reloc-obj-decomposition).
 If not, then the declaration is simply a structured bindings declaration and will
 follow structured bindings rules.
 
 A structured relocation introduces a new complete object for each identifier
 declared in the brackets `[]`. In other words, the new identifiers are not
-aliases like in structured bindings, but actual complete objects. As such, they 
+aliases like in structured bindings, but actual complete objects. As such, they
 can then be relocated like any other.
 
 ### Object decomposition ### {#structured-reloc-obj-decomposition}
 
-As there are three binding protocols for structured bindings, there are two 
-"object decomposition" protocols for structured relocation. If none 
+As there are three binding protocols for structured bindings, there are two
+"object decomposition" protocols for structured relocation. If none
 of those two protocols matches, then the declaration is not a
 structured relocation declaration.
 
@@ -1871,12 +2111,12 @@ First, *get_all* protocol is tested, and then the *data members* protocol.
 In what follows, let `E` be the type of the initializer expression (the type
 of the expression used to initialize the structured relocation).
 
-- If `E` is ref-qualified, then let `S` be the same as `E`, but deprived of its 
+- If `E` is ref-qualified, then let `S` be the same as `E`, but deprived of its
     ref-qualifiers.
-    If one of the two protocols applies, then an anonymous object of type `S` is 
-    constructed from the initializer, using the appropriate constructor. 
+    If one of the two protocols applies, then an anonymous object of type `S` is
+    constructed from the initializer, using the appropriate constructor.
     This anonymous object will be considered as source object ;
-- Otherwise (`E` is a prvalue), then let `S` be the same as `E`. The initializer 
+- Otherwise (`E` is a prvalue), then let `S` be the same as `E`. The initializer
     expression will be used as source object.
 
 #### data members protocol #### {#structured-reloc-dm}
@@ -1884,16 +2124,16 @@ of the expression used to initialize the structured relocation).
 The *data members* protocol is quite similar to that of structured bindings.
 For this protocol to apply, all the following conditions must be satisfied:
 
-- every non-static data member of `S` must be a direct member of `S` or of the same 
+- every non-static data member of `S` must be a direct member of `S` or of the same
     base class of `S` ;
 - the number of identifiers must equal the number of non-static data members ;
 - `S` may not have an anonymous union member ;
-- *specific to structured relocation:* every base class, between `S` and the base 
+- *specific to structured relocation:* every base class, between `S` and the base
     class the data members are found in, does not have a user-defined destructor.
 
-If this protocol applies, then the *i*-th identifier is constructed by 
-relocation or synthesized relocation (move constructor ignoring cv-qualifiers, 
-followed by destructor call) using the *i*-th data member of the source 
+If this protocol applies, then the *i*-th identifier is constructed by
+relocation or synthesized relocation (move constructor ignoring cv-qualifiers,
+followed by destructor call) using the *i*-th data member of the source
 object.
 
 #### get_all protocol #### {#structured-reloc-get_all}
@@ -1907,11 +2147,11 @@ returned type, then we reapply it again, so on and so forth, until *get_all*
 doesn't match and only *data members* does.
 
 This follows the same recursive logic as `operator->()`.
-We recursively call `get_all` as long as the *get_all* protocol 
-applies. When the recursion ends, we end up with a type which 
+We recursively call `get_all` as long as the *get_all* protocol
+applies. When the recursion ends, we end up with a type which
 matches the *data member* protocol.
 
-The program is ill-formed if `T` matches the *get_all* protocol but 
+The program is ill-formed if `T` matches the *get_all* protocol but
 the return type of `get_all(T)` matches none of the two protocols.
 
 ##### std::tuple and std::array are implementation-defined ##### {#structured-reloc-tuple}
@@ -1980,7 +2220,7 @@ auto [name, flag, nodes] = reloc tp;
 // equivalent to: auto [name, flag, nodes] = get_all(get_all(reloc tp));
 ```
 
-`MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so 
+`MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so
 it is called again. The second return type won't have a `get_all` defined, hence
 the recursion stops and the *data member* protocol is used.
 
@@ -2125,12 +2365,12 @@ T* unique_ptr<T,D>::release(this unique_ptr reloc)
 ### Ill-formed definition ### {#ill-formed-decomposing-func}
 
 If not forbidden, there are several ways where decomposition functions can be
-misused and lead to problems. In this section we will see those cases and 
+misused and lead to problems. In this section we will see those cases and
 they will serve as motivation to the ill-formedness criteria.
 
 #### Aberrations #### {#decomposing-func-aberrations}
 
-As mentioned in [[P0847R6]], in the [pathological cases section](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases), 
+As mentioned in [[P0847R6]], in the [pathological cases section](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases),
 code like this is possible:
 
 ```c++
@@ -2151,7 +2391,7 @@ with decomposing functions. We don't want the following code to be valid:
 struct Sink
 {
     template <class T>
-    void sink(this T reloc) {} /* prevent dtor call, 
+    void sink(this T reloc) {} /* prevent dtor call,
         although each subobject is destroyed individually */
 };
 
@@ -2166,7 +2406,7 @@ match the class-type which the function is a member of).
 However we feel this is too
 restrictive, especially when considering template code and the CRTP pattern.
 
-Hence we require the source object type to be the same as or to inherit from 
+Hence we require the source object type to be the same as or to inherit from
 the class-type the decomposing function is a member of,
 or else the definition of the decomposing function is ill-formed.
 
@@ -2205,7 +2445,7 @@ To support such cases, we need to allow implementors to silently and transparent
 make a temporary copy of the source object, and pass that temporary copy
 to the decomposing function (see [[#decomposing-func-abi]]).
 
-This requires the source object to have at least one of the copy, move or 
+This requires the source object to have at least one of the copy, move or
 relocation constructor.
 
 Note that, for regular functions, function parameters passed by value can only
@@ -2225,7 +2465,7 @@ The definition is ill-formed if:
 - or `S` has any inaccessible subobjects with regards to the decomposing
     function ;
 - or `S` is not the same as `T`, and does not derive from `T` ;
-- or `S` has no accessible relocation constructor, no accessible move 
+- or `S` has no accessible relocation constructor, no accessible move
     constructor and no accessible copy constructor (none of the three).
 
 ### Decomposing lambda ### {#decomposing-lambda}
@@ -2258,26 +2498,26 @@ auto func = [v = reloc var](this auto reloc)
 
 ## ABI changes ## {#abi}
 
-As noted above ([[#unowned-parameter]]), some platforms have a *caller-destroy* ABI
+As noted above ([[#parameter-ownership]]), some platforms have a *caller-destroy* ABI
 where the *calling* function expects to destroy nontrivial parameters passed by
 value. This poses a problem for functions that wish to relocate from such
 parameters, and a potential ABI break.
 
 ### relocate-only function parameters ### {#callee-destroy-abi}
 
-We propose the following requirement on functions: 
+We propose the following requirement on functions:
 if a function takes a parameter by value, whose type is relocate-only, then
 the function is responsible for the destruction of that parameter.
 
-A relocate-only type is a type that declares a non-deleted relocation constructor, 
+A relocate-only type is a type that declares a non-deleted relocation constructor,
 the move and copy constructors being not declared, or declared as deleted.
 This requirement is essential to fully support relocate-only types in the language.
 
 This requirement *might* introduce an ABI break. As of today, there are no relocate-only
-types, so no ABI should break. In the proposed library changes, we do not 
+types, so no ABI should break. In the proposed library changes, we do not
 make any existing type relocate-only, especially for that concern.
-However we do add a relocation constructor on many classes, alongside their 
-existing copy and move constructors. In doing so, 
+However we do add a relocation constructor on many classes, alongside their
+existing copy and move constructors. In doing so,
 some of them may become relocate-only, should their copy and move constructors
 be deleted (for instance `std::optional<T>` with `T` being relocate-only).
 
@@ -2296,42 +2536,42 @@ Then, the function definition can make the most of `reloc`.
 This is not required by the proposal.
 
 We believe it's up to the implementation to choose what they want to do with their ABI:
-- *full break*, use callee-destroy or equivalent for all non-trivial relocatable types 
+- *full break*, use callee-destroy or equivalent for all non-trivial relocatable types
     passed by value (for those who don't care about ABI) ;
-- *break with opt-out*: a relocation constructor attribute to opt-out of the ABI 
-    break on functions where it is passed be value. 
-    This solution should also provide propagation mechanisms suitable for composition 
+- *break with opt-out*: a relocation constructor attribute to opt-out of the ABI
+    break on functions where it is passed be value.
+    This solution should also provide propagation mechanisms suitable for composition
     (these could be standardized at a later date) ;
-- *likely no break, but opt-in*: an improved `[[trivial_abi]]` that actually checks that 
+- *likely no break, but opt-in*: an improved `[[trivial_abi]]` that actually checks that
     the type is trivially relocatable ;
 - *likely no break*: use callee-destroy only for relocate-only types ;
 - and those that are callee-destroy already don't need to do anything!
 
 In all cases the following mitigation and migration techniques could be employed:
 
-- functions that have an ABI change could be mangled differently. This makes 
+- functions that have an ABI change could be mangled differently. This makes
     ABI breakage detectable ;
 - for such functions, up to two symbols are emitted, where the old
-    symbol is emitted only if the function does not in actual fact relocate from 
-    its parameters, in which case the new symbol is emitted, and its implementation 
+    symbol is emitted only if the function does not in actual fact relocate from
+    its parameters, in which case the new symbol is emitted, and its implementation
     forwards to the old and then destructs its relocatable parameters on exit ;
 
 ### prvalue assignment operator ### {#prvalue-assign-op-abi}
 
 As mentioned above, if the class-type is relocate-only, then it may have an
 impact on existing prvalue-assignment operators (like it does to any function).
-However this change is purely opt-in. If there is an existing prvalue-assignment 
-operator in a class, then it will prevent the implicit declaration of the 
+However this change is purely opt-in. If there is an existing prvalue-assignment
+operator in a class, then it will prevent the implicit declaration of the
 relocation constructor, which will in turn prevent from the potential ABI break.
 
 Also, the relocation assignment operator may be aliased.
-If aliasing occurs, then the ABI does not break as aliasing happens only on a 
+If aliasing occurs, then the ABI does not break as aliasing happens only on a
 new hidden function.
 
 The only scenario where the ABI might break is where:
 
 - aliasing happened on declaration level ;
-- code was compiled against it, and especially generated code that makes direct 
+- code was compiled against it, and especially generated code that makes direct
     calls to the aliased version ;
 - the class changes, the aliasing only happens at definition level, or does not happen at all.
 
@@ -2382,7 +2622,7 @@ template<class T>
 constexpr T* construct_at( T* p, T src );
 ```
 
-Which would be equivalent to `::new (p) T{reloc src}`, except that it may be 
+Which would be equivalent to `::new (p) T{reloc src}`, except that it may be
 used in constant expression evaluations.
 
 Note: this overload would be unnecessary if the [[#future-capture-value]]
@@ -2391,7 +2631,7 @@ altered to use the `decltype(auto)` placeholder.
 
 ### std::destroy_relocate ### {#std-destroy_relocate}
 
-We propose to add the following function in the `std` namespace in the `memory` 
+We propose to add the following function in the `std` namespace in the `memory`
 header to perform relocation through a pointer:
 
 ```c++
@@ -2399,27 +2639,27 @@ template <class T>
 T destroy_relocate(T* src);
 ```
 
-The function constructs a new object by calling either the relocation constructor, 
-the move constructor, 
-or the copy constructor (in that order of preference), 
+The function constructs a new object by calling either the relocation constructor,
+the move constructor,
+or the copy constructor (in that order of preference),
 using `*src` as parameter while ignoring its cv-qualifiers:
 
-- If the move or copy constructor is called then the destructor of `*src` is called 
+- If the move or copy constructor is called then the destructor of `*src` is called
     afterwards ;
-- Likewise, if the move or copy constructor throws, then the destructor of `*src` 
+- Likewise, if the move or copy constructor throws, then the destructor of `*src`
     is called as well.
 
 The function returns the constructed value. Its definition is implementation-defined.
 
 This function is intended to be used by library authors, to enable relocation
-from a memory address. For instance, extracting a value out of an optional just 
+from a memory address. For instance, extracting a value out of an optional just
 becomes:
 
 ```c++
 T optional<T>::extract()
 {
     _has_value = false;
-    return std::destroy_relocate(_value_addr()); 
+    return std::destroy_relocate(_value_addr());
     // _value_addr() being a private function returning the address of the owned value
 }
 ```
@@ -2430,17 +2670,17 @@ This function is not intended to be used on local objects:
 void foo()
 {
     const T val;
-    bar(std::destroy_relocate(&val)); /* BAD, val destructor is called at the 
+    bar(std::destroy_relocate(&val)); /* BAD, val destructor is called at the
         end of its scope while it is already destructed!*/
 }
 ```
 
-This what motivates the name of the function. Although relocation is always a 
+This what motivates the name of the function. Although relocation is always a
 destructive operation, the name serves as a reminder to the developers.
 
 ### std::uninitialized_relocate ### {#std-uninitialized_relocate}
 
-We propose to introduce the following new functions in the `std` namespace in 
+We propose to introduce the following new functions in the `std` namespace in
 the `memory` header:
 
 ```c++
@@ -2460,24 +2700,24 @@ pair<InputIt, ForwardIt> uninitialized_relocate_n(
 	ExecutionPolicy&& policy, InputIt first, Size count, ForwardIt d_first);
 ```
 
-Those relocate elements from the range `[first, last)` (or the first `count` 
-elements from `first`) to an uninitialized memory area beginning at `d_first`. 
-Elements in the source range will be destructed at the end of the function 
+Those relocate elements from the range `[first, last)` (or the first `count`
+elements from `first`) to an uninitialized memory area beginning at `d_first`.
+Elements in the source range will be destructed at the end of the function
 (even if an exception is thrown).
 
 Returns:
 
 - `uninitialized_relocate`: an iterator to the element past the last element relocated;
-- `uninitialized_relocate_n`: a pair whose first element is an iterator to the 
-    element past the last element relocated in the source range, and whose second 
-    element is an iterator to the element past the last element relocated in the 
+- `uninitialized_relocate_n`: a pair whose first element is an iterator to the
+    element past the last element relocated in the source range, and whose second
+    element is an iterator to the element past the last element relocated in the
     destination range.
 
-If the type to relocate is trivially relocatable and both iterator types are 
-contiguous, then both functions can be implemented as single `memcpy` call over 
+If the type to relocate is trivially relocatable and both iterator types are
+contiguous, then both functions can be implemented as single `memcpy` call over
 the entire source range.
 Otherwise relocation happens element-wise, as if by calling `std::destroy_relocate`
-on each element. 
+on each element.
 
 If an exception is thrown by `std::destroy_relocate`, then the destructor of all
 remaining elements in the source range is called, as well as the destructor of
@@ -2487,7 +2727,7 @@ all constructed objects in the output iterator.
 
 ### std::relocate ### {#std-relocate}
 
-We propose to add the following tag type in the `std` namespace in the `utility` 
+We propose to add the following tag type in the `std` namespace in the `utility`
 header (mainly useful with templates):
 
 ```cpp
@@ -2507,7 +2747,7 @@ altered to use the `decltype(auto)` placeholder.
 
 ### std::pair and std::tuple ### {#std-pair-tuple}
 
-We propose to add a default relocation constructor and a default relocation 
+We propose to add a default relocation constructor and a default relocation
 assignment operator to `std::pair` and `std::tuple`.
 
 We also porpose to add the following functions:
@@ -2702,7 +2942,7 @@ T vector<T, Alloc>::pop_back(std::relocate_t);
 template <class T, class Alloc>
 std::pair<T, iterator> vector<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
-// relocates items in [from, to[ into out, 
+// relocates items in [from, to[ into out,
 // as if by doing iteratively: *out++ = std::destroy_relocate(&*src++);
 // items within range are removed from *this.
 template <class T, class Alloc>
@@ -2733,7 +2973,7 @@ T deque<T, Alloc>::pop_front(std::relocate_t);
 template <class T, class Alloc>
 std::pair<T, iterator> deque<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
-// relocates items in [from, to[ into out. 
+// relocates items in [from, to[ into out.
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
@@ -2763,7 +3003,7 @@ T list<T, Alloc>::pop_front(std::relocate_t);
 template <class T, class Alloc>
 std::pair<T, iterator> list<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
-// relocates items in [from, to[ into out. 
+// relocates items in [from, to[ into out.
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
@@ -2787,7 +3027,7 @@ T forward_list<T, Alloc>::pop_front(std::relocate_t);
 template <class T, class Alloc>
 std::pair<T, iterator> forward_list<T, Alloc>::erase_after(std::relocate_t, const_iterator pos);
 
-// relocates items in ]from, to[ into out. 
+// relocates items in ]from, to[ into out.
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
@@ -2839,10 +3079,10 @@ We propose to add a relocation constructor and a relocation assignment operator
 to all the following classes:
 
 - **String library**: `std::basic_string` ;
-- **Utility**: `std::function`, `std::reference_wrapper`, 
+- **Utility**: `std::function`, `std::reference_wrapper`,
     `std::shared_ptr`, `std::weak_ptr`, `std::unique_ptr` ;
 - **Regular expression**: `std::basic_regex`, `std::match_results` ;
-- **Thread support**: `std::thread`, `std::jthread`, `std::unique_lock`, 
+- **Thread support**: `std::thread`, `std::jthread`, `std::unique_lock`,
     `std::promise`, `std::future`, `std::shared_future`, `std::packaged_task` ;
 - **Filesystem**: `std::filesystem::path`.
 
@@ -2852,82 +3092,82 @@ to all the following classes:
 
 Alternatively, a new series of symbols could be used instead of introducing
 a new keyword, like: `<~< obj` or `&< obj` in place of `reloc obj`.
-However, we feel like `reloc obj` better conveys the intent, and has better 
+However, we feel like `reloc obj` better conveys the intent, and has better
 readibility.
 
 The introduction of a new keyword may always break existing codebases. We had a
 look at several well-known open source C++ projects to analyse what volume of code
 would break if `reloc` were a keyword.
 
-For each of the following repositories, we searched for the `reloc` string, 
+For each of the following repositories, we searched for the `reloc` string,
 at word boundaries, with case-sensitivity, in all C++ source files and headers
 (`*.cc`, `*.cpp`, `*.cxx`, `*.h`, `*.hpp`, `*.hh`).
 We manually discarded matches that
 were not code (comments or strings). And we put that in perspective with the
 total number of files, lines and words of the repository.
 
-- [Qt](https://github.com/qt/qtbase): 0 hits; files:  7,586 ; lines:  2,794,607 ; 
+- [Qt](https://github.com/qt/qtbase): 0 hits; files:  7,586 ; lines:  2,794,607 ;
     words:  98,635,622; commit: 040b4a4b21b3
-- [boost](https://github.com/boostorg/boost) (with all submodules): 0 hits; 
-    files:  23,726 ; lines:  4,133,844 ; 
+- [boost](https://github.com/boostorg/boost) (with all submodules): 0 hits;
+    files:  23,726 ; lines:  4,133,844 ;
     words:  180,808,943; commit: 86733163a3c6
-- [godot](https://github.com/godotengine/godot): 0 hits; files:  5,068 ; 
-    lines:  2,545,299 ; 
+- [godot](https://github.com/godotengine/godot): 0 hits; files:  5,068 ;
+    lines:  2,545,299 ;
     words:  99,389,743; commit: b6e06038f8a3
-- [abseil-cpp](https://github.com/abseil/abseil-cpp): 0 hits; files:  766 ; 
-    lines:  247,441 ; 
+- [abseil-cpp](https://github.com/abseil/abseil-cpp): 0 hits; files:  766 ;
+    lines:  247,441 ;
     words:  9,028,820; commit: de6fca2110e7
-- [folly](https://github.com/facebook/folly): 0 hits; files:  1,861 ; 
-    lines:  532,918 ; 
+- [folly](https://github.com/facebook/folly): 0 hits; files:  1,861 ;
+    lines:  532,918 ;
     words:  16,669,085; commit: cde9d22e8614
-- [llvm-project](https://github.com/llvm/llvm-project): **124 hits in 11 files** 
-    (`reloc` only used as local variable or 
-    data-member, counting all uses); files:  39,048 ; lines:  9,760,587 ; 
+- [llvm-project](https://github.com/llvm/llvm-project): **124 hits in 11 files**
+    (`reloc` only used as local variable or
+    data-member, counting all uses); files:  39,048 ; lines:  9,760,587 ;
     words:  385,429,611; commit: 9816c1912d56
-- [gcc](https://github.com/gcc-mirror/gcc): **244 hits in 31 files** 
-    (`reloc` only used as local variable or 
-    data-member, counting all uses); files:  15,337 ; lines:  4,616,875 ; 
+- [gcc](https://github.com/gcc-mirror/gcc): **244 hits in 31 files**
+    (`reloc` only used as local variable or
+    data-member, counting all uses); files:  15,337 ; lines:  4,616,875 ;
     words:  146,146,684; commit: ee6f262b87fe
-- [rapidjson](https://github.com/Tencent/rapidjson): 0 hits; files:  96 ; 
-    lines:  39,828 ; words:  1,492,060; 
+- [rapidjson](https://github.com/Tencent/rapidjson): 0 hits; files:  96 ;
+    lines:  39,828 ; words:  1,492,060;
     commit: a98e99992bd6
-- [googletest](https://github.com/google/googletest): 0 hits; files:  155 ; 
-    lines:  85,703 ; words:  3,104,817; 
+- [googletest](https://github.com/google/googletest): 0 hits; files:  155 ;
+    lines:  85,703 ; words:  3,104,817;
     commit: 71140c3ca7a8
-- [yaml-cpp](https://github.com/jbeder/yaml-cpp): 0 hits; files:  259 ; 
-    lines:  112,513 ; words:  3,784,676; 
+- [yaml-cpp](https://github.com/jbeder/yaml-cpp): 0 hits; files:  259 ;
+    lines:  112,513 ; words:  3,784,676;
     commit: 1b50109f7bea
-- [flatbuffers](https://github.com/google/flatbuffers): 0 hits; files:  175 ; 
-    lines:  98,163 ; words:  3,851,726; 
+- [flatbuffers](https://github.com/google/flatbuffers): 0 hits; files:  175 ;
+    lines:  98,163 ; words:  3,851,726;
     commit: e0d68bdda2f6
-- [MongoDB](https://github.com/mongodb/mongo): **22 hits in 6 files** 
-    (`reloc` only used as local variable, 
-    counting all uses); files:  20,054 ; lines:  6,439,465 ; words:  265,329,429; 
+- [MongoDB](https://github.com/mongodb/mongo): **22 hits in 6 files**
+    (`reloc` only used as local variable,
+    counting all uses); files:  20,054 ; lines:  6,439,465 ; words:  265,329,429;
     commit: 73b7a22328c7
-- [OpenCV](https://github.com/opencv/opencv): 0 hits; files:  3,315 ; 
-    lines:  1,556,606 ; words:  58,339,686; 
+- [OpenCV](https://github.com/opencv/opencv): 0 hits; files:  3,315 ;
+    lines:  1,556,606 ; words:  58,339,686;
     commit: 9627ab9462a4
-- [electron](https://github.com/electron/electron): 0 hits; files:  698 ; 
-    lines:  99,717 ; words:  3,431,787; 
+- [electron](https://github.com/electron/electron): 0 hits; files:  698 ;
+    lines:  99,717 ; words:  3,431,787;
     commit: 644243efd61b
-- [mold](https://github.com/rui314/mold): 0 hits; files:  813 ; lines:  262,560 ; 
+- [mold](https://github.com/rui314/mold): 0 hits; files:  813 ; lines:  262,560 ;
     words:  9,992,769; commit: a45f97b47430
-- [ClickHouse](https://github.com/ClickHouse/ClickHouse): 0 hits; files:  5,566 ; 
+- [ClickHouse](https://github.com/ClickHouse/ClickHouse): 0 hits; files:  5,566 ;
     lines:  1,128,735 ; words:  68,112,047; commit: d42d9f70c812;
-- [Dlib](https://github.com/davisking/dlib): 0 hits; files:  1,421 ; 
+- [Dlib](https://github.com/davisking/dlib): 0 hits; files:  1,421 ;
     lines:  533,513 ; words:  19,080,728; commit: a12824d42584
-- [&#83FML](https://github.com/SFML/SFML): 0 hits; files:  532 ; lines:  168,787 ; 
+- [&#83;FML](https://github.com/SFML/SFML): 0 hits; files:  532 ; lines:  168,787 ;
     words:  7,272,946; commit: 9bdf20781819
-- [Kodi](https://github.com/xbmc/xbmc): 0 hits; files:  4,360 ; lines:  1,008,255 ; 
+- [Kodi](https://github.com/xbmc/xbmc): 0 hits; files:  4,360 ; lines:  1,008,255 ;
     words:  34,114,229; commit: b228c778668f
-- [Beast](https://github.com/boostorg/beast): 0 hits; files:  473 ; 
+- [Beast](https://github.com/boostorg/beast): 0 hits; files:  473 ;
     lines:  145,193 ; words:  4,768,152; commit: 334b9871bed6
-- [JSON for modern C++](https://github.com/nlohmann/json): 0 hits; files:  450 ; 
+- [JSON for modern C++](https://github.com/nlohmann/json): 0 hits; files:  450 ;
     lines:  137,679 ; words:  5,210,982; commit: 4c6cde72e533
-- [IncludeOS](https://github.com/includeos/IncludeOS): 0 hits; files:  841 ; 
+- [IncludeOS](https://github.com/includeos/IncludeOS): 0 hits; files:  841 ;
     lines:  107,582 ; words:  2,903,698; commit: 99b60c782161
-- [SerenityOS](https://github.com/SerenityOS/serenity): **15 hits in 2 files** 
-    (`reloc` only used as local variable, counting all uses); files:  5,538 ; 
+- [SerenityOS](https://github.com/SerenityOS/serenity): **15 hits in 2 files**
+    (`reloc` only used as local variable, counting all uses); files:  5,538 ;
     lines:  887,768 ; words:  31,766,641; commit: 97dde51a9b3f
 
 Repository statistics are computed with the following command:
@@ -2938,8 +3178,8 @@ find -type f \( -name '*.h' -or -name '*.hh' -or -name '*.hpp' -or -name '*.cc' 
 ```
 
 As you can see, in the vast majority of cases, `reloc` is not used at all.
-The impact seems to be minimal, where only a few files might need to be fixed 
-here and there. To smooth the transition, compilers may also warn that existing 
+The impact seems to be minimal, where only a few files might need to be fixed
+here and there. To smooth the transition, compilers may also warn that existing
 code will break as `reloc` will become a keyword in a next C++ version.
 
 ## STL API changes ## {#stl-api-changes}
@@ -2988,8 +3228,8 @@ prefer to stick with existing API for containers.
 
 ## Future directions ## {#future-directions}
 
-We removed some of the changes we initilialy had in mind, to keep for future 
-extensions. This proposal aims to be the bare minimum to bring support for 
+We removed some of the changes we initilialy had in mind, to keep for future
+extensions. This proposal aims to be the bare minimum to bring support for
 relocate-only types.
 
 ### More perfect forwarding ### {#future-capture-value}
@@ -3035,8 +3275,8 @@ value category prvalue, lvalue or xvalue, and forward by relocation.
 
 ### discarded reloc expression ### {#solve-discarded-reloc-expr}
 
-Initilialy, discarded reloc expressions such as `reloc obj;` would simply 
-translate to a call to the destructor of `obj`, while ensuring that the 
+Initilialy, discarded reloc expressions such as `reloc obj;` would simply
+translate to a call to the destructor of `obj`, while ensuring that the
 destructor won't be called again at the end of its scope.
 
 However this is hardly possible at the moment because of all the different ABIs
@@ -3044,25 +3284,25 @@ that exist. If `obj` is an *unowned parameter*, then the function cannot elide
 the destructor call of `obj` that will happen on the caller-side.
 
 We wanted the well-formedness of the code above all else (i.e. `reloc obj;` could
-not be well-formed on some implementations and not in others). As such, 
-in this proposal, `reloc obj;` is only well-formed if `obj` is 
+not be well-formed on some implementations and not in others). As such,
+in this proposal, `reloc obj;` is only well-formed if `obj` is
 relocatable, movable or copyable.
 
-Hence, the best we can do if `obj` is an *unowned parameter*, 
+Hence, the best we can do if `obj` is an *unowned parameter*,
 is to move-construct a temporary, and destruct
-it right after, which will trigger the desired side-effects of the destructor 
+it right after, which will trigger the desired side-effects of the destructor
 (e.g. release a lock if `obj` is a `unique_lock`).
 The destructor of `obj` will still be called when the function
 returns, but will likely do nothing as the object will be in a moved-from state.
 
-A future proposal could make `reloc obj;` to just call the destructor, 
-regardless of whether `obj` is an *unowned parameter* and of its constructors, 
+A future proposal could make `reloc obj;` to just call the destructor,
+regardless of whether `obj` is an *unowned parameter* and of its constructors,
 solving those ABI issues.
 
 ## Will it make C++ easier? ## {#easier-cpp}
 
-Even though it does come with new rules, we argue that it mostly removes the 
-moved-from state understanding problem, as well as used-after-move errors 
+Even though it does come with new rules, we argue that it mostly removes the
+moved-from state understanding problem, as well as used-after-move errors
 (if `reloc` is used instead of `std::move`).
 
 <pre class=biblio>
