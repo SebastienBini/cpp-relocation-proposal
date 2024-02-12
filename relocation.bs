@@ -38,7 +38,7 @@ Relocation will happen thanks to a new keyword `reloc` and a new constructor.
 This tackles every flaw not solved by move-semantics:
 
 - `reloc` does perform the relocation ;
-- relocated objects cannot be reused, or else the program is ill-formed ;
+- relocated objects cannot be re-used, or else the program is ill-formed ;
 - relocation disregards cv-qualifiers, so constant objects can be relocated ;
 - classes that want to support relocation can do so without breaking their class invariant,
     as the relocated-from object is simultaneously destructed.
@@ -192,10 +192,10 @@ bar(std::move(a)); // silently calls A's copy ctor, performing a deep copy...
 
 Declaring an object with `const` may have unwanted side-effects. As a consequence:
 
-- some developers will use `const` to naively declare constant objects, as you would
-    expect from the language, while being unaware of the side-effects. This may
+- some developers will use `const` to naively declare constant objects as so - *as one would
+    expect from the language* - while being unaware of the side-effects. This may
     lead to unoptimized code, with the copy constructor being called *silently*
-    when `std::move` is used ;
+    while `std::move` is explicitly called ;
 - knowledgeable developers will rather not use it if they can foresee the
     negative side-effect, which leads to poorer code (see the benefits of `const`
     described above), but can make use of the move constructor.
@@ -282,8 +282,8 @@ even when used in the initialization of other variables.
 
 The `reloc` keyword relocates the objects to the parameter slots of `foo`. `a`,
 `b`, and `c` have reached their end of life when the call to `foo` completes and
-can no longer be used in `bar`. In particular, their destructor will not even be
-called.
+can no longer be used in `bar`. In particular, should `a`, `b` and `c` be relocatable,
+their destructor will not even be called.
 
 ### Constant data-members ### {#const-data-members}
 
@@ -367,13 +367,13 @@ See how the code becomes clearer: class invariant can be written in the code
 instead of comments, which leads to a code that is both more readable and
 robust.
 
-This is not an isolated example. In fact, we invite the reader to think of all
+*This is not an isolated example*. In fact, we invite the reader to think of all
 the places that could have benefited from a constant data member but didn't because
 of this issue. How much clearer the code would have been, had you been able
 to write `const`?
 
 Let's illustrate this with a final example. Consider a `flat_map` implementation.
-As a flat_map implements an associative container, we know for a fact the keys
+As a `flat_map` implements an associative container, we know for a fact that the keys
 of that container will never change. We could write it quite easily in our class
 invariant:
 
@@ -393,9 +393,26 @@ However, as of today,
 this will lead to a deep copy of some range of keys when a new item is inserted
 anywhere but at the end of `_map`, or when `_map` needs to grow.
 Support for relocation in the language (and in the STL) will enable to write
-`const` with no drawback on performance.
+`const` with no performance hit.
 
-## Accidental relocate-only types ## {#motivation-accidental-relocate-only-types}
+## Support for relocate-only types ## {#reloc-only-support}
+
+As of today, C++ provides very little support for class-types which provide
+no copy and no move constructors. Such objects are impractical to handle, for they
+can only be:
+
+- constructed as a function local variable ;
+- returned from said function if copy-elision is guaranteed ;
+- or constructed in-place in the parameter slot of another function.
+
+We cannot however, perform any operation that will move or copy the object to
+another address in memory:
+
+- we cannot pass such objects by value in the parameter slots of other functions,
+    unless the object is constructed in the parameter slot. As a consequence,
+    such types cannot be stored in any non-node-based containers.
+
+### Accidental relocate-only types ### {#motivation-accidental-relocate-only-types}
 
 Classes that have an implicitly deleted copy and move constructors are quite
 impractical to handle in C++. They cannot be moved around
@@ -428,7 +445,7 @@ are moved in memory, the previous instance is simultaneously destroyed (very oft
 this simply means the memory occupied by the source object just becomes uninitialized,
 and in particular, the source object's destructor is not called).
 
-## Move constructor breaks class invariant ## {#motivation-never-empty}
+### Move constructor breaks class invariant ### {#motivation-never-empty}
 
 In framework code it is a relatively everyday task to write helper classes that are
 constructed to own some resource, passed around from place to place, and then destroyed,
