@@ -164,9 +164,32 @@ which defines a relocation constructor must have ownership over its lifetime.
 However we fear this would propagate ABI changes with too little control,
 and the proposal would meet to much resistance to go further.
 
+#### Clarify reloc behavior with copy-only objects
+
+`reloc` can be used with a copy-only source object. By copy-only, we mean that
+the class type only declares a copy constructor.
+
+In P2785R3, using `reloc` on a copy-only object may not cause the immediate
+destruction of the source object. (The destruction either happened at the end
+of the expression evaluation, or at function exit).
+That behavior was implementation-defined.
+
+However we expect this to trigger unwanted side-effects. When an object is copy-constructed,
+all the resources owned by the source object are *copied* to the target object.
+As such if the destructor has a side-effect, it will be applied twice, once
+for the destruction of each object.
+
+Hence, if the destruction time of the source object is implementation-defined,
+then so is the time when the destructor side-effects are applied. We fear this
+may lead to code that behave differently across different implementations.
+
+`reloc` now behaves differently with copy-only source objects. It no longer
+tries to destruct the source object early. Instead, the source object is destructed
+normally, at its end of scope.
+
 ### Changes from older revisions
 
-P2785R0, P2785R1 and P2785R2 revisions are internal versions bumps that were
+R0, R1 and R2 revisions are internal versions bumps that were
 never formerly presented.
 
 # Motivation # {#motivation}
@@ -831,45 +854,115 @@ identifiers introduced through the syntax of structured binding declarations).
 If the source object is ref-qualified, then it performs the following cast:
 `static_cast<decltype(obj)>(obj)`.
 
-This makes `reloc` the one operator to use to perfectly forward lvalues, xvalues
-and prvalues. It also prevents from use-after-move and use-after-relocation errors.
+This makes `reloc` the one operator to use to perfectly forward objects, whether
+they are ref-qualified or not. It also prevents from use-after-move and use-after-relocation errors.
 
 ### reloc returns a temporary ### {#reloc-value-change}
 
-The main use case of `reloc` is to change the value category of an object to a
-prvalue. This happens by creating a temporary from the given source object,
-when the source object is not ref-qualified.
+Unlike `std::move`, `reloc` does perform some form of relocation.
+Through misuse of language, we say that `reloc` returns a temporary object,
+created by relocation, move or copy constructor. In truth,
+given that the source object is not ref-qualified, then `reloc` merely
+changes the value category of the source object from lvalue to prvalue
+(if the source object is ref-qualified, see [above](#reloc-perfect-fwd)).
 
-This temporary may or may not be materialized, depending on the context of the
-expression.
+It is this value category change that *may* trigger the creation of a temporary
+object. However, optimizations may happen that will elide the creation of the
+temporary entirely.
 
-If materialized, then the temporary is initialized as follows:
+If the temporary is materialized, then it is ideally constructed by the relocation
+constructor, destroying the source object in the process. However, `reloc` does
+not force the use of the relocation constructor. The constructor which will be used
+to create the temporary is selected by overload resolution. `reloc` merely enables
+the relocation constructor to be selected because of the value category change
+(the relocation constructor has the signature `T(T)`, meaning it will be preferred
+when constructed from a prvalue, with our new [overload resolution rules](#overload-resolution)).
 
-- if the source object is not an *unowned parameter*, then the temporary is
-    initialized using its relocation, move or copy constructor:
-    - the relocation constructor is called if accessible. This is a destructive
-        operation for the source object: when the constructor returns, the
-        source object is considered to be in a *destructed state*.
-    - otherwise, either the move or copy constructor is called, ignoring the
-        cv-qualifiers on the source object. The destructor of the source object
-        is then called at the end of the full-expression evaluation.
-    - In all cases, the destructor of the source object is no longer called when
-        its end of scope is reached.
-- otherwise (the source object is an *unowned parameter*), then the temporary is
-    initialized using its move or copy constructor, ignoring the
-    cv-qualifiers on the source object. The destructor of the
-    source object is deferred until the function returns. Typically we expect
-    the source object to be in a "moved-from" state, waiting to be destructed.
+#### reloc with function parameters #### {#reloc-with-function-param}
 
-If the temporary is not materialized and that the source object is not an
-*unowned parameter*, then the destructor of the source object is called at the
-end of the full-expression evaluation, at the same time as temporary objects are destroyed.
-See [Discarded reloc expressions](#discarded-reloc-expr) for more details on
-unmaterialized temporaries from `reloc` statements.
+Function parameters' lifetime ownership is implementation-defined in C++.
+Depending on the ABI in use, a function parameter may be destroyed at caller-site
+(upon function return), or at callee-site (before the function exits).
 
-Note that an object passed to `reloc` is guaranteed to be either in a *destructed state*
-at the end of the expression evaluation if it is not an *unowned parameter*,
-or else in a "*pending-destruction*" state.
+In an attempt to make a compromise between ABI compatibility and acceptable
+support for relocation, we slightly change that rule.
+We would like function parameters passed by value, whose type declares
+a relocation constructor but no move constructor, to be *owned parameters*.
+As the C++ standard leaves this area implementation-defined, we are going to force
+this another way, although the effect will likely be the same.
+
+**Rule:** If the source object is a function parameter passed by value, and its type
+provides an eligible move constructor, then the relocation constructor (if any)
+may be discarded during overload resolution. Whether the relocation constructor
+is discarded is *implementation-defined*.
+(By eligible, we mean that the constructor is declared, not deleted,
+and its constraints verified).
+
+As consequences of that rule, we get the following:
+
+- source objects which are not function parameters are always guaranteed that
+    their relocation constructor (if eligible) is called ;
+- source objects which are *owned parameters* have the same guarantee as above ;
+- source objects which are *unowned parameters*, and have both an eligible move
+    and relocation constructor, will not be relocated. Instead the move constructor
+    will be used by `reloc`.
+- source objects which are function parameters, and have an eligible relocation
+    constructor but no move constructor, are forcibly *owned parameters*.
+
+### Early end of scope ### {#reloc-src-obj-lifetime}
+
+As we have seen `reloc` may trigger a call to the relocation constructor.
+At the moment of the call, the source object is in a destructed state.
+It is then unsafe to reuse it after the `reloc` expression completes.
+
+To prevent uses of a potentially destructed object, we state that the program is
+**ill-formed** if the source object is reused after being passed to `reloc`,
+regardless of whether the relocation constructor was called. For a detailed
+explanation of how this is enforced, please refer to [the dedicated section](#ill-formed-reuse).
+
+That early end of scope provides us with a strong guarantee. We know that the
+source object cannot be reused, and as such we may be tempted to call the
+destructor of the source object early. For instance, we may want to destroy the
+source object at the end of the full-expression evaluation, when temporaries are
+destroyed. However we must proceed with caution here,
+as because of ABI constraints, doing so may trigger *implementation-defined*
+side-effects.
+
+- If `reloc` calls the copy constructor:
+    all the resources owned by the source object are *copied* to the target object.
+    As such if the destructor has side-effects, they will be applied twice, once
+    for the destruction of each object.
+    - If the source object is a function-local variable or an *owned parameter*,
+        then we can call the destructor of the source object at the end of the
+        expression evaluation.
+    - However if the source object is an *unowned parameter*, then we cannot
+        call the destructor of the source object right away.
+        The destructor call needs to be deferred until control returns at the
+        caller-site.
+
+    We can see that the destruction time of the source object would be
+    *implementation-defined*. It could be acceptable if it didn't trigger
+    side-effects. The problem is that we can expect side-effects from the
+    destructor of the source object, and we don't want those side-effects
+    to be applied at different times depending on the implementation.
+- If `reloc` calls the move constructor:
+    all the resources owned by the source object are *transferred* to the target
+    object. As such if the destructor has side-effects, we expect them to be
+    applied only once, at the destruction of the target object. We expect the
+    source object destructor to detect the *moved-from state* and return, without
+    triggering any side-effects.
+    Under those reasonably safe assumptions, it doesn't matter when the source
+    object is destroyed, be it at its natural end of scope, or at the end of the
+    `reloc` expression.
+
+As a consequence, given the existing ABIs constraints, we do not see any benefit
+in enforcing the destruction of the source object at the end of the reloc expression
+where we could. For simplicity, we state that in a `reloc` expression,
+the source object is destroyed:
+
+- either at the moment the relocation constructor is called ;
+- or if the relocation constructor is not called, at the moment it would have
+    been destructed had it been not passed to `reloc`.
 
 ### Illegal uses of reloc ### {#reloc-illegal-uses}
 
@@ -935,7 +1028,410 @@ public:
 };
 ```
 
-### Early end-of-scope ### {#reloc-early-end-of-scope}
+### Relocation elision ### {#reloc-elision}
+
+Whether performed by relocation, move or copy constructor, relocation
+may be elided if the compiler can ensure that the source object is created at
+the address to be occupied by the target object.
+This is intended to work in much the same way as the named return value optimization;
+for example:
+
+```c+
+void f(std::string s);
+void g() {
+    std::string s;  // may be created in f's argument slot
+    f(reloc s);  // relocation may be elided
+}
+```
+
+### Discarded reloc expressions ### {#discarded-reloc-expr}
+
+`reloc` expressions can be discarded: `reloc obj;` (note the semi-colon).
+We expect this statement to have the same effect as ` { auto _ = reloc obj; } `.
+A temporary is constructed from the source object and is then destructed at scope
+exit (that is right-away). We will
+discuss here the effects of such expressions.
+
+Materializing a temporary whose only goal is to be
+destroyed is suboptimal.
+We might be tempted to optimize away the temporary
+materialization, and only call the destructor of the source object.
+We need to distinguish the following scenarios:
+
+1. *The source object has an eligible relocation or move constructor*: In this case,
+    if a temporary is move-or-relocation-constructed, then all the owned
+    resources of the source object will be *transferred* to the temporary. For this
+    reason, we assume that *destroying the temporary will have the same effects
+    as destroying the source object directly*. In particular if the temporary is
+    move-constructed, then we expect the destructor of
+    the source object (now in a moved-from state) to have *no side-effects*.
+2. *The source object only has an eligible copy constructor*: if a temporary is copy-constructed then
+    all owned resources of the source objects will be *copied* to the temporary.
+    We expect any side-effects triggered by the destructor to be applied *twice*,
+    once for the destruction of the temporary, and another time for the destruction
+    of the source object.
+3. Other cases need not to be considered, as the `reloc` expression requires the
+    source object to declare one of the three constructors.
+
+It's only when the source object has an eligible relocation or move constructor,
+that implementations are allowed to elide the temporary constructor and directly
+call the destructor of the source object.
+
+NOTE: If the source object only declares a copy constructor, then implementations
+are encouraged to emit a warning on discarded reloc statements, as if reloc
+had the `[[nodiscard]]` attribute.
+
+To summarize, it means that `reloc obj;` has the following behavior:
+
+- If `obj` is copy-only, then a temporary is copy-constructed, and destructed,
+    possibly emitting a warning.
+- Otherwise, if `obj` is an *owned parameter* or a function-local variable then:
+    - The temporary is likely elided, effectively only calling the
+        destructor of `obj`.
+    - Otherwise a temporary is initialized from the
+        source object, and then destructed.
+- Otherwise (`obj` is an *unowned parameter*):
+    - A temporary is move-constructed and then destructed.
+    - The source object destruction is deferred until the function returns.
+
+For instance this gives:
+```c++
+void do_something_01(std::mutex& m)
+{
+    std::lock_guard guard{m};
+    if (!some_test())
+    {
+        reloc guard; // ill-formed: no relocation, move or copy constructor
+        log("thread ", std::this_thread::get_id(), " failed");
+        return;
+    }
+    bar();
+}
+void do_something_02(std::unique_lock<std::mutex> guard)
+{
+    if (!some_test())
+    {
+        reloc guard; /* well-formed: lock is released, either by calling the
+            destructor directly, or by constructing a temporary from
+            guard (by relocation or move) and destructing it. */
+        log("thread ", std::this_thread::get_id(), " failed");
+        return;
+    }
+    bar();
+}
+void do_something_03(std::mutex& m)
+{
+    std::unique_lock guard{m};
+    if (!some_test())
+    {
+        reloc guard; /* well-formed: temporary is likely elided regardless of
+            do_something_03's ABI, only calling the destructor of guard. */
+        log("thread ", std::this_thread::get_id(), " failed");
+        return;
+    }
+    bar();
+    /* guard destructor is called only if it wasn't passed to reloc. */
+}
+void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
+{
+    if (!some_test())
+    {
+        reloc copyOnlyObj; /* well-formed but useless, same effect as
+            `auto{copyOnlyObj};` except that copyOnlyObj cannot be reused. */
+        return;
+    }
+    bar();
+    /* copyOnlyObj destructor is called here or at caller-site. */
+}
+```
+
+NOTE: There is a discrepancy on when source objects are destructed if `reloc`
+selects the move constructor. If the temporary is not discarded, then the
+source object must be destroyed normally. If discarded, then the source
+object may be destroyed immediately to avoid unnecessary temporary creation
+(*implementation-defined*).
+We do not expect any issue with this difference. But it could be solved by
+stating that, when the move constructor
+is selected by `reloc`, whether the source object is destroyed immediately or
+at scope exit is *implementation-defined*.
+
+## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
+
+In addition to the reloc operator, this paper introduces the *dot-reloc* (`.reloc`)
+operator, which can be used to decompose a source object and relocate its
+subobjects.
+
+### dot-reloc syntax ### {#dot-reloc-syntax}
+
+The *dot-reloc* operator may be used in one of the following way (with `src`
+the source object of type `T`):
+
+- `src.reloc B`, `B` being a **direct, non-virtual** base class of `T` ;
+- `src.reloc m`, `m` being a **direct, non-static** data member of `T`.
+
+Any amount of whitespace between `.` and `reloc` is allowed.
+
+Both expressions return a prvalue of the type of the subobject.
+The effect of the *dot-reloc* operator is twofold:
+
+1. If not already decomposed, then `src` transitions to its decomposition state ;
+2. Triggers the relocation of the said subobject, as if done by the `reloc`
+    operator on any complete object.
+
+### Decomposed state transition ### {#decomposed-state}
+
+When a complete object enters its decomposed state:
+
+- All its direct bases and non-static data members are now considered as
+    distinct complete objects:
+    - the decomposition does not odr-use any of the copy, move or relocation
+        constructor of the subobjects. In particular, their address remains unchanged ;
+    - if any of the direct base had a runtime type information, it now points
+        to that of the base class, and no longer points to the type of the source
+        object.
+    - all virtual bases, if any, keep the same address ; all pointers to such
+        virtual bases remain unchanged.
+- The lifetime of the source object ends, its destructor is never called.
+    All its non-static subobjects, now considered as complete objects, will still
+    follow normal destruction rules: they will be destructed at the end of their scope
+    unless they have been relocated before.
+
+Note: If not for changing the runtime type of the direct bases that have one,
+the decomposition operation would be a no-op.
+
+### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
+
+An expression using the *dot-reloc* operator is ill-formed
+if any of the following conditions is met:
+
+- applying the `reloc` operator on the source object would be ill-formed.
+    See [illegal uses of reloc](#reloc-illegal-uses) ;
+- the incurred decomposition is ill-formed.
+    See [below](#ill-formed-decomposition) ;
+- the relocation operation on the subobject is ill-formed.
+    See [below](#ill-formed-dot-reloc-relocation).
+
+#### Illegal decomposition #### {#ill-formed-decomposition}
+
+A decomposition is well-formed if and only if all of the following conditions
+are satisfied:
+
+- all subobjects of the source object are accessible. They all need to be since their
+    destructor will be called if not relocated ;
+- the source object type has no user-defined special member function,
+    **or else** the call-site has private access privilege to the source object type ;
+- at no point in time, the source object was a subobject of a now decomposed object.
+
+The first two requirements ensure that we can only relocate (a) compound types,
+where subobjects have no dependencies with one another (like an `std::pair`),
+or (b) types that we are in control of (because of the private access).
+
+The last requirement ensures that you cannot have nested decompositions.
+We don't believe nested decompositions are a necessity, and we fear it will
+only bring extra complexity to compiler vendors.
+Hence code like this is ill-formed:
+
+```c++
+T src;
+auto n = src.reloc m.reloc n; // ill-formed
+```
+
+Instead, it needs to be rewritten as:
+```c++
+T src;
+auto m = src.reloc m;
+auto n = m.reloc n;
+```
+
+#### Illegal relocation #### {#ill-formed-dot-reloc-relocation}
+
+In a *dot-reloc* operation, we designate the decomposed object as the *source object*,
+and the relocated subobject as the *source subobject*. Even though once the
+decomposition has occurred, all subobjects are to be considered as complete objects,
+in what follows we will keep this nomenclature to avoid any confusion.
+
+The relocation expression of the source subobject is ill-formed if any of the
+following conditions is met:
+
+- the source subobject is not a **direct, non-virtual** base of the source object,
+    or is not a **direct, non-static** data member ;
+- the source subobject is not ref-qualified and does not have an accessible relocation,
+    move, or copy constructor ;
+- the source subobject type is not an abstract class.
+
+In particular, the relocation is well-formed if the source subobject is a
+direct, non-static data member of an anonymous union.
+
+Note: Relocating a virtual base is ill-formed. Instead virtual bases must be moved
+thanks to their move constructor. The reason behind this is that, because of the
+decomposition, we may have some source subobjects that still point to virtual
+bases, and we still want them to point to valid data
+(albeit potentially in a moved-from state).
+
+### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
+
+Once an object is in a decomposed state, it can no longer be accessed normally.
+The only well-formed expressions are:
+
+- any access to static data members or static functions via the dot operator ;
+- an explicit cast of the decomposed object to one of its base class, if that
+    class has not been already relocated ;
+- any access to a direct data member via the dot operator, if that data member
+    has not been relocated ;
+- any access to an data member or member function inherited from a base class,
+    if that base class has not been relocated ;
+- any well-formed *dot-reloc* operation on a source subobject which has not
+    been relocated.
+
+### Examples ### {#decomposed-object-examples}
+
+#### Nominal case #### {#decomposed-object-ex-nominal}
+
+One of the main uses of *dot-reloc* is to decompose compound types, such as
+`std::pair`. Note that this code would not be feasible without relocation and
+without decomposition.
+
+```c++
+void bar(string, non_null<unique_ptr<int>>);
+
+void foo(pair<string const, non_null<unique_ptr<int>>> p)
+{
+    bar(p.reloc first, p.reloc second);
+}
+```
+
+#### Custom extractor #### {#decomposed-object-ex-extractor}
+
+```c++
+class T
+{
+private:
+    string const _key;
+    non_null<unique_ptr<int>> _val;
+
+public:
+    // [...]
+    non_null<unique_ptr<int>> getVal(this T self)
+    {
+        return self.reloc _val;
+        // note that here the destructor of self is not called.
+        // however every non relocated data member is still destructed
+        // so self._key.~string() is called at function exit.
+    }
+};
+```
+
+This code may be invoked in the following situations:
+```c++
+// with: T getT();
+//       T src;
+
+auto val1 = getT().getVal();
+auto val2 = (reloc src).getVal();
+```
+
+#### Ill-formedness showcase #### {#decomposed-object-ex-ill-formed}
+
+Let's consider the following classes:
+```c++
+struct VB
+{
+    string _vb;
+
+    void vb_func();
+};
+struct VB2
+{
+    string _vb2;
+};
+struct B0 : public B0Iface
+{
+    string _b0;
+
+    ~B0() override = default;
+    void b0_vfunc() override;
+};
+struct B1 : public virtual VB
+{
+    string _b1;
+
+    void b1_func();
+};
+struct B2Base
+{
+    string _b2base;
+};
+struct B2 : public B2Base, public virtual VB
+{
+    string _b2;
+
+    virtual void b2_vfunc();
+};
+struct Iface
+{
+    virtual ~Iface() = default;
+    virtual void iface_vfunc() = 0;
+};
+
+struct D : public virtual VB2, public B0, public B1, public B2, public Iface
+{
+    ~D() override = default;
+
+    void d_func();
+
+    void b0_vfunc() override;
+    void b2_vfunc() override;
+    void iface_vfunc() override;
+
+    string _d;
+    non_null<unique_ptr<int>> _d2;
+};
+```
+
+Now let's see what happens when we decompose a D object:
+```c++
+D src;
+// decomposition does not happen until the first dot-reloc
+src.d_func(); // ok
+
+bar(src.reloc _d2); // decomposition happens now
+// B0 dynamic type is now B0
+// Iface dynamic type is now Iface
+
+/* The following expressions are now ill-formed:
+  src;                            // cannot access decomposed object.
+  auto cp = src;                  // cannot access decomposed object.
+  auto* address = &src;           // cannot access decomposed object.
+  src.d_func();                   // cannot call function on decomposed object.
+  src.b0_vfunc();                 // cannot call function on decomposed object.
+  src.iface_vfunc();              // cannot call function on decomposed object.
+  auto* address2 = src._d2.get(); // src._d2 has been relocated.
+  auto vb2 = src.reloc VB2;       // cannot relocate virtual base.
+  auto iface = src.reloc Iface;   // cannot relocate abstract base.
+  auto b2base = src.reloc B2Base; // cannot relocate non-direct base.
+*/
+
+// well-formed: access to non-relocated data members and bases is still allowed,
+// or calling member functions from non-relocated bases is also allowed.
+auto vb = std::move(src._vb);
+auto vb2 = static_cast<VB2&&>(src);
+auto b2base = static_cast<B2Base const&>(src);
+auto d = src._d;
+src.B2::b2_vfunc();
+auto b0 = src._b0;
+
+// relocates base class
+auto b2 = src.reloc B2;
+/* The following expressions become ill-formed:
+  static_cast<B2Base const&>(src);
+  static_cast<B2 const&>(src);
+  src._b2;
+  src._b2base;
+  src.B2::b2_vfunc();
+*/
+```
+
+## Ill-formed reuse of relocated or decomposed objects ## {#ill-formed-reuse}
 
 `reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding
 any further mention of the name `obj` which would resolve into the relocated object.
@@ -1255,119 +1751,13 @@ for the code to be ill-formed unless the source object is relocated within the
 cases, the user can recover our preferred behavior in library, using `std::optional`
 to add the tracking flags that in our proposal would be provided by the language.
 
-### Relocation elision ### {#reloc-elision}
-
-Whether performed by relocation, move or copy constructor, relocation
-may be elided if the compiler can ensure that the source object is created at
-the address to be occuped by the target object.
-This is intended to work in much the same way as the named return value optimization;
-for example:
-
-```c+
-void f(std::string s);
-void g() {
-    std::string s;  // may be created in f's argument slot
-    f(reloc s);  // relocation may be elided
-}
-```
-
-### Discarded reloc expressions ### {#discarded-reloc-expr}
-
-Under some conditions the following expression is well-formed: `reloc obj;`
-(note the semi-colon).
-
-Given the rules we established for `reloc`, this statement returns a temporary
-constructed from the source object. The temporary is then destructed at the end
-of the expression evaluation.
-
-However, materializing a temporary whose only goal is to be destroyed is
-suboptimal. Hence, it is authorized for implementations to (as above)
-elide the creation
-of the temporary object,
-effectively only calling the destructor of the source
-object at the end of the expression evaluation. If this optimization is done,
-the temporary returned by `reloc` is not materialized.
-
-This means that `reloc obj;` has the following behavior:
-
-- if `obj` is not an *unowned parameter* then:
-    - The temporary is likely elided, effectively only calling the
-        destructor of `obj`.
-    - Otherwise a temporary is initialized from the
-        source object, and then destructed.
-- otherwise (`obj` is an *unowned parameter*):
-    - A temporary is created from the move or copy constructor, and then destructed.
-    - The source object destruction is deferred until the function returns.
-
-In particular, `reloc obj;` is ill-formed if the source object has no accessible
-relocation, move or copy constructor.
-
-For instance this gives:
-```c++
-void do_something_01(std::mutex& m)
-{
-    std::lock_guard guard{m};
-    if (!some_test())
-    {
-        reloc guard; // ill-formed: no relocation, move or copy constructor
-        log("thread ", std::this_thread::get_id(), " failed");
-        return;
-    }
-    bar();
-}
-void do_something_02(std::unique_lock<std::mutex> guard)
-{
-    if (!some_test())
-    {
-        reloc guard; /* well-formed: lock is released, either by calling the
-            destructor directly, or by constructing a temporary from
-            guard (by relocation or move) and destructing it. */
-        log("thread ", std::this_thread::get_id(), " failed");
-        return;
-    }
-    bar();
-}
-void do_something_03(std::mutex& m)
-{
-    std::unique_lock guard{m};
-    if (!some_test())
-    {
-        reloc guard; /* well-formed: temporary is likely elided regardless of
-            do_something_03's ABI, only calling the destructor of guard. */
-        log("thread ", std::this_thread::get_id(), " failed");
-        return;
-    }
-    bar();
-    /* guard destructor is called only if it wasn't passed to reloc. */
-}
-```
-
-## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
-
-NOTE: in a relocation constructor, the source object already starts in a decomposed
-state, even if the user implementation never calls `.reloc`. This means
-that the source object destructor is not called, but all its subobject destructors
-are called unless relocated.
-
-Also beware of decomposition is defined.
-If, within a reloc constructor, the source object starts decomposed, then
-it means that we cannot call any member function, while potentially .reloc
-has not been used yet...
-
-We need to define an intermediary decomposed state where calling member functions
-is still possible.
-
-Decomposed => ok to call member functions, purely a no-op
-Object changes its state after first .reloc call, which becomes the decomposed
-state as defined before.
-
-Ghost object?
-
-Or semi-decomposed (starting state of relocation ctor) / fully-decomposed => better
-
-semi-decomposed => starting state of dtor as well, but not proposed here.
-
 ## Relocation constructor ## {#reloc-ctor}
+
+NOTE: Speak of reloc ctor with virtual bases
+
+NOTE: to rewrite: the relocation constructor acts as a destructor for the source
+object. In particular all the subobjects of the source object will be destructed
+by their destructor at function exit, unless they have been relocated.
 
 We introduce the relocation constructor. As relocation happens from prvalues,
 the constructor takes a prvalue as parameter: `T(T)`.
