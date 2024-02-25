@@ -80,89 +80,13 @@ In P2785R3, we mandated that a function taking a relocate-only type as value
 parameter **must** have control over its lifetime. This might break some ABIs
 on rare occasions, but in a controlled way.
 
-This allowed to support relocate-only types, making code like this work on all
-implementations:
-```c++
-void bar(non_null<unique_ptr<int>>);
-
-void foo(non_null<unique_ptr<int>> ptr)
-{
-    *ptr *= 2;
-    bar(reloc ptr);
-}
-```
-
-Note: Here `reloc ptr` may only call the relocation constructor as it is
-the only defined constructor. Thanks to our proposition, `ptr` being
-relocate-only, `foo` must have the ownership over its lifetime, so the relocation
-constructor can be called.
-
-Note: The ABI changes that may be incurred by our proposal can be avoided
-if the `non_null` class does not define a relocation constructor (in which case
-the above example would become ill-formed).
-
-However, consider now the following code:
-
-```c++
-struct A
-{
-    // [...]
-    A(A const&) = default;
-    A(A&&) = delete;
-    A(A) = default;
-};
-
-void bar(A);
-void foo(A a)
-{
-    bar(reloc a);
-}
-```
-
-Since `A` has a copy constructor, it is not relocate-only. We have no guarantee
-that `foo` has the ownership of `a`. Hence `reloc a` here may simply call the copy
-constructor, as the ABI may not permit otherwise.
-
-To prevent such a pessimization, developers will be tempted to add a move constructor
-to `A`, ensuring that at least the move constructor is called in such cases.
-Doing so goes against what we are trying to achieve with this proposal. One
-of our main motivation points is that the move constructor doesn't fit all classes
-that could yet still be moved. We don't want users to declare one anyway to avoid pitfalls.
-
-For this reason, the parameter ownership rule is now as follows: *any function
+In R4, we take a slightly less conservative approach: *any function
 that takes a parameter by value, whose type provides a relocation constructor*
 **but no move constructor**, *must have control over the lifetime of that parameter.*
-Note that this still covers relocate-only types, and library vendors still have
-control over their ABI by choosing to define the relocation constructor or not.
 
-With this updated rule, `reloc a` from our previous example will effectively
-call the relocation constructor. And users can safely migrate from the move
-constructor to the relocation constructor if they wish to without any gotchas.
-
-Note that this rule is still isn't optimal. Consider the following code,
-having in mind a putative `std::pair` with a relocation constructor:
-
-```c++
-void bar(pair<const string, int>);
-
-void foo(pair<const string, int> val)
-{
-    val.second *= 2;
-    bar(reloc val);
-}
-```
-
-`val` has the three constructors, so our rule does not apply. The ownership
-of `val` by `foo` is implementation-defined. If `foo` doesn't own `val`, then
-`reloc val` will call the move constructor, making a full string copy
-(because of `const`). Contrary to our previous example which motivated us to
-update the parameter ownership rule,
-here `reloc` may call `std::move` so we haven't worsened the situation.
-
-We could strengthen the rule and propose that any function taking a value parameter
-which defines a relocation constructor must have ownership over its lifetime.
-However we fear this would propagate ABI changes with too little control,
-and the proposal would meet to much resistance to go further.
+Discussion about this change is detailed in the
+(reloc with function parameters){#reloc-with-function-param}
+section.
 
 #### Clarify reloc behavior with copy-only objects
 
@@ -884,8 +808,49 @@ Function parameters' lifetime ownership is implementation-defined in C++.
 Depending on the ABI in use, a function parameter may be destroyed at caller-site
 (upon function return), or at callee-site (before the function exits).
 
-In an attempt to make a compromise between ABI compatibility and acceptable
-support for relocation, we slightly change that rule.
+Enforcing the relocation constructor when `reloc` is used on a function
+parameter will not be compatible with all existing ABIs (see Itanium ABI for
+instance). We could propose this nonetheless, by stating that the relocation
+constructor must be used if declared.
+However we fear this would propagate ABI changes with too little control
+and the proposal would meet to much resistance to go further.
+
+We could take a very conservative approach, and mandate the ABI change
+for *relocate-only* value parameters. Such types don't exist today, so the
+likelihood of breaking any existing ABI is relatively small. However this may
+lead to suboptimized code, where `reloc` would perform worse than `std::move`.
+Consider now the following code:
+
+```c++
+struct A
+{
+    // [...]
+    A(A const&) = default;
+    A(A&&) = delete;
+    A(A) = default;
+};
+
+void bar(A);
+void foo(A a)
+{
+    bar(reloc a);
+}
+```
+
+Since `A` has a copy constructor, it is not relocate-only. With the conservative
+approach, we have no guarantee
+that `foo` has the ownership of `a`. Hence `reloc a` here may simply call the copy
+constructor, as the ABI may not permit otherwise.
+
+To prevent such a pessimization, developers will be tempted to add a move constructor
+to `A`, ensuring that at least the move constructor is called in such cases.
+Doing so goes against what we are trying to achieve with this proposal. One
+of our main motivation points is that the move constructor doesn't fit all classes
+that could yet still be moved. We don't want users to declare one anyway
+to avoid pitfalls.
+
+Thus in an attempt to make a compromise between ABI compatibility and acceptable
+support for relocation, we take a slightly less conservative approach.
 We would like function parameters passed by value, whose type declares
 a relocation constructor but no move constructor, to be *owned parameters*.
 As the C++ standard leaves this area implementation-defined, we are going to force
@@ -908,6 +873,34 @@ As consequences of that rule, we get the following:
     will be used by `reloc`.
 - source objects which are function parameters, and have an eligible relocation
     constructor but no move constructor, are forcibly *owned parameters*.
+
+NOTE: Types which have a relocation constructor but no move constructor
+still don't exist today, so the likelihood of breaking existing ABIs is still
+small.
+
+With this updated rule, `reloc a` from our previous example will effectively
+call the relocation constructor. And users can safely migrate from the move
+constructor to the relocation constructor if they wish to without any gotchas.
+
+Note that this rule is still isn't optimal. Consider the following code,
+having in mind a putative `std::pair` with a relocation constructor:
+
+```c++
+void bar(pair<const string, int>);
+
+void foo(pair<const string, int> val)
+{
+    val.second *= 2;
+    bar(reloc val);
+}
+```
+
+`val` has the three constructors, so our rule does not apply. The ownership
+of `val` by `foo` is implementation-defined. If `foo` doesn't own `val`, then
+`reloc val` will call the move constructor, making a full string copy
+(because of `const`). Contrary to our previous example which motivated us to
+update the parameter ownership rule,
+here `reloc` may call `std::move` so we haven't worsened the situation.
 
 ### Early end of scope ### {#reloc-src-obj-lifetime}
 
