@@ -2299,6 +2299,63 @@ likely to invoke the relocation constructor.
 The relocation constructor may also be invoked by library functions, for example
 [[#std-reloc_and_uninitialize]].
 
+### Virtual relocation constructor ### {#virtual-reloc-ctor}
+
+Unlike other constructors, the relocation constructor can be declared as `virtual`.
+User code cannot make a virtual call to the relocation constructor, only STL
+functions can (like [std::reloc_and_uninitialize and std::reloc_and_reclaim](#std-reloc_and_uninitialize)).
+In other words, how to make a virtual function call to the relocation constructor
+is implementation-defined.
+
+The virtual relocation constructor is only usefull when relocating from dynamic
+storage, to prevent leaky object-slicing. Consider the following scenario:
+
+```c++
+class D : public B { std::string _str; };
+
+B* b = new D;
+
+B sliced = std::reloc_and_reclaim(b);
+// reloc_and_reclaim relocates the given address to
+// its return value and deallocates the memory.
+```
+
+If `B`'s relocation constructor is not virtual, then only the `B` part of `*b` will
+be relocated, leaking the rest.
+
+#### Definition #### {#virtual-reloc-ctor-def}
+
+Let `T` be a class-type with an overridden relocation constructor.
+If `T` relocation constructor has been called normally (not through a
+virtual function call), then it proceeds normally.
+
+Otherwise, the virtual relocation constructor must know
+(they may be passed as extra parameters):
+
+- the target type of the object to construct, which we will call `U`.
+    `U` is by construction a (maybe non-direct) base class of `T` ;
+- the address where it is to be constructed from the target, which we will call `u`.
+
+It then proceeds as follows:
+
+1.  Relocates the target object into a local object `t` of type `T`,
+    calling the non-virtual relocation constructor: `T t{reloc targetObj}`.
+2.  Recursively decomposes `t` to obtain the desired `U` base class.
+    If a virtual base is on the path to reach `U`, then the complete object
+    that owns the virtual base is not decomposed. Rather its virtual base
+    is moved out of its complete object using `std::move`, into a new local
+    object. Chained decomposition will continue from this object.
+3.  Ensures that the desired `U` base class is constructed at `u` (may require
+    an extra relocation operation).
+
+When the constructor leaves, all the non-relocated subobjects of `t` are destroyed
+normally.
+
+NOTE: To detect how the relocation constructor is called,
+implementations may emit two relocation constructor definitions, one virtual
+and one non-virtual. User code can only call the non-virtual version, which
+ensures the virtual one is only called through virtual function call.
+
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
 We further introduce the relocation assignment operator. Its signature shall be:
@@ -3187,6 +3244,11 @@ the move constructor or the copy constructor,
 using `*src` as parameter while ignoring its cv-qualifiers, and return it.
 They also ensure the end-of-life of the source object: if the move or copy
 constructor is called then the destructor of `*src` is called afterwards.
+
+NOTE: If `*src` is a polymorphic type, that the relocation constructor is selected in
+the overload resolution,
+and the relocation constructor is virtual,
+then a virtual relocation constructor call is performed from the dynamic type of `*src`.
 
 `reloc_and_uninitialize` leaves the memory that was occupied by `src` in an
 uninitialized state.  If any exception is thrown,
