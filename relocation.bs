@@ -53,17 +53,17 @@ The proposal introduces:
 
 The proposal does not introduce a new value type; instead relocation will happen from prvalues.
 
-## Changes from previous revisions of P2785
+## Changes from previous revisions of P2785 ## {#changes}
 
-### Changes from P2785R3
+### Changes from P2785R3 ### {#changes-from-r3}
 
-#### Motivation
+#### Motivation #### {#changes-from-r3-motivation}
 
 The motivation section is more complete, giving more explanations, describing
 today's C++ lacks which we intend to resolve, each time illustrated with an
 example.
 
-#### Dot reloc instead of decomposing functions
+#### Dot reloc instead of decomposing functions #### {#changes-from-r3-dot-reloc}
 
 One of the major changes we introduced is the `.reloc` (dot reloc) operator
 that can easily decompose an object. This has several advantages:
@@ -74,7 +74,7 @@ that can easily decompose an object. This has several advantages:
 - it removes the *decomposing functions* feature as they are being replaced by
     `.reloc`.
 
-#### Value parameter ownership rule
+#### Value parameter ownership rule #### {#changes-from-r3-value-param-ownership}
 
 In P2785R3, we mandated that a function taking a relocate-only type as value
 parameter **must** have control over its lifetime. This might break some ABIs
@@ -85,10 +85,10 @@ that takes a parameter by value, whose type provides a relocation constructor*
 **but no move constructor**, *must have control over the lifetime of that parameter.*
 
 Discussion about this change is detailed in the
-(reloc with function parameters){#reloc-with-function-param}
+[reloc with function parameters](#reloc-with-function-param)
 section.
 
-#### Clarify reloc behavior with copy-only objects
+#### Clarify reloc behavior with copy-only objects #### {#changes-from-r3-copy-only}
 
 `reloc` can be used with a copy-only source object. By copy-only, we mean that
 the class type only declares a copy constructor.
@@ -111,7 +111,7 @@ may lead to code that behave differently across different implementations.
 tries to destruct the source object early. Instead, the source object is destructed
 normally, at its end of scope.
 
-### Changes from older revisions
+### Changes from older revisions ### {#changes-from-older}
 
 R0, R1 and R2 revisions are internal versions bumps that were
 never formerly presented.
@@ -626,7 +626,7 @@ places where "move plus destroy" can be optimized. However:
     for relocate-only types.
 
 In this proposal we reuse [[P1144R8]]'s `std::relocate` function, except that we
-name it `std::destroy_relocate`.
+name it `std::reloc_and_uninitialize`.
 
 ## P0023R0: Relocator: Efficiently moving objects by Denis Bider ## {#compare-P0023R0}
 
@@ -750,7 +750,7 @@ of improved locality, since the relocated object will reside directly in the lea
 function's stack as opposed to being accessible only via indirection.
 
 Otherwise, the paper has some minor differences in naming (e.g. `std::force_relocate`
-for what we call `std::destroy_relocate`) that could easily be reconciled in either
+for what we call `std::reloc_and_uninitialize`) that could easily be reconciled in either
 direction.
 
 # Proposed language changes # {#lg-changes}
@@ -806,7 +806,8 @@ when constructed from a prvalue, with our new [overload resolution rules](#overl
 
 Function parameters' lifetime ownership is implementation-defined in C++.
 Depending on the ABI in use, a function parameter may be destroyed at caller-site
-(upon function return), or at callee-site (before the function exits).
+(upon function return, at the end of the full-expression evaluation),
+or at callee-site (before the function exits).
 
 Enforcing the relocation constructor when `reloc` is used on a function
 parameter will not be compatible with all existing ABIs (see Itanium ABI for
@@ -818,8 +819,8 @@ and the proposal would meet to much resistance to go further.
 We could take a very conservative approach, and mandate the ABI change
 for *relocate-only* value parameters. Such types don't exist today, so the
 likelihood of breaking any existing ABI is relatively small. However this may
-lead to suboptimized code, where `reloc` would perform worse than `std::move`.
-Consider now the following code:
+lead to suboptimized code, where `reloc` would perform worse than the move
+constructor. Consider now the following code:
 
 ```c++
 struct A
@@ -906,7 +907,7 @@ here `reloc` may call `std::move` so we haven't worsened the situation.
 
 As we have seen `reloc` may trigger a call to the relocation constructor.
 At the moment of the call, the source object is in a destructed state.
-It is then unsafe to reuse it after the `reloc` expression completes.
+Thus it is unsafe to reuse it after the `reloc` expression completes.
 
 To prevent uses of a potentially destructed object, we state that the program is
 **ill-formed** if the source object is reused after being passed to `reloc`,
@@ -917,27 +918,30 @@ That early end of scope provides us with a strong guarantee. We know that the
 source object cannot be reused, and as such we may be tempted to call the
 destructor of the source object early. For instance, we may want to destroy the
 source object at the end of the full-expression evaluation, when temporaries are
-destroyed. However we must proceed with caution here,
-as because of ABI constraints, doing so may trigger *implementation-defined*
-side-effects.
+destroyed. It would be the natural thing to do:
+
+- for consistency, if the object had been relocated (with the relocation constructor),
+    then it already reached its end of life. The same could be expected for
+    copy and move constructor ;
+- the source object cannot be reused anyway, why deffer its destruction?
+
+Unfortunately, this cannot be done without breaking some ABIs. If the source
+object is an *unowned parameter*, then the function cannot destroy it early.
+The problem does not happen if the source object is a function-local variable
+or an *owned parameter*.
+Let us see what happens if we allow the early destruction of function parameters,
+given the ABI constraints:
 
 - If `reloc` calls the copy constructor:
     all the resources owned by the source object are *copied* to the target object.
-    As such if the destructor has side-effects, they will be applied twice, once
-    for the destruction of each object.
-    - If the source object is a function-local variable or an *owned parameter*,
-        then we can call the destructor of the source object at the end of the
-        expression evaluation.
-    - However if the source object is an *unowned parameter*, then we cannot
-        call the destructor of the source object right away.
-        The destructor call needs to be deferred until control returns at the
-        caller-site.
-
+    As such if the destructor has side-effects, they may be applied twice, once
+    for the destruction of each object. Depending on the ABI, the destructor
+    of the source object may be called at the end of full-expression, or deferred
+    until control returns to the caller.
     We can see that the destruction time of the source object would be
-    *implementation-defined*. It could be acceptable if it didn't trigger
-    side-effects. The problem is that we can expect side-effects from the
-    destructor of the source object, and we don't want those side-effects
-    to be applied at different times depending on the implementation.
+    *implementation-defined* (as of today). Remember that we might have side-effects from the
+    destructor, so the moment those side-effects will be applied will also
+    be *implementation-defined*.
 - If `reloc` calls the move constructor:
     all the resources owned by the source object are *transferred* to the target
     object. As such if the destructor has side-effects, we expect them to be
@@ -948,14 +952,40 @@ side-effects.
     object is destroyed, be it at its natural end of scope, or at the end of the
     `reloc` expression.
 
-As a consequence, given the existing ABIs constraints, we do not see any benefit
-in enforcing the destruction of the source object at the end of the reloc expression
-where we could. For simplicity, we state that in a `reloc` expression,
-the source object is destroyed:
+As of today, the lifetime of function parameters is already *implementation-defined*.
+As such, code that relies on the timing of a destructor side-effects of a
+function parameter is already *implementation-defined*.
+We don't feel we will worsen the
+situation with `reloc`, even with copy-only source objects.
+We prefer to keep this behavior implementation-defined, same as
+today, except that the source object may also be destructed early, at the end
+of the full-expression evaluation that contained `reloc`.
 
-- either at the moment the relocation constructor is called ;
-- or if the relocation constructor is not called, at the moment it would have
-    been destructed had it been not passed to `reloc`.
+In conclusion, we establish the following rules:
+
+- **Rule:** If the source object passed to `reloc` is not a function parameter, and
+    the source object has not been relocated by its relocation constructor, then
+    its lifetime ends (i.e. its destructor is called) at the end of the
+    full-expression evaluation containing `reloc`.
+- **Rule:** If the source object passed to `reloc` is a function parameter, and
+    the source object has not been relocated by its relocation constructor, then
+    its destructor may be called at the end of the full-expression
+    containing `reloc`, upon function exit, or at the caller site at the end of the
+    full-expression evaluation. Which it is is *implementation-defined*.
+
+One might argue that we may exacerbate this *implementation-defined* destruction
+behavior with `reloc`, as we allow for more code to be executed between
+the end of the full-expression which contained `reloc`, and when control returns to the caller
+site. However please keep in mind that:
+
+- this only concerns copy-only value parameters, whose destructor have a side-effect, and
+    are passed to `reloc` ;
+- any arbitrary amount of code could still be executed today upon function exit,
+    at the end of the full-expression evaluation that made the function call,
+    at caller-site. Indeed, all function parameters need to be destructed,
+    and their destruction order remains *implementation-defined* as of today,
+    leaving the door open for any arbitrary code from a destructor,
+    to be executed before the destructor of our source object.
 
 ### Illegal uses of reloc ### {#reloc-illegal-uses}
 
@@ -1042,49 +1072,52 @@ void g() {
 `reloc` expressions can be discarded: `reloc obj;` (note the semi-colon).
 We expect this statement to have the same effect as ` { auto _ = reloc obj; } `.
 A temporary is constructed from the source object and is then destructed at scope
-exit (that is right-away). We will
-discuss here the effects of such expressions.
+exit (that is right-away). The source object is destructed right-away,
+or at later stage if it's a function parameter (*implementation-defined*).
+We will discuss here the effects of such expressions.
 
 Materializing a temporary whose only goal is to be
 destroyed is suboptimal.
 We might be tempted to optimize away the temporary
 materialization, and only call the destructor of the source object.
-We need to distinguish the following scenarios:
 
-1. *The source object has an eligible relocation or move constructor*: In this case,
-    if a temporary is move-or-relocation-constructed, then all the owned
+This optimization is authorized (whether it is performed is *implementation-defined*).
+If the optimization does not happen, then
+the temporary must be materialized and destroyed at the end of full-expression
+evaluation. The lifetime of the source object follows
+[the established rules](#reloc-src-obj-lifetime).
+
+Note that, if the temporary is materialized and that the source object:
+
+1. *has an eligible relocation or move constructor*: In this case,
+    all the owned
     resources of the source object will be *transferred* to the temporary. For this
-    reason, we assume that *destroying the temporary will have the same effects
-    as destroying the source object directly*. In particular if the temporary is
-    move-constructed, then we expect the destructor of
-    the source object (now in a moved-from state) to have *no side-effects*.
-2. *The source object only has an eligible copy constructor*: if a temporary is copy-constructed then
-    all owned resources of the source objects will be *copied* to the temporary.
-    We expect any side-effects triggered by the destructor to be applied *twice*,
-    once for the destruction of the temporary, and another time for the destruction
-    of the source object.
+    reason, we expect that destroying the temporary *will have the same effects
+    as destroying the source object directly*.
+2. *only has an eligible copy constructor*:
+    all the owned resources of the source object will be *copied* to the temporary.
+    This is very likely a useless operation.
 3. Other cases need not to be considered, as the `reloc` expression requires the
     source object to declare one of the three constructors.
 
-It's only when the source object has an eligible relocation or move constructor,
-that implementations are allowed to elide the temporary constructor and directly
-call the destructor of the source object.
-
-NOTE: If the source object only declares a copy constructor, then implementations
-are encouraged to emit a warning on discarded reloc statements, as if reloc
-had the `[[nodiscard]]` attribute.
+NOTE: If the source object is a copy-only function parameter, then implementations
+are encouraged to emit a warning on discarded reloc statements, as if `reloc`
+had the `[[nodiscard]]` attribute. This is because the intent of this statement
+is likely to trigger the destruction of the source object (or to trigger the
+effect of the destructor, if a move-constructed temporary is materialized and
+destroyed). But whether this statement indeed calls a destructor early
+(or has any side-effect) for copy-only function parameters is
+*implementation-defined*.
 
 To summarize, it means that `reloc obj;` has the following behavior:
 
-- If `obj` is copy-only, then a temporary is copy-constructed, and destructed,
-    possibly emitting a warning.
 - Otherwise, if `obj` is an *owned parameter* or a function-local variable then:
     - The temporary is likely elided, effectively only calling the
         destructor of `obj`.
     - Otherwise a temporary is initialized from the
         source object, and then destructed.
 - Otherwise (`obj` is an *unowned parameter*):
-    - A temporary is move-constructed and then destructed.
+    - A temporary is move-or-copy-constructed and then destructed.
     - The source object destruction is deferred until the function returns.
 
 For instance this gives:
@@ -1125,34 +1158,25 @@ void do_something_03(std::mutex& m)
     bar();
     /* guard destructor is called only if it wasn't passed to reloc. */
 }
+// assuming non_null does not have a relocation constructor
 void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
 {
     if (!some_test())
     {
-        reloc copyOnlyObj; /* well-formed but useless, same effect as
-            `auto{copyOnlyObj};` except that copyOnlyObj cannot be reused. */
+        reloc copyOnlyObj; /* well-formed but its effects are implementation
+            defined. Will emit a warning. */
         return;
     }
     bar();
-    /* copyOnlyObj destructor is called here or at caller-site. */
 }
 ```
 
-NOTE: There is a discrepancy on when source objects are destructed if `reloc`
-selects the move constructor. If the temporary is not discarded, then the
-source object must be destroyed normally. If discarded, then the source
-object may be destroyed immediately to avoid unnecessary temporary creation
-(*implementation-defined*).
-We do not expect any issue with this difference. But it could be solved by
-stating that, when the move constructor
-is selected by `reloc`, whether the source object is destroyed immediately or
-at scope exit is *implementation-defined*.
-
 ## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
 
-In addition to the reloc operator, this paper introduces the *dot-reloc* (`.reloc`)
+In addition to the `reloc` operator, this paper introduces the *dot-reloc* (`.reloc`)
 operator, which can be used to decompose a source object and relocate its
-subobjects.
+subobjects. The *dot-reloc* is necessary to have user-defined relocation
+constructors and relocation assignment operators.
 
 ### dot-reloc syntax ### {#dot-reloc-syntax}
 
@@ -1184,13 +1208,105 @@ When a complete object enters its decomposed state:
         object.
     - all virtual bases, if any, keep the same address ; all pointers to such
         virtual bases remain unchanged.
-- The lifetime of the source object ends, its destructor is never called.
-    All its non-static subobjects, now considered as complete objects, will still
+- *The lifetime of the source object ends*, its destructor is never called.
+    All its non-static subobjects, now considered as complete objects, are still
+    alive and will
     follow normal destruction rules: they will be destructed at the end of their scope
     unless they have been relocated before.
 
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
+
+### Decomposition of value parameters ### {#decompose-value-param}
+
+As we have seen, decomposition ends the lifetime of the source object.
+The reader may be concerned that this may break existing ABIs, should the source
+object be a function parameter passed by value.
+However we do not foresee any extra breakage other than what the support for
+`reloc` does.
+
+Indeed, if the source object is an *unowned parameter*, and that
+the function body uses the *dot-reloc* operator on it, then the function
+may silently relocate its argument to some local storage before the function
+body is entered. *This is a putative
+workaround and is not part of the proposal.*
+
+For instance:
+
+<table>
+<tr><th>User-written code</th><th>Putative equivalent generated code</th></tr>
+<tr>
+<td valign="top"><pre lang="cpp">
+void foo01(T obj)
+{
+    // ...
+    sink(obj.reloc m);
+    // ...
+}
+</pre></td>
+<td valign="top"><pre lang="cpp">
+void foo01(T __obj)
+{
+    auto obj{reloc __obj};
+    // ...
+    sink(obj.reloc)
+    // ...
+}
+</pre></td>
+</tr>
+<tr>
+<td valign="top"><pre lang="cpp">
+void foo02(T obj)
+{
+    // ...
+    if (test())
+    {
+        sink(obj.reloc m);
+    }
+    // ...
+}
+</pre></td>
+<td valign="top"><pre lang="cpp">
+void foo02(T __obj)
+{
+    auto obj{reloc __obj};
+    // ...
+    if (test())
+    {
+        sink(obj.reloc m);
+    }
+    // ...
+}
+</pre></td>
+</tr>
+<tr>
+<td valign="top"><pre lang="cpp">
+void foo03(T obj) try
+{
+    // ...
+    if (test())
+    {
+        sink(obj.reloc m);
+    }
+    // ...
+}
+catch (...) {}
+</pre></td>
+<td valign="top"><pre lang="cpp">
+void foo03(T __obj) try
+{
+    auto obj{reloc __obj};
+    // ...
+    if (test())
+    {
+        sink(obj.reloc m);
+    }
+    // ...
+}
+catch (...) {}
+</pre></td>
+</tr>
+</table>
 
 ### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
 
@@ -1263,15 +1379,21 @@ bases, and we still want them to point to valid data
 
 ### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
 
-Once an object is in a decomposed state, it can no longer be accessed normally.
-The only well-formed expressions are:
+When an object is in a decomposed state, then object itself has reached its
+end of life and can no longer be used. However all its non-relocated subobjects,
+now considered as individual complete objects, are alive and they can be accessed
+normally. We do not propose any special syntax to access such objects.
+Instead we rely on explicit cast to base class, or to direct member access with
+the dot operator.
 
-- any access to static data members or static functions via the dot operator ;
+The only well-formed expressions on a decomposed object are:
+
+- any access to static data members or static functions via the *dot operator* ;
 - an explicit cast of the decomposed object to one of its base class, if that
     class has not been already relocated ;
-- any access to a direct data member via the dot operator, if that data member
+- any access to a direct data member via the *dot operator*, if that data member
     has not been relocated ;
-- any access to an data member or member function inherited from a base class,
+- any access to a data member or member function inherited from a base class,
     if that base class has not been relocated ;
 - any well-formed *dot-reloc* operation on a source subobject which has not
     been relocated.
@@ -1322,6 +1444,25 @@ This code may be invoked in the following situations:
 auto val1 = getT().getVal();
 auto val2 = (reloc src).getVal();
 ```
+
+#### Putative release #### {#decomposed-object-putative-release}
+
+```c++
+template <class T, class Deleter>
+class unique_ptr
+{
+// ...
+public:
+    T* release(this T self)
+    {
+        return self.reloc _ptr;
+    }
+};
+```
+
+Because of the decomposition, the destructor of `self` is not called. This code
+safely releases the guarded pointer. Note that this function `release` function
+is not part of the proposal.
 
 #### Ill-formedness showcase #### {#decomposed-object-ex-ill-formed}
 
@@ -1990,7 +2131,7 @@ This is because there is no existing syntax to do so:
 - `T(T src) : _a{auto{src._a}}` calls the copy constructor to make a temporary,
     which then gets passed to the relocation constructor.
 - `T(T src) : _a{reloc src._a}` is not permitted as we cannot call `reloc` on a subobject.
-- `T(T src) : _a{std::destroy_relocate(&src._a)}` is erroneous as well, as `src._a`
+- `T(T src) : _a{std::reloc_and_uninitialize(&src._a)}` is erroneous as well, as `src._a`
     will be destructed at the end of the member initializer list.
 
 This is the reason why omitted subobjects are automatically constructed by relocation,
@@ -2156,7 +2297,7 @@ return slot, such that both `#1` and `#2` are a no-op. It is only `#3` that is
 likely to invoke the relocation constructor.
 
 The relocation constructor may also be invoked by library functions, for example
-[[#std-destroy_relocate]].
+[[#std-reloc_and_uninitialize]].
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
@@ -2375,7 +2516,7 @@ on the source object, it is still possible to perform the "union trick":
 T& operator=(T src)
 {
     union { T tmp } = { .tmp = reloc src; };
-    /* do some stuff with tmp (like calling std::destroy_relocate),
+    /* do some stuff with tmp (like calling std::reloc_and_uninitialize),
      * knowing its destructor will not be called by the language */
     return *this;
 }
@@ -3029,29 +3170,35 @@ Note: this overload would be unnecessary if the [[#future-capture-value]]
 direction were to be adopted; instead the existing signature should be
 altered to use the `decltype(auto)` placeholder.
 
-### std::destroy_relocate ### {#std-destroy_relocate}
+### std::reloc_and_uninitialize and std::reloc_and_reclaim ### {#std-reloc_and_uninitialize}
 
-We propose to add the following function in the `std` namespace in the `memory`
+We propose to add the following functions in the `std` namespace in the `memory`
 header to perform relocation through a pointer:
 
 ```c++
 template <class T>
-T destroy_relocate(T* src);
+T reloc_and_uninitialize(T* src);
+template <class T>
+T reloc_and_reclaim(T* src);
 ```
 
-The function constructs a new object by calling either the relocation constructor,
-the move constructor,
-or the copy constructor (in that order of preference),
-using `*src` as parameter while ignoring its cv-qualifiers:
+Both functions construct a new object by calling either the relocation constructor,
+the move constructor or the copy constructor,
+using `*src` as parameter while ignoring its cv-qualifiers, and return it.
+They also ensure the end-of-life of the source object: if the move or copy
+constructor is called then the destructor of `*src` is called afterwards.
 
-- If the move or copy constructor is called then the destructor of `*src` is called
-    afterwards ;
-- Likewise, if the move or copy constructor throws, then the destructor of `*src`
-    is called as well.
+`reloc_and_uninitialize` leaves the memory that was occupied by `src` in an
+uninitialized state.  If any exception is thrown,
+then `reloc_and_uninitialize` is guaranteed to leave the source object in a
+destructed state.
 
-The function returns the constructed value. Its definition is implementation-defined.
+`reloc_and_reclaim` reclaims the memory by calling the appropriate deallocation
+function (class defined `delete` or global `delete`). If any exception is thrown,
+then `reloc_and_reclaim` is guaranteed to leave the source object in a destructed
+state and to have deallocated its memory.
 
-This function is intended to be used by library authors, to enable relocation
+`reloc_and_uninitialize` is intended to be used by library authors to enable relocation
 from a memory address. For instance, extracting a value out of an optional just
 becomes:
 
@@ -3059,24 +3206,37 @@ becomes:
 T optional<T>::extract()
 {
     _has_value = false;
-    return std::destroy_relocate(_value_addr());
+    return std::reloc_and_uninitialize(_value_addr());
     // _value_addr() being a private function returning the address of the owned value
 }
 ```
 
-This function is not intended to be used on local objects:
+Of course, this function is not intended to be used on local objects. Hopefully
+its name should prevent misuses.
 
 ```c++
 void foo()
 {
     const T val;
-    bar(std::destroy_relocate(&val)); /* BAD, val destructor is called at the
+    bar(std::reloc_and_uninitialize(&val)); /* BAD, val destructor is called at the
         end of its scope while it is already destructed!*/
 }
 ```
 
-This what motivates the name of the function. Although relocation is always a
-destructive operation, the name serves as a reminder to the developers.
+`reloc_and_reclaim` is intended to be used by end users and library vendors alike.
+
+```c++
+unique_ptr<pair<string, reloc_only_t>> makeStuff();
+
+reloc_only_t getRelocOnly()
+{
+    auto stuff = makeStuff();
+    auto [str, relocOnly] = std::reloc_and_reclaim(stuff.release());
+    return relocOnly;
+    // or the short version:
+    // return std::reloc_and_reclaim(makeStuff().release()).second;
+}
+```
 
 ### std::uninitialized_relocate ### {#std-uninitialized_relocate}
 
@@ -3116,10 +3276,10 @@ Returns:
 If the type to relocate is trivially relocatable and both iterator types are
 contiguous, then both functions can be implemented as single `memcpy` call over
 the entire source range.
-Otherwise relocation happens element-wise, as if by calling `std::destroy_relocate`
+Otherwise relocation happens element-wise, as if by calling `std::reloc_and_uninitialize`
 on each element.
 
-If an exception is thrown by `std::destroy_relocate`, then the destructor of all
+If an exception is thrown by `std::reloc_and_uninitialize`, then the destructor of all
 remaining elements in the source range is called, as well as the destructor of
 all constructed objects in the output iterator.
 
@@ -3272,10 +3432,10 @@ This is why we propose to add various "value-extracting" functions to existing
 containers, which erase an element and return it. Those functions are overloads
 over existing `pop*()` and `erase()` functions, but they take the `std::relocate_t`
 [tag type](#std-relocate) as first parameter. The return value will be constructed by
-relocation (likely thanks to `std::destroy_relocate`).
+relocation (likely thanks to `std::reloc_and_uninitialize`).
 
 All extracting functions will operate the same way. First, the return value is constructed
-as if by `std::destroy_relocate` from the container element. Second, the container
+as if by `std::reloc_and_uninitialize` from the container element. Second, the container
 adjusts its size and memory to effectively erase the contained element from
 its internal data structures.
 
@@ -3343,7 +3503,7 @@ template <class T, class Alloc>
 std::pair<T, iterator> vector<T, Alloc>::erase(std::relocate_t, const_iterator pos);
 
 // relocates items in [from, to[ into out,
-// as if by doing iteratively: *out++ = std::destroy_relocate(&*src++);
+// as if by doing iteratively: *out++ = std::reloc_and_uninitialize(&*src++);
 // items within range are removed from *this.
 template <class T, class Alloc>
 template <class OutputIterator>
