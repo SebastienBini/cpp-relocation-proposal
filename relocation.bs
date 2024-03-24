@@ -2302,12 +2302,10 @@ The relocation constructor may also be invoked by library functions, for example
 ### Virtual relocation constructor ### {#virtual-reloc-ctor}
 
 Unlike other constructors, the relocation constructor can be declared as `virtual`.
-User code cannot make a virtual call to the relocation constructor, only STL
-functions can (like [std::reloc_and_uninitialize and std::reloc_and_reclaim](#std-reloc_and_uninitialize)).
-In other words, how to make a virtual function call to the relocation constructor
-is implementation-defined.
+As we will see, the virtual relocation constructor serves the same purpose of the
+virtual destructor.
 
-The virtual relocation constructor is only usefull when relocating from dynamic
+The virtual relocation constructor is usefull when relocating from dynamic
 storage, to prevent leaky object-slicing. Consider the following scenario:
 
 ```c++
@@ -2323,6 +2321,34 @@ B sliced = std::reloc_and_reclaim(b);
 If `B`'s relocation constructor is not virtual, then only the `B` part of `*b` will
 be relocated, leaking the rest.
 
+User code cannot make a virtual call to the relocation constructor, only STL
+functions can (like [std::reloc_and_uninitialize and std::reloc_and_reclaim](#std-reloc_and_uninitialize)).
+In other words, how to make a virtual function call to the relocation constructor
+is implementation-defined.
+
+#### Declaration #### {#virtual-reloc-ctor-decl}
+
+A relocation constructor can be declared as virtual by adding the `virtual`
+keyword before the declaration. In derived classes, the relocation constructor
+signature must not change: the parameter type must still match the class-type:
+
+```c++
+struct B
+{
+    virtual B(B);
+};
+struct D : public B
+{
+    D(D) override;
+    // and not D(B)!
+};
+```
+
+If a class-type `T` derives from a class-type which declares a virtual relocation
+constructor, and that the class-type `T` has no user-declared relocation constructor,
+then the class-type `T` gets a public, defaulted implicitly-declared relocation
+constructor.
+
 #### Definition #### {#virtual-reloc-ctor-def}
 
 Let `T` be a class-type with an overridden relocation constructor.
@@ -2333,28 +2359,51 @@ Otherwise, the virtual relocation constructor must know
 (they may be passed as extra parameters):
 
 - the target type of the object to construct, which we will call `U`.
-    `U` is by construction a (maybe non-direct) base class of `T` ;
+    `U` is by construction, either `T` or a (maybe non-direct) base class of `T` ;
 - the address where it is to be constructed from the target, which we will call `u`.
 
-It then proceeds as follows:
+The relocation constructor `T(T src)` then proceeds recursively as follows:
 
-1.  Relocates the target object into a local object `t` of type `T`,
-    calling the non-virtual relocation constructor: `T t{reloc targetObj}`.
-2.  Recursively decomposes `t` to obtain the desired `U` base class.
-    If a virtual base is on the path to reach `U`, then the complete object
-    that owns the virtual base is not decomposed. Rather its virtual base
-    is moved out of its complete object using `std::move`, into a new local
-    object. Chained decomposition will continue from this object.
-3.  Ensures that the desired `U` base class is constructed at `u` (may require
-    an extra relocation operation).
+1.  If `U` is the same as `T`, then proceeds with the relocation constructor
+    as if non-virtual.
+2.  If `U` is a direct base of `T`:
 
-When the constructor leaves, all the non-relocated subobjects of `t` are destroyed
-normally.
+    1.  If `U` is a virtual base, then use move semantics to initialize `u`:
+        `new (u) U{static_cast<U&&>(src)};` and return.
+    2.  Otherwise, initialize `u` with *dot-reloc*: `new (u) U{src.reloc U};`
+        and return.
+    3.  When the constructor exits, all the subobjects of `src` are destroyed normally
+        (unless `U` if it was relocated).
+
+3.  Let `V` be the direct base of `T` which is on the inheritance path from `T` to `U`:
+
+    1. If `V` is a virtual base, then move-construct a local object `v`
+        (`V v{static_cast<V&&>(src)};`). Then makes a virtual relocation
+        constructor, passing `v` as source object, and forwarding the target type
+        `U` and its target address `u`. Return.
+    2. Otherwise, calls the virtual relocation constructor of `V`,
+        passing the base class `V` of `src` as the source object
+        (as if by `src.reloc V`), and forwarding the target type
+        `U` and its target address `u`. Return.
+    3.  When the constructor exits, all the subobjects of `src` are destroyed normally
+        (unless `V` if it was relocated).
+
+As you can see when the virtual relocation constructor completes,
+all the non-relocated subobjects of `src` are destroyed normally, and the target
+subobject is relocated at the desired location.
 
 NOTE: To detect how the relocation constructor is called,
 implementations may emit two relocation constructor definitions, one virtual
 and one non-virtual. User code can only call the non-virtual version, which
 ensures the virtual one is only called through virtual function call.
+
+#### Ill-fomed definition #### {#virtual-reloc-ctor-def-ill-formed}
+
+A virtual relocation constructor definition of a class-type `T` is ill-formed if:
+
+- any of the direct base of `T`, which declares (maybe implicitly) a virtual
+    relocation constructor, have a non-accessible relocation constructor ;
+- or if any of the subobject of `T` have an inaccessible destructor.
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
