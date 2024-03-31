@@ -1567,67 +1567,109 @@ auto b2 = src.reloc B2;
 
 ## Ill-formed reuse of relocated or decomposed objects ## {#ill-formed-reuse}
 
-`reloc obj` simulates an early end-of-scope of `obj`. It does so by forbidding
-any further mention of the name `obj` which would resolve into the relocated object.
+### Variable state tracking ### {#variable-state-tracking}
 
-If `obj` is a member of an anonymous union, then `reloc` does not prevent
-name reuse; all members of that union, including the one that was relocated,
-can be reused normally.
+The `reloc` and *dot-reloc* operators change the state of their operand, imposing
+restrictions of how the variable can be used in the next expressions.
 
-Pointers and references that pointed to `obj` become dangling,
-and we don't try to offer any protection against that. We only protect against
-reusing the variable that was passed to `reloc`.
+Let us formally introduce the new states a local variable can have:
 
-The program is ill-formed if `reloc obj` is used in an instruction and any of
-the following is true:
+- *alive* (**A**): this is the default state. As of today in C++, all variables are in this
+    state.
+- *relocated* (**R**): the variable was passed as operand to the `reloc` operator.
+- *decomposed* (**D**): the variable was passed as operand to the *dot-reloc* operator.
 
-- in at least one code path from after the instruction that contained `reloc obj` up
-    to the natural end-of-scope of said `obj`, the name `obj` is reused and it
-    resolves to the object that was passed to `reloc` ;
-- within the instruction where `reloc obj` is used, the name `obj` is reused in
-    the same conditional branch.
+In addition, a variable may have any **OR**-combination of those three states:
 
-The code path evaluation performed to detect such ill-formed programs is
-based only on compile-time evaluations, disregarding run-time values:
+- *alive-or-relocated* (**A-R**): the variable may be *relocated* or *alive*. For instance
+    the variable will have this state at the end of an if statement,
+    if the variable was *relocated* in one path and *alive* in the other.
+- *alive-or-decomposed* (**A-D**): the variable may be *decomposed* or *alive*.
+- *relocated-or-decomposed* (**R-D**): the variable may be *relocated* or *decomposed*,
+    but not *alive*.
+- *alive-or-relocated-or-decomposed* (**A-R-D**): the variable may be *relocated*, *decomposed*,
+    or *alive*.
 
-- For any non-constexpr `if` block encountered in the code path, the true branch
-    must be considered as well as the else branch (if it exists).
-- If an `if constexpr` block is encountered, only the branch that evaluates to true
-    is considered.
-- Any `for` or `while` loop body is considered to be entered once if `reloc`
-    is used before the `for`/`while` block or in the init-statement of the `for`
-    loop.
-- If `reloc` is used within a loop body, a loop condition, or a for-loop
-    iteration expression, and that there exists a code path from the `reloc`
-    instruction up to the next iteration of the loop (i.e. no `return` statement,
-    no `break` statement that applies to that loop, or no `goto` statement that
-    jumps after that loop) then the loop is considered to happen one
-    more time for code-path evaluation.
+Those states are evaluated *at compile-time*, and their primary use is to verify
+the well-formedness of expressions.
+
+The state of a given variable (including function parameters) is evaluated as follows:
+
+- The variable starts in the *alive* state ;
+- The state of the variable is tracked from one expression to the next, following
+    the evaluation order ;
+- If two or more expressions have an unspecified evaluation order, then the
+    expression containing `reloc` is examined first (if any), followed by any
+    expression containing *dot-reloc* ;
+- If the *alive* variable is used as operand of a `reloc` expression, then
+    the variable transitions to the *relocated* state at the end of the expression ;
+- If a *non-relocated* variable is used as left operand of a *dot-reloc* expression,
+    then the variable transitions to the *decomposed* state at the end of the expression ;
+- If the code path forks (for instance because of an if statement), then all the
+    different code branches need to be examined. **Exception:** if it is known
+    at compile-time that some code branches will never be evaluated (for
+    instance because of an if constexpr statement), then the non-evaluated
+    branches must not be examined.
+- If two or more code paths rejoin, then the resulting state of the variable
+    is the **OR**-combination of the state it had in all the joined code branches.
+- On a code jump:
+
+    - if the code jumps before the variable declaration or after the variable
+        enclosing scope, then the state analysis for this code branch stops here.
+    - otherwise the state of the variable after the jump is the **OR**-combination
+        of the state it had before the jump, and the state it had before at the
+        destination code location. The state of the variable prior the jump is
+        memorized for this code jump.
+    - if a code jump needs to be taken an extra time, the state of the variable
+        is compared to the one previously memorized. If they are identical then
+        the state analysis for this code branch stops here. Otherwise the new
+        state prior the jump is updated and the jump re-examined.
+
+- This state analysis stops until code reaches the natural end of scope of a
+    variable.
+
+NOTE: We don't expect this analysis to be costly. It is only necessary in functions
+for the variables that are relocated or decomposed. If none of the two are used,
+then this analysis is not needed.
+
+### Ill-formed expressions ### {#reloc-dot-reloc-ill-formed}
+
+Thanks to this compile-time state analysis, new ill-formed conditions arise:
+
+- If the variable potentially has the *relocated* state (i.e. the variable is
+    **R**, **A-R**, **R-D** or **A-R-D**), then any expression using the
+    variable is ill-formed.
+- If the variable potentially has the *decomposed* state, then the ill-formed
+    conditions described [here](#ill-formed-decomposed-object-uses) apply in any
+    expression using the variable.
+
+### Ill-formed showcase ### {#reloc-dot-reloc-ill-formed-showcase}
 
 Consider the following examples:
+
 ```cpp
-void relocate_case_01()
+void reloc_showcase_01()
 {
 	const T var = getT();
 	bar(reloc var);
-	if (sometest(var)) // ERROR
-		do_smth(var); // ERROR
+	if (sometest(var)) // ill-formed: state of 'var' is relocated
+		do_smth(var); // ill-formed: state of 'var' is relocated
 }
 ```
 `var` cannot be reused after the `reloc` call.
 ```cpp
-void relocate_case_02()
+void reloc_showcase_02()
 {
 	const T var;
 	{
 		const T var;
 		bar(reloc var);
-		do_smth(var); // ERROR, var cannot be reused after the `reloc` call
+		do_smth(var); // ill-formed: state of 'var' is relocated
 		{
 			const T var;
 			do_smth(var); // OK
 		}
-		do_smth(var); // ERROR, var cannot be reused after the `reloc` call
+		do_smth(var); // ill-formed: state of 'var' is relocated
 	}
 	do_smth(var); // OK
 }
@@ -1635,19 +1677,20 @@ void relocate_case_02()
 The second and forth calls to `do_smth(var)` are allowed because the name `var`
 does not resolve to the relocated object.
 ```cpp
-void relocate_case_03()
+void reloc_showcase_03()
 {
-	const T var = getT();
-	if (sometest(var))
-		bar(reloc var);
+	const T var = getT(); // var state is alive
+	if (sometest(var)) // var state is alive
+		bar(reloc var); // var state is relocated
 	else
-		do_smth(var); // OK
+		do_smth(var); // var state is alive
+	// var state is alive-or-relocated
 }
 ```
 `do_smth(var)` is allowed because the `else` branch is not affected by the
 `reloc` call of the `if` branch.
 ```cpp
-void relocate_case_04()
+void reloc_showcase_04()
 {
 	const T var = getT();
 	if (sometest(var))
@@ -1655,23 +1698,24 @@ void relocate_case_04()
 	else
 		do_smth(var); // OK
 	// [...]
-	do_smth_else(var); // ERROR
+	do_smth_else(var); // ill-formed: state of 'var' is A-R
 }
 ```
 `do_smth_else(var)` is an error because `var` is mentioned after the `reloc` call.
 ```cpp
-void relocate_case_05()
+void reloc_showcase_05()
 {
 	const T var = getT();
 	if (sometest(var))
 		bar(reloc var);
 	else
 		do_smth(reloc var); // OK
+    // var state is relocated
 }
 ```
 Both `reloc` are okay as they happen on different code paths.
 ```cpp
-void relocate_case_06()
+void reloc_showcase_06()
 {
 	const T var = getT();
 	bool relocated = false;
@@ -1684,31 +1728,32 @@ void relocate_case_06()
 		do_smth(var); // OK
 	// [...]
 	if (!relocated)
-		do_smth_else(var); // ERROR
+		do_smth_else(var); // ill-formed: state of 'var' is A-R
 }
 ```
-It does not matter that the developer attempted to do the safe thing with the
+It does not matter that the developer tried to do the safe thing with the
 `relocated` variable. The code-path analysis disregards run-time values and
 explores all branches of an `if` block (unless in the case of `if constexpr`).
 ```cpp
-void relocate_case_07()
+void reloc_showcase_07()
 {
-	constexpr bool relocated = my_can_relocate<T>{}();
+	constexpr bool relocated_v = my_can_relocate<T>{}();
 	const T var = getT();
-	if constexpr(relocated)
+	if constexpr(relocated_v)
 	{
 		bar(reloc var);
 	}
 	else
 		do_smth(var); // OK
 	// [...]
-	if constexpr(!relocated)
+    // var state is A-R if relocated_v is true, A otherwise
+	if constexpr(!relocated_v)
 		do_smth_else(var); // OK
 }
 ```
 The above example is safe because of the use of `if constexpr`.
 ```cpp
-void relocate_case_08()
+void reloc_showcase_08()
 {
 	const T var = getT();
 	if (sometest(var))
@@ -1722,51 +1767,55 @@ void relocate_case_08()
 This example is also safe thanks to the `return` statement right after the
 `reloc` instruction, which prevents from running `do_smth(var);`.
 ```cpp
-void relocate_case_09()
+void reloc_showcase_09()
 {
 	const T var = getT();
 	for (int i = 0; i != 10; ++i)
-		do_smth(reloc var); // ERROR
+		do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
 }
 ```
-This is ill-formed as each iteration reuses `var` which is declared before the loop body.
-Even if `i` were compared against `1` or even `0` (for respectively one iteration,
-or no iteration) then the program would still be ill-formed.
-Run-time values (like `i`) are disregarded in the code-path analysis that comes
-with `reloc`. The analysis will report that there is an optional code jump,
-after the `do_smth` call (and `reloc var`), which jumps to before the `reloc var`
-call and after the initialization of `var`. Although the jump is optional
-(depends on `i`, whose value is disregarded for this analysis) it may still
-happen and thus such code is ill-formed.
+This is ill-formed as each iteration reuses `var` which is declared before
+the loop body.
+
+In the code path analysis:
+
+1.  At the first loop iteration, the variable gains the *relocated* state.
+2.  The loop increment is examined, and it does not change the state of `var`.
+3.  The loop condition is examined, and it does not change the state of `var`.
+4.  The code jump is examined for the first time, memorizing the state of `var`
+    at that moment (*relocated*).
+5.  The new state of `var` is now **A-R**.
+6.  `do_smth(reloc var)` is examined, and `reloc var` is ill-formed as `var`
+    is not in the *alive* state.
+
 ```cpp
-void relocate_case_10()
+void reloc_showcase_10()
 {
 	const T var = getT();
 	for (int i = 0; i != 10; ++i)
 	{
 		if (i == 9)
-			do_smth(reloc var); // ERROR
+			do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
 		else
-			do_smth(var); // ERROR
+			do_smth(var); // ill-formed: state of 'var' is A-R (on second iteration)
 	}
 }
 ```
-This is ill-formed for the same reason as above. The code-path analysis will
-report that any iteration of the for-loop may take any branch of the if statement
-and potentially reuse a relocated variable.
+This is ill-formed for the same reason as above.
 ```cpp
-void relocate_case_11()
+void reloc_showcase_11()
 {
 	const T var = getT();
 	for (int i = 0; i != 10; ++i)
 	{
 		if (i == 9) {
-			do_smth(reloc var); // OK
+			do_smth(reloc var); // OK, var state is relocated
 			break;
 		}
 		else
-			do_smth(var); // OK
+			do_smth(var); // OK, var state is alive
 	}
+	// var state is A-R
 }
 ```
 Adding the break statement right after the `reloc` call makes the code snippet well-formed.
@@ -1774,7 +1823,7 @@ Indeed the `break` statement forces the loop exit, which implies that the
 conditional jump at the end of loop (that may start the next iteration) is no
 longer part of the code path that follows the `reloc` instruction.
 ```cpp
-void relocate_case_12()
+void reloc_showcase_12()
 {
 	for (int i = 0; i != 10; ++i)
 	{
@@ -1787,30 +1836,30 @@ void relocate_case_12()
 iteration inspected by the code path analysis will see that `var` is a new object
 that shadows that of the previous iteration.
 ```cpp
-void relocate_case_13()
+void reloc_showcase_13()
 {
 	const T var = getT();
 from:
-	if (sometest(var)) // ERROR
+	if (sometest(var)) // ill-formed: var state is A-R after the jump
 	{
-		do_smth(var); // ERROR
+		do_smth(var); // ill-formed: var state is A-R after the jump
 	}
 	else
 	{
-		do_smth(reloc var);
+		do_smth(reloc var); // ill-formed: var state is A-R after the jump
 	}
 	goto from;
 }
 ```
 Because of the `goto` instruction, `var` may be reused after `reloc var`.
 ```cpp
-void relocate_case_14()
+void reloc_showcase_14()
 {
 	const T var = getT();
 from:
-	if (sometest(var)) // OK
+	if (sometest(var)) // var state is alive
 	{
-		do_smth(var); // OK
+		do_smth(var); // var state is alive
 		goto from;
 	}
 	else
@@ -1821,7 +1870,7 @@ from:
 ```
 In this scenario `goto` is placed in a way that does not trigger the reuse of relocated `var`.
 ```cpp
-void relocate_case_15()
+void reloc_showcase_15()
 {
 	union { T x; U y; };
 	x = getT();
@@ -1842,39 +1891,36 @@ void relocate_case_15()
 ```
 `reloc` does not prevent reusing the names of anonymous union members.
 
-### Conditional relocation ### {#conditional-reloc}
+### Conditional destruction ### {#conditional-reloc}
 
-It may happen that the `reloc` is invoked in the some code branches and not in
-others:
+The variable state analysis described [here](#variable-state-tracking)
+must be used to know what kind of cleanup is necessary at scope exit
+(i.e. if the end of scope is reached or an exception is emitted).
 
+When this happens, if the variable is in any of **A-R**, **A-D**, **R-D** or
+**A-R-D** state, and that its type is not trivial, then
+implementations must track *at runtime* the actual state of the variable
+(**A**, **R** or **D**)
+and process its destruction accordingly. How this runtime tracking is done is
+*implementation-defined*, although it will probably take the form of extra flags
+in the function stack.
+
+For instance:
 ```c++
 void foo()
 {
     T obj = /* ... */;
     if (some_test())
-        bar(reloc obj);
+        bar(reloc obj); // obj state is relocated
     else
-        handle_error();
-    live_on();
+        handle_error(); // obj state is alive
+    live_on(); // obj state is alive-or-relocated
 }
 ```
 
-This code is well-formed. `obj` is relocated in the `if` branch (left in a
-*destructed state*), and not in the
-`else` branch. When `obj` reaches its end of scope, the function needs to know
-whether `obj` is in a *destructed state* in order to elide its destructor call.
-
-This requires extra tracking, which will probably take the form of extra flags
-in the function stack. Given a source object, this tracking is only necessary
-if all the following conditions are met:
-
-- the source object is not an *unowned parameter* ;
-- the source object is not trivial (its destructor is not a no-op) ;
-- in conditional branches, `reloc` is used in at least one branch and not used
-    in at least one branch as well (taking into account the potentially empty
-    `else` branch).
-
-We prefer to leave the details of this tracking implementation-defined.
+After the call to `live_on()`, or should `live_on` throw, `obj` destructor
+is only called if `reloc obj` was not evaluated. Implementations may simply turn on
+a flag right before the evaluation of the `reloc` expression.
 
 Concerns have been expressed that extra flags would violate the "don't pay for
 what you don't use" principle. We acknowledge this concern, but feel that the
