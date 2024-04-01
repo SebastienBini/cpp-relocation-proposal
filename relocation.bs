@@ -861,8 +861,9 @@ this another way, although the effect will likely be the same.
 provides an eligible move constructor, then the relocation constructor (if any)
 may be discarded during overload resolution. Whether the relocation constructor
 is discarded is *implementation-defined*.
-(By eligible, we mean that the constructor is declared, not deleted,
-and its constraints verified).
+
+Note: *eligible* is defined in
+<a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
 
 As consequences of that rule, we get the following:
 
@@ -1001,6 +1002,8 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-reloc">structured relocation declaration</a>) ;
 - the source object is a lambda capture from a [non-decomposing lambda](#decomposing-lambda) ;
+- the source object is the first parameter of the relocation constructor
+    (only applicable in a [user-provided relocation constructor](#reloc-ctor-delegate)) ;
 
 In particular, the `reloc` statement is well-formed if the source object is a
 member of a function-local anonymous union.
@@ -1939,7 +1942,9 @@ NOTE: to rewrite: the relocation constructor acts as a destructor for the source
 object. In particular all the subobjects of the source object will be destructed
 by their destructor at function exit, unless they have been relocated.
 
-We introduce the relocation constructor. As relocation happens from prvalues,
+Now that we have introduced the `reloc` and *dot-reloc* operators, we
+introduce the relocation constructor, which is built upon those new concepts.
+As relocation happens from prvalues,
 the constructor takes a prvalue as parameter: `T(T)`.
 
 This signature was picked as it completes the C++ tripartite value system.
@@ -1976,16 +1981,20 @@ Note: it does not matter that the ABI for the relocation constructor parameter
 differs from that for a prvalue parameter in normal functions, since it is not
 possible to take the address of a constructor.
 
-The role of the relocation constructor is to construct a new instance by destructively
-stealing the resources from the source object. Unlike the move
+### The relocation constructor is a second destructor ### {#reloc-ctor-is-2nd-dtor}
+
+The role of the relocation constructor is to construct a new instance by *destructively
+stealing* the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
-valid state. In fact the lifetime of the source object was ended immediately prior
-to entering the relocation constructor, and thus the source object must simply be
-considered as uninitialized memory after
-the relocation constructor terminates. We also say that the source object
-is left in a *destructed state*. This means that the destructor of the source
-object must no longer be called (and will not be called, assuming the `reloc`
-operator was used).
+valid state.
+
+The relocation constructor **is a second destructor** of the class-type
+with regards to the source object. Indeed, the lifetime of the source object
+was ended immediately prior to entering the relocation constructor, and thus
+the source object is considered as destructed thereafter.
+
+In particular, the original destructor of the class-type must not be called
+on the source object if it has been already passed to the relocation constructor.
 
 ### Declaration ### {#reloc-ctor-declaration}
 
@@ -2056,12 +2065,24 @@ Note: *eligible* is defined in
 Scalar types, trivially relocatable class types, and arrays and cv-qualified versions
 thereof are *trivially relocatable*.
 
-Advisement: we also tighten the definition of "trivial class" (and thus "trivial") to
+Advisement: We also tighten the definition of "trivial class" (and thus "trivial") to
 require that the class in question be trivially relocatable as well as trivially
 copyable. This is to ensure that if the user wants code to be called on relocation,
 the library does not bypass said code by, say, using `memmove`.
 
 ### Definition ### {#reloc-ctor-definition}
+
+#### Destruction of the source object #### {#reloc-ctor-dtor-def}
+
+As mentioned above, the relocation constructor **is a second destructor** of
+the class-type. It shares similarities with the destructor with regards
+to the source object:
+
+- When the constructor body exits, all the subobjects of the
+    source object, **unless relocated**, will be destructed in reverse
+    declaration order.
+- If the constructor exits because of an exception, this destruction sequence
+    is triggered by stack unwinding.
 
 #### Default definition #### {#reloc-ctor-default-definition}
 
@@ -2070,54 +2091,25 @@ on `T`'s type traits.
 
 If `T` is trivially relocatable then the relocation constructor
 effectively (ignoring padding) performs
-a memcpy over its entire memory layout.
+a `memcpy` over its entire memory layout.
 
-Otherwise in the nominal case, the constructor implementation performs
-memberwise relocations.
+Otherwise in the nominal case, the constructor implementation tries to perform
+memberwise relocations. In the relocation constructor `T(T src)`,
+for each subobject `s` (of type `S`) of `T`, in declaration order:
 
-In the relocation constructor `T(T src)`, for each subobject `s` (of type `S`)
-of `T`, in declaration order:
-
-- if `S` has an accessible relocation constructor, then `this->s` is constructed
-    by calling the relocation constructor, passing `src.s` as source object.
-    `src.s` is then left in a *destructed state*. Note that if `S` is trivially
-    relocatable then the relocation constructor call may be optiomized into a
-    memcpy: `memcpy(&this->s, &src.s, sizeof(S))` ;
-- otherwise if `S` has an accessible move constructor and destructor, then
-    `this->s` is constructed by calling the move constructor, ignoring `src.s`'s
-    cv-qualifiers. This operation is called *synthesized
-    relocation*. `src.s` is **not** in a *destructed state* ;
-
-When all target subobjects have been constructed, the destructors all of
-source subobjects are called, in reversed declaration order, omitting those
-that are already in a *destructed state*.
+- if `S` is a virtual base, then `S` is move-or-copy-constructed as if by:
+    `S{static_cast<S&&>(src)}` ;
+- otherwise we construct `s` (or `S`) by calling its own relocation, move or copy
+    constructor, as if by: `s{src.reloc s}` (or `S{src.reloc S}`);
 
 #### User-provided definition #### {#reloc-ctor-user-definition}
 
-Users can provide their own definition of the relocation constructor.
-Special rules apply to the relocation constructor's member initialization list:
-subobjects that have no user-provided initialization will be constructed by
-relocation or synthesized relocation, instead of being default-constructed.
+Although the default definition should cover almost all cases, users can provide
+their own definition of the relocation constructor. Doing so is relatively
+straightforward thanks to the *dot-reloc* operator.
 
-In other terms, subobjects that are omitted in the member initializer list are
-not constructed using their default constructor, but instead are constructed
-using relocation from the matching source subobject. That relocation is performed
-either by the relocation constructor or by synthesized relocation, using the rules
-described in the default relocation constructor implementation. If synthesized
-relocation happened for a subobject, then the source subobject is not in a
-*destructed state* yet.
-
-Before the relocation constructor body is entered, the destructors of all the
-source subobjects are called in reversed declaration order, omitting those
-that are in a *destructed state*.
-In particular a source subobject
-is not in a *destructed state* if the target subobject has a user-provided
-initialization in the member initialization list, hence the destructor of such
-subobject is always called before the constructor body is entered.
-
-At the end of the member initialization list, the whole source object is left
-in a *destructed state*. Using the source object in the constructor body leads
-to an undefined behavior.
+The only reason we have found to write a custom relocation constructor is to adjust some
+self-referencing pointers.
 
 Consider the following examples:
 
@@ -2126,28 +2118,38 @@ struct T
 {
     std::string _a, _b, _c;
 
+    // Dummy example to explain all the steps of the relocation constructor.
     T(T src) :
-        _a{std::move(src._a)}, _b{} {} /*
+        _a{std::move(src._a)}, _c{src.reloc _c} {} /*
         1. T::_a is constructed using the move constructor.
         2. T::_b is default constructed.
-        3. T::_c is constructed using std::string's relocation constructor, from src._c.
-        4. src._b and src._a are destructed (in that order) before the constructor body is entered.
+        3. T::_c is constructed using std::string's relocation
+           constructor, from src._c.
+        4. src._b and src._a are destructed (in that order)
+           when the constructor body exits.
     */
 };
 
 struct U
 {
-    std::string _a, _b;
+    std::string _a;
+
+    ~U() {}
+
+    // Second dummy example.
     U(U src) {} /*
-        U relocation constructor behaves like the default definition, although it
-        counts as user-provided.
+        1. U::_a is default-constructed.
+        2. Although src is not explicitly decomposed, and that
+           src has a user-provided destructor,
+           src destructor is not called, only src._a is.
     */
 };
 
+// Motivating example
 class List
 {
 public:
-    List(List src) /* _sentinel is memcpied from src._sentinel */
+    List(List src) : _sentinel{src.reloc _sentinel}
     {
         /* fixup references */
         _sentinel._prev->_next = &_sentinel;
@@ -2159,92 +2161,41 @@ private:
 };
 ```
 
-Alternatively, if the user calls a delegating constructor in place of a member
-initializer list, then the destructor of the source object is called right after
-the delegating constructor call completes.
+#### Delegating relocation constructor #### {#reloc-ctor-delegate}
 
-This further means that the source object is fully destructed by the time the
-relocation constructor body is entered. Any operation on it may result in
-undefined behavior. However the source object name can still be accessed for
-debugging purposes (like printing its address somewhere).
-Compilers can still emit warnings when undefined uses of the source object
-are done in the constructor body.
+We do not support writing a delegating relocation constructor. Doing would raise
+several problems that are difficult to solve:
 
-It is not possible for users to explicitly call the relocation constructor on subobjects.
-This is because there is no existing syntax to do so:
+- `T(T src, [...])` with non-defaulted extra parameters after `src` is a valid
+    syntax today and considering this as a putative relocation constructor may
+    break existing code ;
+- When relocation constructor delegates to another relocation constructor,
+    the source object needs to be relocated in the parameter slot of the
+    delegating relocation constructor, causing infinite regress ;
+- It's the relocation constructor responsibility to properly destruct
+    non-relocated subobjects of the source object.
+    This rule would need to be clarified if a delegating relocation constructor
+    is called somehow or else we will have double destruction.
 
-- `T(T src) : _a{src._a}` calls the copy constructor.
-- `T(T src) : _a{auto{src._a}}` calls the copy constructor to make a temporary,
-    which then gets passed to the relocation constructor.
-- `T(T src) : _a{reloc src._a}` is not permitted as we cannot call `reloc` on a subobject.
-- `T(T src) : _a{std::reloc_and_uninitialize(&src._a)}` is erroneous as well, as `src._a`
-    will be destructed at the end of the member initializer list.
+For all those reasons, using `reloc` on the source object of the relocation
+constructor is considered ill-formed, as specified [here](#reloc-illegal-uses).
+This may be relaxed later if the above issues are solved.
 
-This is the reason why omitted subobjects are automatically constructed by relocation,
-and not using their default constructor. If users want to default-construct some subobject,
-then they can write it explicitly: `T(T src) : _a{} {}` (in which case the source subobject
-is destroyed at the end of the initializer list).
+NOTE: We do not consider this as a blocking issue.
+[Additional default parameters](#reloc-ctor-additional-params)
+are supported with the relocation constructor. And the relocation constructor
+may still delegate to another non-relocating constructor:
 
-It is for safety reasons that the relocation constructor ensures that
-the source object is entirely destroyed by the time the constructor's body is reached.
-Had it been otherwise, then it would have been the responsibility of the users to destroy
-the subobjects that did not get relocated. This would likely lead to programming errors,
-especially when we consider synthesized relocation.
+```c++
+struct T
+{
+    T(T&&, Helper);
+    T(T src) : T{std::move(src), Helper{}} {} /*
+        all subobjects of src are destroyed upon exit */
 
-#### Exception handling #### {#reloc-ctor-exceptions}
-
-The relocation constructor is able to handle exceptions. If an exception leaks
-through the relocation constructor then it guarantees that the *target* is not
-constructed and the *source* object is destroyed.
-
-**This is in general undesirable, which is why the relocation constructor is
-`noexcept` if at all possible.**
-
-As we have seen above, the relocation constructor acts in three stages:
-(a) target subobjects construction,
-(b) destruction in reversed declaration order on any source subobject
-that is not in a *destructed state* (because of synthesized relocation or
-user-provided initialization), (c) the function body.
-
-**Stage A: target subobjects construction**
-
-If an exception leaks through in stage (a) then:
-
-1. in reversed declaration order, call the destructor of all initialized subobjects.
-2. in reversed declaration order, call the destructor of the source subobjects
-    that are not in a *destructed state*:
-    - all subobjects whose corresponding target subobject *didn't* get initialized ;
-    - all subobjects whose corresponding target subobject *did* get initialized,
-        but through synthesized relocation or user-provided initialization ;
-    - if the initialization that threw did not happen through a relocation
-        constructor call,
-        then the matching subobject. (If the initialization happened by
-        relocation then we know that the source subobject is in a
-        *destructed state*.)
-
-We call the destructor on the target subobjects first as they were
-constructed more recently.
-
-**Stage B: source subobjects destruction**
-
-If an exception leaks through in stage (b) then:
-
-- All target subobjects are destroyed in reversed declaration order.
-- All the remaining destructors of the source subobjects are called in reversed
-    declaration order.
-
-**Stage C: constructor body**
-
-If an exception leaks through in stage (c) then all target subobjects are
-destroyed in reversed declaration order, like it is the case for any constructor.
-
-**Delegating constructor case**
-
-If an exception leaks through the delegating constructor then the source object
-is destructor is called and the exception is propagated.
-
-Note that the target object needs not to be destroyed as the delegating
-constructor already took care of that.
+    // [...]
+};
+```
 
 #### Additional parameters #### {#reloc-ctor-additional-params}
 
@@ -2270,6 +2221,8 @@ public:
 
     T(T src, Helper storage = {}) noexcept(false)
         : _p(storage.p = std::exchange(src._p, nullptr))
+        , _q{src.reloc _q}
+        , _r{src.reloc _r}
     {
         storage.p = nullptr;
     }
@@ -2288,7 +2241,6 @@ private:
 In the above, `T::_p` does not manage its own lifetime,
 but the presence of `T::_r` means that `T::T(T)` is not noexcept so we need to
 release its resources if an exception is thrown during relocation.
-The presence of `T::_q` demonstrates that relocation cannot be synthesized.
 
 ### Invocation ### {#reloc-ctor-invoke}
 
@@ -2347,11 +2299,8 @@ The relocation constructor may also be invoked by library functions, for example
 
 ### Virtual relocation constructor ### {#virtual-reloc-ctor}
 
-Unlike other constructors, the relocation constructor can be declared as `virtual`.
-As we will see, the virtual relocation constructor serves the same purpose of the
-virtual destructor.
-
-The virtual relocation constructor is usefull when relocating from dynamic
+As the relocation constructor is a second destructor, it can be declared as `virtual`.
+The virtual relocation constructor is useful when relocating from dynamic
 storage, to prevent leaky object-slicing. Consider the following scenario:
 
 ```c++
@@ -2399,14 +2348,14 @@ constructor.
 
 Let `T` be a class-type with an overridden relocation constructor.
 If `T` relocation constructor has been called normally (not through a
-virtual function call), then it proceeds normally.
+virtual function call), then it proceeds normally as if non-virtual.
 
 Otherwise, the virtual relocation constructor must know
 (they may be passed as extra parameters):
 
 - the target type of the object to construct, which we will call `U`.
     `U` is by construction, either `T` or a (maybe non-direct) base class of `T` ;
-- the address where it is to be constructed from the target, which we will call `u`.
+- the address where it is to be constructed, which we will call `u`.
 
 The relocation constructor `T(T src)` then proceeds recursively as follows:
 
@@ -2424,8 +2373,8 @@ The relocation constructor `T(T src)` then proceeds recursively as follows:
 3.  Let `V` be the direct base of `T` which is on the inheritance path from `T` to `U`:
 
     1. If `V` is a virtual base, then move-construct a local object `v`
-        (`V v{static_cast<V&&>(src)};`). Then makes a virtual relocation
-        constructor, passing `v` as source object, and forwarding the target type
+        (`V v{static_cast<V&&>(src)};`). Then make a virtual relocation
+        constructor call, passing `v` as source object, and forwarding the target type
         `U` and its target address `u`. Return.
     2. Otherwise, calls the virtual relocation constructor of `V`,
         passing the base class `V` of `src` as the source object
