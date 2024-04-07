@@ -1183,7 +1183,9 @@ constructors and relocation assignment operators.
 
 ### dot-reloc syntax ### {#dot-reloc-syntax}
 
-The *dot-reloc* operator may be used in one of the following way (with `src`
+The *dot-reloc* operator is a binary operator. Its left operand is the source
+object to decompose, and its right operand is the subobject to relocate.
+It may be used in one of the following way (with `src`
 the source object of type `T`):
 
 - `src.reloc B`, `B` being a **direct, non-virtual** base class of `T` ;
@@ -1220,6 +1222,33 @@ When a complete object enters its decomposed state:
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
 
+#### Decomposition of a lambda closure type #### {#decompose-lambda}
+
+Lambda objects can be decomposed with the rules defined above. The subobjects
+of the closure type are all the lambda captures which are captured by copy.
+The decomposition can only happen from the lambda body and not from outside
+the lambda, as if its captures had private access.
+
+The following is well-formed:
+
+```c++
+non_null<unique_ptr<int>> ptr;
+auto const getPtr = [p = reloc ptr](this auto self)
+{
+    return self.reloc p;
+};
+auto ptr2 = (reloc getPtr)();
+```
+But this is ill-formed:
+```c++
+non_null<unique_ptr<int>> ptr;
+auto const getPtr = [p = reloc ptr](this auto self)
+{
+    return self.reloc p;
+};
+auto ptr2 = getPtr.reloc p; // ill-formed, no access privilege to the captures
+```
+
 ### Decomposition of value parameters ### {#decompose-value-param}
 
 As we have seen, decomposition ends the lifetime of the source object.
@@ -1252,7 +1281,7 @@ void foo01(T __obj)
 {
     auto obj{reloc __obj};
     // ...
-    sink(obj.reloc)
+    sink(obj.reloc m)
     // ...
 }
 </pre></td>
@@ -1316,8 +1345,9 @@ catch (...) {}
 An expression using the *dot-reloc* operator is ill-formed
 if any of the following conditions is met:
 
-- applying the `reloc` operator on the source object would be ill-formed.
+- applying the `reloc` operator on the left operand (i.e. the source object) would be ill-formed.
     See [illegal uses of reloc](#reloc-illegal-uses) ;
+- the left operand is ref-qualified ;
 - the incurred decomposition is ill-formed.
     See [below](#ill-formed-decomposition) ;
 - the relocation operation on the subobject is ill-formed.
@@ -1607,7 +1637,14 @@ The state of a given variable (including function parameters) is evaluated as fo
 - If the *alive* variable is used as operand of a `reloc` expression, then
     the variable transitions to the *relocated* state at the end of the expression ;
 - If a *non-relocated* variable is used as left operand of a *dot-reloc* expression,
-    then the variable transitions to the *decomposed* state at the end of the expression ;
+    then the variable transitions to the *decomposed* state at the end of the
+    expression, if not already decomposed.
+
+    When the variable enters its decomposed state, all its subobjects are now
+    tracked in the same way. They all start in the *alive* state, except for the
+    subobject that was in the right operand, which starts in the *relocated* state.
+    Note that the newly introduced objects may only have **A**, **R** or **A-R**
+    states ;
 - If the code path forks (for instance because of an if statement), then all the
     different code branches need to be examined. **Exception:** if it is known
     at compile-time that some code branches will never be evaluated (for
@@ -1646,7 +1683,7 @@ Thanks to this compile-time state analysis, new ill-formed conditions arise:
     conditions described [here](#ill-formed-decomposed-object-uses) apply in any
     expression using the variable.
 
-### Ill-formed showcase ### {#reloc-dot-reloc-ill-formed-showcase}
+### Ill-formedness showcase ### {#reloc-dot-reloc-ill-formed-showcase}
 
 Consider the following examples:
 
@@ -1893,6 +1930,68 @@ void reloc_showcase_15()
 }
 ```
 `reloc` does not prevent reusing the names of anonymous union members.
+```cpp
+void reloc_showcase_16()
+{
+	T x;
+	if (sometest(x))
+	{
+		do_smth(reloc x);
+	}
+	else
+	{
+		do_smth_else(x.reloc m); // well-formed
+	}
+	do_another_thing(x); // ill-formed: state is now R-D
+}
+```
+`do_another_thing(x)` is ill-formed as `x` is either relocated or decomposed.
+```cpp
+void reloc_showcase_17()
+{
+	T x;
+	if (sometest(x))
+	{
+		do_smth(x.reloc m); // x state is decomposed
+	}
+	else
+	{
+		do_smth_else(x); // x state is alive
+	}
+	do_another_thing(x); // ill-formed: x state is now A-D
+	do_another_thing(x.m); // ill-formed: x.m state is A-R
+	do_another_thing(x.m2); // well-formed
+}
+```
+```cpp
+void reloc_showcase_18()
+{
+	T x;
+	if (sometest(x))
+	{
+		do_smth(x.reloc m); // x state is decomposed, x.m is relocated
+		do_smth(x.m2); // x.m2 state is alive
+	}
+	else if (othertest(x))
+	{
+        if (anothertest(x))
+        {
+	        do_smth_else(reloc x); // x state is relocated
+        }
+        else
+        {
+		    do_smth(x.reloc m2); // x state is decomposed,  x.m2 is relocated
+		    do_smth(x.m); // x.m is alive
+        }
+	}
+    else
+    {
+        do_another_thing(x.m); // x is alive
+    }
+	// x state is A-R-D
+    // x.m and x.m2 states are A-R
+}
+```
 
 ### Conditional destruction ### {#conditional-reloc}
 
@@ -2688,7 +2787,7 @@ Specifically, we would amend [over.ics.rank]/3.2.3 to read:
 established for `reloc`. `x` and `y` are not complete objects but aliases to some anonymous
 object the language creates behind the scene.
 
-The proposal aims to provide support for relocate-only types. This support
+As this proposal aims to provide support for relocate-only types, this support
 would be partial, if not impractical, without allowing some form of
 relocation from a structured binding. This is motivated by:
 
@@ -2698,9 +2797,8 @@ relocation from a structured binding. This is motivated by:
     (returns relocated vector element and next valid iterator) as it is consistent
     with other vector APIs and complies with the
     [core guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rf-out).
-    Then, what can users do with the returned object as it lies in a pair, and
-    that it is forbidden to relocate a subobject? The return value
-    is unusable for relocate-only types, unless we provide some support for it.
+    Then, what can users do with the returned object as it lies in a pair?
+    *dot-reloc* could be used but structured binding is more convenient.
 - In our experience, most C++ developers believe that a structured binding is
     a complete, separate object, and not a name alias to some subobject. As such
     it would feel unnatural for them if they cannot relocate from a structured binding.
@@ -2725,7 +2823,7 @@ auto&& [a, b] = foobar(); // structured bindings will be used
 
 The structured relocation declaration further requires that the type of the
 expression that is used to initialize it
-supports [object decomposition](#structured-reloc-obj-decomposition).
+supports any of the [structured relocation protocol](#structured-reloc-obj-decomposition).
 If not, then the declaration is simply a structured bindings declaration and will
 follow structured bindings rules.
 
@@ -2734,10 +2832,10 @@ declared in the brackets `[]`. In other words, the new identifiers are not
 aliases like in structured bindings, but actual complete objects. As such, they
 can then be relocated like any other.
 
-### Object decomposition ### {#structured-reloc-obj-decomposition}
+### Structured relocation protocols ### {#structured-reloc-obj-decomposition}
 
 As there are three binding protocols for structured bindings, there are two
-"object decomposition" protocols for structured relocation. If none
+"structured relocation" protocols for structured relocation. If none
 of those two protocols matches, then the declaration is not a
 structured relocation declaration.
 
@@ -2764,12 +2862,11 @@ For this protocol to apply, all the following conditions must be satisfied:
 - the number of identifiers must equal the number of non-static data members ;
 - `S` may not have an anonymous union member ;
 - *specific to structured relocation:* every base class, between `S` and the base
-    class the data members are found in, does not have a user-defined destructor.
+    class the data members are found in, can be decomposed by *dot-reloc*.
 
-If this protocol applies, then the *i*-th identifier is constructed by
-relocation or synthesized relocation (move constructor ignoring cv-qualifiers,
-followed by destructor call) using the *i*-th data member of the source
-object.
+If this protocol applies, then the *i*-th identifier is constructed as if by
+`s.reloc i`, `s` being the base class holding all the data members and `i` the
+*i*-th identifier.
 
 #### get_all protocol #### {#structured-reloc-get_all}
 
@@ -2777,17 +2874,16 @@ The function `get_all(S)` is looked-up using ADL-lookup. If there is
 no match, then this protocol does not apply.
 
 If there is a match, then this function is called. The returned type is again
-tested against the two protocols. If *get_all* matches for the
-returned type, then we reapply it again, so on and so forth, until *get_all*
-doesn't match and only *data members* does.
+tested against the two protocols:
+- If *data members* protocol matches for the
+    returned type, then it is applied ;
+- If *get_all* matches for the returned type, then we reapply it again ;
+- If no protocol matches for the returned type, then the program is ill-formed.
 
 This follows the same recursive logic as `operator->()`.
-We recursively call `get_all` as long as the *get_all* protocol
-applies. When the recursion ends, we end up with a type which
-matches the *data member* protocol.
-
-The program is ill-formed if `T` matches the *get_all* protocol but
-the return type of `get_all(T)` matches none of the two protocols.
+We recursively call `get_all` as long as the *data members* protocol does not
+apply. When the recursion ends, we end up with a type which
+matches the *data member* protocol, or the program is otherwise ill-formed.
 
 ##### std::tuple and std::array are implementation-defined ##### {#structured-reloc-tuple}
 
@@ -2811,10 +2907,6 @@ This code works even if `T` is relocate-only.
 
 ##### Possible get_all implementations ##### {#structured-reloc-implem}
 
-Most of the time, `get_all` functions will want to be [[#decomposing-func]].
-A `get_all` implementation as a decomposing function is provided in the mentioned
-section.
-
 Thanks to `std::tuple`'s `get_all` we can easily write
 a `get_all` implementation for a custom class:
 
@@ -2828,7 +2920,7 @@ public:
     // Possible implementation:
     auto get_all(this MyType self)
     {
-        return std::tuple{std::relocate, std::move(self._name), self._flag,
+        return std::tuple{std::relocate, self.reloc _name, self._flag,
             !self._nodes.empty()};
     }
 
@@ -2858,278 +2950,6 @@ auto [name, flag, nodes] = reloc tp;
 `MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so
 it is called again. The second return type won't have a `get_all` defined, hence
 the recursion stops and the *data member* protocol is used.
-
-## Decomposing functions ## {#decomposing-func}
-
-We established that `reloc` can only be used to relocate function-local variables.
-Thus it follows that `reloc` cannot be used on data-members, which is impractical
-when we consider [[#structured-reloc]] and user-defined `get_all` functions:
-
-```c++
-struct MyClass
-{
-    gsl::non_null<std::unique_ptr<int>> _reloc_only;
-
-    auto get_all(this MyClass self)
-    {
-        return reloc self._reloc_only; // ill-formed, cannot relocate data members
-    }
-}
-```
-
-We introduce a special kind of member functions, called *decomposing functions*,
-to enable relocation of data-members. A decomposing function is a member
-function that takes an explicit `this`
-parameter by value and whose name is `reloc`:
-
-```c++
-auto get_all(this T reloc)
-```
-
-### Declaration ### {#decomposing-func-declare}
-
-The decomposing trait of a function may not appear in the declaration if the
-parameter name is omitted or different than `reloc`. The decomposing trait
-is an implementation detail and it does not need to appear in the declaration.
-
-A decomposing function does not bear any constraints on the number and types of
-parameters, except for its first parameter. The first parameter must be an
-explicit object parameter passed by value, possibly cv-qualified.
-
-Further constraints apply to the type of the first parameter. For instance
-the type must be same as, or derive from the class-type the function is a
-member of. However those constraints are only checked in the context of the definition,
-not the declaration. See also [here](#decomposing-func-ill-formedness-criteria)).
-
-### Definition ### {#decomposing-func-definition}
-
-A decomposing function decomposes its `this` parameter into subobjects before
-the function body is entered. It is subject to the following rules:
-
-- The explicit `this` object is inaccessible in the function body ;
-- Upon calling the function, before the function body is entered,
-    `*this` is decomposed into individual objects for each direct base and
-    non-static data member. This decomposition is a no-op: all subobjects of
-    `*this` merely get considered as distinct complete objects. In particular the
-    decomposition does not odr-use any of the copy, move or relocation constructor
-    of the subobjects.
-- Although the lifetime of `*this` ends once decomposed, its destructor is never
-    called ;
-- The direct base objects have no identifiers, and can only be accessed once
-    through the `reloc Base` expression (`Base` being a direct base of the
-    class-type). In particular, base data members are inaccessible in the
-    function body ;
-- The non-static data member objects are identified by their name in the class
-    declaration and can be accessed normally. If disambiguation is necessary then
-    the data members can be accessed with the syntax `T::datamember`, `T` being
-    the type of the `this` parameter, and `datamember` being the name of the
-    data member.
-
-Special considerations are taken for overlapping subobjects:
-
-- **EBO bases and** `[[no_unique_address]]` **members:** Obey the above rules.
-- **Anonymous unions:** Obey the above rules. `reloc` rules pertaining to function-local
-    anonymous union members apply.
-- **Virtual bases (and bases with virtual bases):** are unrelocatable. They cannot
-    be accessed by the `reloc Base` expression (ill-formed).
-
-Since subobjects have become complete objects, they can be relocated like any
-function-local variable; otherwise, their destructor is called on exit from function scope.
-
-#### Examples #### {#decomposing-func-examples}
-
-**A possible get_all implementation with a relocate-only type**
-```c++
-struct Addr
-{
-    gsl::non_null<std::unique_ptr<int>> _addr;
-
-    auto get_all(this Addr reloc) { return _addr; }
-};
-struct T : Addr
-{
-    std::vector<int> _data;
-
-    auto get_all(this T reloc)
-    {
-        auto const [addr] = reloc Addr;
-        return std::pair{reloc addr, reloc _data};
-    }
-};
-```
-
-**Curiously Recurring Template Pattern**
-```c++
-template <class Derived>
-struct ExtractAddr
-{
-    auto get_addr(this Derived reloc) { return Derived::_addr; }
-};
-struct ExtractAddr2
-{
-    template <class Derived>
-    auto get_addr(this Derived reloc) { return Derived::_addr; }
-};
-struct A : ExtractAddr<A>
-{
-    gsl::non_null<std::unique_ptr<int>> _addr;
-    // [...]
-};
-struct B : ExtractAddr2
-{
-    gsl::non_null<std::unique_ptr<int>> _addr;
-    // [...]
-};
-```
-
-Note that, in the above example, if we have a `DA` structure that inherits
-from `A` and a `DB` structure that inherits from `B`,
-then `DA{}.get_addr()` is well-formed while `DB{}.get_addr()` is not.
-Indeed `_addr` is not a direct member of `DB` (type deduced in `ExtractAddr2::get_addr`)
-and hence is not directly accessible this way.
-
-**A possible implementation of a putative unique_ptr::release (not proposed)**
-```c++
-T* unique_ptr<T,D>::release(this unique_ptr reloc)
-{
-    /* the "owned" pointer is loose at this point because of the decomposition */
-    return _ptr;
-}
-```
-
-### Ill-formed definition ### {#ill-formed-decomposing-func}
-
-If not forbidden, there are several ways where decomposition functions can be
-misused and lead to problems. In this section we will see those cases and
-they will serve as motivation to the ill-formedness criteria.
-
-#### Aberrations #### {#decomposing-func-aberrations}
-
-As mentioned in [[P0847R6]], in the [pathological cases section](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html#pathological-cases),
-code like this is possible:
-
-```c++
-struct A
-{
-    template <class T>
-    auto foo(this T self);
-};
-
-auto func = &A::foo<std::unique_ptr<int>>;
-func(std::make_unique<int>(0));
-```
-
-This remains acceptable in the context of P0847R6, but may lead to dangerous code
-with decomposing functions. We don't want the following code to be valid:
-
-```c++
-struct Sink
-{
-    template <class T>
-    void sink(this T reloc) {} /* prevent dtor call,
-        although each subobject is destroyed individually */
-};
-
-auto func = &Sink::sink<std::unique_ptr<int>>;
-func(std::make_unique<int>(0)); // leak
-```
-
-We don't want users to decompose types that were never designed to support
-decomposition. Ideally, a decomposing function should be defined for the same
-source object type it is declared in (i.e. the explicit `this` parameter type should
-match the class-type which the function is a member of).
-However we feel this is too
-restrictive, especially when considering template code and the CRTP pattern.
-
-Hence we require the source object type to be the same as or to inherit from
-the class-type the decomposing function is a member of,
-or else the definition of the decomposing function is ill-formed.
-
-#### Accessibility #### {#decomposing-func-accessibility}
-
-Let's imagine for a moment that the source object has inaccessible subobjects
-from the context of the decomposing function.
-
-Upon entering the function, all subobjects are promoted to complete objects.
-As we don't want to break accessibility rules, we may forbid access to the objects
-that previously were inaccessible subobjects.
-
-However this is not necessary. If they are never accessed, then it means that
-their destructor will be called when the function exits. Calling the destructor
-requires them to be accessible in the first place.
-
-Hence, we further mandate that all subobjects of the source object be accessible
-from the context of the decomposing function.
-
-Note that this condition is fulfilled in the nominal case, where the decomposing
-function is merely a member function of the source object, and hence is granted
-access to all of its subobjects.
-
-#### ABI requirements #### {#decomposing-func-immovable}
-
-The decomposing trait does not appear in the function declaration, and as such
-a decomposing function does not have any specific ABI. In particular it shares
-the same ABI as any explicit `this` member function where the `this` paramater is
-passed by value.
-
-Some ABIs may not natively be compatible with decomposing functions, especially
-if the ABI specifies that the destruction of the source object happens at the
-call site and not in the decomposing function.
-
-To support such cases, we need to allow implementors to silently and transparently
-make a temporary copy of the source object, and pass that temporary copy
-to the decomposing function (see [[#decomposing-func-abi]]).
-
-This requires the source object to have at least one of the copy, move or
-relocation constructor.
-
-Note that, for regular functions, function parameters passed by value can only
-be passed to `reloc` if they provide at least one of the three constructors.
-This requirement follows the same spirit.
-
-#### Ill-formedness criteria #### {#decomposing-func-ill-formedness-criteria}
-
-Now that we have seen motivating cases, let us summarize the ill-formedness
-criteria for a decomposing function.
-Let a decomposing function be defined in a class-type `T`, which takes
-an explicit `this` parameter (the source object) of type `S`.
-The definition is ill-formed if:
-
-- the explicit `this` parameter is not passed by value and is named `reloc` ;
-- or the decomposing function is not a member function ;
-- or `S` has any inaccessible subobjects with regards to the decomposing
-    function ;
-- or `S` is not the same as `T`, and does not derive from `T` ;
-- or `S` has no accessible relocation constructor, no accessible move
-    constructor and no accessible copy constructor (none of the three).
-
-### Decomposing lambda ### {#decomposing-lambda}
-
-A decomposing lambda is a lambda function that takes an explicit `this`
-parameter by value and whose name is `reloc`.
-
-As for decomposing functions, a decomposing lambda is ill-formed if:
-
-- the type of the `this` parameter is not passed by value ;
-- or the parameter type is not the same as, or does not derive from
-    the type of the lambda (see [[#decomposing-func-aberrations]]) ;
-- or the parameter type has no relocation, move and copy constructors
-    (none of the three).
-
-A decomposing lambda acts as a decomposing function: when called, before the
-lambda body is entered, all the lambda captures are considered as distinct
-complete objects. As such, the lambda captures can be relocated.
-
-```c++
-void foo(reloc_only_t);
-
-reloc_only_t var;
-auto func = [v = reloc var](this auto reloc)
-{
-    foo(reloc v);
-};
-(reloc func)(); // well-formed
-```
 
 ## ABI changes ## {#abi}
 
