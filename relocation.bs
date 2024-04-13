@@ -169,10 +169,10 @@ decouples the possibilities to declare constant variables (even when they have
 a complex initialization routine), were they not hindered down
 by `std::move`.
 
-Consider the two code snippets:
+Consider the following code snippets:
 
 <table>
-<tr><th>Before</th><th>Constified + relocation</th></tr>
+<tr><th>Before</th><th>Constified + relocation (IIFE)</th></tr>
 <tr>
 <td valign="top">
 ```c++
@@ -190,7 +190,8 @@ void bar()
   c.processData();
   c.finalize();
 
-  foo(std::move(a), std::move(b), std::move(c));
+  foo(std::move(a), std::move(b),
+    std::move(c));
 }
 ```
 </td>
@@ -222,8 +223,37 @@ void bar()
 </td>
 </tr></table>
 
-The code on the right can benefit from constant variables. Their initialization code
-is strictly enclosed in the lambda expressions. By looking at the code, we
+<table>
+<tr><th>Constified + relocation (no IIFE)</th></tr>
+<tr>
+<td valign="top">
+```c++
+void foo(A a, B b, C c);
+
+void bar()
+{
+  A const a = getA();
+
+  B b_mut = getB(a);
+  b_mut.processData();
+  B const b = reloc b_mut;
+
+  C c_mut = getC(a.token(), b);
+  c_mut.fetchAll();
+  c_mut.processData();
+  c_mut.finalize();
+  C const c = reloc c_mut;
+
+  foo(reloc a, reloc b, reloc c);
+}
+```
+</td>
+</tr></table>
+
+The versions with `reloc` can benefit from constant variables.
+Their initialization code
+is strictly enclosed in the lambda expressions (IFFE version) or relocated
+to their const version once initialized (no IFFE). By looking at the code, we
 know that each variable will remain unmodified for the remaining of the function,
 even when used in the initialization of other variables.
 
@@ -470,7 +500,7 @@ simplifies reasoning and usability throughout the code.
 We didn't have this guarantee before because of the move-constructor: the `TcpConnection`
 class might not have held an open connection, had it been moved-from before.
 
-## safety against use-after-move ## {#motivation-never-empty}
+## Safety against use-after-move ## {#motivation-never-empty}
 
 Moved-from objects are in an unspecified yet valid state. This is true even
 in cases where there exists a natural empty state (like for `std::string` or
@@ -498,6 +528,86 @@ the language can only be improved if we reduce its reliance on external tools,
 especially for things as embarrassing as memory safety. Also, tools are fallible
 (they may not detect all issues, or may not at all be ran in some companies),
 which is less true for compilers (you cannot not run a compiler).
+
+## Early destruction ## {#motivation-early-dtor}
+
+We sometimes need to trigger the destruction of an object early, before
+its end of scope. It's often the case when a particular destructor side-effect
+is wanted early:
+
+```c++
+std::scope_exit guard{[this] { updateMetrics(); }};
+// [...]
+if (someTest())
+{
+    // need to call updateMetrics before modifyMetrics!
+    guard.release();
+    updateMetrics();
+    modifyMetrics();
+}
+// [...]
+```
+
+There is no clean mechanism to do this today in C++. One way is to wrap the
+type into an `std::optional` and reset the optional when the destruction of the
+contained object is wanted. Another is to move to a temporary.
+
+As it is done with this paper, relocation provides a clean solution for this
+case. [Discarded relocated objects are simply destructed](#discarded-reloc-expr), triggering the desired
+effect.
+
+<table>
+<tr><th>Before (optional)</th></tr>
+<tr>
+<td valign="top">
+```c++
+std::optional guard = std::scope_exit{[this] { updateMetrics(); }};
+// [...]
+if (someTest())
+{
+    // need to call updateMetrics before modifyMetrics!
+    guard.reset();
+    modifyMetrics();
+}
+// [...]
+```
+</td>
+</tr></table>
+<table>
+<tr><th>Before (Temporary)</th></tr>
+<td valign="top">
+```c++
+std::scope_exit guard{[this] { updateMetrics(); }};
+// [...]
+if (someTest())
+{
+    // need to call updateMetrics before modifyMetrics!
+    { auto _ = std::move(guard); }
+    modifyMetrics();
+}
+// [...]
+```
+</td>
+</tr></table>
+<table>
+<tr><th>After</th></tr>
+<td valign="top">
+```c++
+std::scope_exit guard{[this] { updateMetrics(); }};
+// [...]
+if (someTest())
+{
+    // need to call updateMetrics before modifyMetrics!
+    reloc guard;
+    modifyMetrics();
+}
+// [...]
+```
+</td>
+</tr></table>
+
+This is not what motivates this proposal, but comes as an added bonus, which
+we thought was worth mentioning.
 
 ## Teachability ## {#motivation-teachability}
 
@@ -1222,7 +1332,98 @@ When a complete object enters its decomposed state:
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
 
-#### Decomposition of a lambda closure type #### {#decompose-lambda}
+### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
+
+An expression using the *dot-reloc* operator is ill-formed
+if any of the following conditions is met:
+
+- applying the `reloc` operator on the left operand (i.e. the source object) would be ill-formed.
+    See [illegal uses of reloc](#reloc-illegal-uses) ;
+- the left operand is ref-qualified ;
+- the incurred decomposition is ill-formed.
+    See [below](#ill-formed-decomposition) ;
+- the relocation operation on the subobject is ill-formed.
+    See [below](#ill-formed-dot-reloc-relocation).
+
+#### Illegal decomposition #### {#ill-formed-decomposition}
+
+A decomposition is well-formed if and only if all of the following conditions
+are satisfied:
+
+- all subobjects of the source object are accessible. They all need to be since their
+    destructor will be called if not relocated ;
+- the source object type has no user-defined special member function,
+    **or else** the call-site has private access privilege to the source object type ;
+- at no point in time, the source object was a subobject of a now decomposed object.
+
+The first two requirements ensure that we can only relocate (a) compound types,
+where subobjects have no dependencies with one another (like an `std::pair`),
+or (b) types that we are in control of (because of the private access).
+
+The last requirement ensures that you cannot have nested decompositions.
+We don't believe nested decompositions are a necessity, and we fear it will
+only bring extra complexity to compiler vendors.
+Hence code like this is ill-formed:
+
+```c++
+T src;
+auto n = src.reloc m.reloc n; // ill-formed
+```
+
+Instead, it needs to be rewritten as:
+```c++
+T src;
+auto m = src.reloc m;
+auto n = m.reloc n;
+```
+
+#### Illegal relocation #### {#ill-formed-dot-reloc-relocation}
+
+The *dot-reloc* expression is ill-formed if any of the
+following conditions is met:
+
+- the right operand is not a **direct, non-virtual** base of the source object,
+    or is not a **direct, non-static** data member ;
+- the right operand is not ref-qualified and does not have an accessible relocation,
+    move, or copy constructor ;
+- the right operand type is not an abstract class.
+
+In particular, the relocation is well-formed if the right operand is a
+direct, non-static data member of an anonymous union.
+
+Note: Relocating a virtual base is ill-formed. Instead virtual bases must be moved
+thanks to their move constructor. The reason behind this is that, because of the
+decomposition, we may have some source subobjects that still point to virtual
+bases, and we still want them to point to valid data
+(albeit potentially in a moved-from state).
+
+### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
+
+When an object is in a decomposed state, then object itself has reached its
+end of life and can no longer be used. However all its non-relocated subobjects,
+now considered as individual complete objects, are alive and they can be accessed
+normally. We do not propose any special syntax to access such objects.
+Instead we rely on explicit cast to base class, or to direct member access with
+the dot operator.
+
+The only well-formed expressions on a decomposed object are:
+
+- any access to static data members or static functions via the *dot operator* ;
+- an explicit cast of the decomposed object to one of its base class, if that
+    base class has not been already relocated with *dot-reloc* ;
+- any access to a direct data member via the *dot operator*, if that data member
+    has not been relocated with *dot-reloc* ;
+- any access to a direct data member through a pointer to data-member which
+    can be evaluated at compile time, and whose corresponding data-member
+    has not been relocated with *dot-reloc* ;
+- any access to a data member or member function inherited from a base class,
+    if that base class has not been relocated with *dot-reloc* ;
+- any well-formed *dot-reloc* operation if the right operand has not
+    been relocated.
+
+
+
+### Decomposition of a lambda closure type ### {#decompose-lambda}
 
 Lambda objects can be decomposed with the rules defined above. The subobjects
 of the closure type are all the lambda captures which are captured by copy.
@@ -1247,6 +1448,112 @@ auto const getPtr = [p = reloc ptr](this auto self)
     return self.reloc p;
 };
 auto ptr2 = getPtr.reloc p; // ill-formed, no access privilege to the captures
+```
+
+### Decomposition from a pointer to data-member ### {#decompose-from-ptr-to-data-mbr}
+
+The *dot-reloc* operator can be used with a pointer to data-member as right operand,
+if and only if that pointer can be evaluated at compile time.
+If the pointer to data-member cannot be evaluated at compile-time, then the
+*dot-reloc* expression is ill-formed.
+
+The language will resolve at compile-time which data member the pointer refers
+to, and will proceed as if the name of the data-member was supplied as right
+operand of *dot-reloc*.
+
+For instance:
+```c++
+using reloc_only_t = gsl::non_null<std::unique_ptr<int>>;
+using reloc_pair_t = std::pair<reloc_only_t, reloc_only_t>;
+
+reloc_only_t get01(reloc_pair_t pair, reloc_only_t reloc_pair_t::*member)
+{
+    return pair.reloc *member; // ill-formed: pointer to data-member not known at compile-time
+}
+
+template <reloc_only_t reloc_pair_t::*member>
+reloc_only_t get02(reloc_pair_t pair)
+{
+    return pair.reloc *member; // well-formed
+}
+
+template <reloc_only_t reloc_pair_t::*member>
+reloc_pair_t getMemberAndSecond(reloc_pair_t pair)
+{
+    return reloc_pair_t{pair.reloc *member, pair.reloc second};
+    // getMemberAndSecond<&reloc_pair_t::first> is well-formed
+    // getMemberAndSecond<&reloc_pair_t::second> is ill-formed
+    // as pair.second would be relocated twice
+}
+```
+
+### Implicit decomposition of temporaries ### {#decompose-tmp}
+
+Temporary objects can be implicitly decomposed to allow relocations in the following
+scenarios (but non exclusively):
+
+```c++
+struct D : public B {};
+D getD();
+std::pair<std::string, std::string> getPair();
+
+B b = getD(); /* under conditions, equivalent to:
+    auto d = getD(); B b = d.reloc B; */
+std::string s = getPair().first; /* under conditions, equivalent to:
+    auto pair = getPair(); std::string s = pair.reloc first; */
+```
+
+Inspired by [class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)
+we add a clause to when a subobject of a temporary is to be converted to a
+prvalue (for instance because passed to the relocation constructor or relocation
+assignment operator).
+
+In all the expressions listed in [6](https://eel.is/c++draft/class.temporary#6.sentence-2),
+but [6.3](https://eel.is/c++draft/class.temporary#6.3) and
+[6.5](https://eel.is/c++draft/class.temporary#6.5) if the pointer
+cannot be evaluated at compile-time, the resulting expression can be converted
+to a prvalue with *implicit decomposition*.
+
+If the *implicit decomposition* is illegal, then it does not cause the program
+to be ill-formed, the expression simply cannot be converted
+to a prvalue (e.g. any relocation constructor or assignment operator are
+discarded from overload resolution).
+
+The *implicit decomposition* materializes the temporary complete object, and
+recursively uses the *dot-reloc* operator to extract the desired subobject.
+
+All the incurred *dot-reloc* expressions must be legal, as defined
+[here](#ill-formed-decomposition), or else the *implicit decomposition* is
+illegal. In particular, if any virtual base is to used as right operand of
+*dot-reloc*, then the *implicit decomposition* is illegal.
+
+For instance:
+```c++
+class T
+{
+public:
+    std::string _pub;
+private:
+    std::string _priv;
+};
+class U
+{
+public:
+    std::string _pub[5];
+};
+
+T getT();
+U getU();
+
+std::pair<std::string, std::string> getPair();
+
+
+std::string a = getT()._pub; /* implicit-decomposition is ill-formed
+    because T has a private member, move constructor is used */
+std::string b = getU()._pub[2]; /* implicit-decomposition is ill-formed
+    as dot-reloc cannot be used on array elements, move constructor is used */
+std::string c = getPair().second; /* implicit-decomposition is well-formed
+    std::string's relocation constructor is used */
 ```
 
 ### Decomposition of value parameters ### {#decompose-value-param}
@@ -1339,97 +1646,6 @@ catch (...) {}
 </pre></td>
 </tr>
 </table>
-
-### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
-
-An expression using the *dot-reloc* operator is ill-formed
-if any of the following conditions is met:
-
-- applying the `reloc` operator on the left operand (i.e. the source object) would be ill-formed.
-    See [illegal uses of reloc](#reloc-illegal-uses) ;
-- the left operand is ref-qualified ;
-- the incurred decomposition is ill-formed.
-    See [below](#ill-formed-decomposition) ;
-- the relocation operation on the subobject is ill-formed.
-    See [below](#ill-formed-dot-reloc-relocation).
-
-#### Illegal decomposition #### {#ill-formed-decomposition}
-
-A decomposition is well-formed if and only if all of the following conditions
-are satisfied:
-
-- all subobjects of the source object are accessible. They all need to be since their
-    destructor will be called if not relocated ;
-- the source object type has no user-defined special member function,
-    **or else** the call-site has private access privilege to the source object type ;
-- at no point in time, the source object was a subobject of a now decomposed object.
-
-The first two requirements ensure that we can only relocate (a) compound types,
-where subobjects have no dependencies with one another (like an `std::pair`),
-or (b) types that we are in control of (because of the private access).
-
-The last requirement ensures that you cannot have nested decompositions.
-We don't believe nested decompositions are a necessity, and we fear it will
-only bring extra complexity to compiler vendors.
-Hence code like this is ill-formed:
-
-```c++
-T src;
-auto n = src.reloc m.reloc n; // ill-formed
-```
-
-Instead, it needs to be rewritten as:
-```c++
-T src;
-auto m = src.reloc m;
-auto n = m.reloc n;
-```
-
-#### Illegal relocation #### {#ill-formed-dot-reloc-relocation}
-
-In a *dot-reloc* operation, we designate the decomposed object as the *source object*,
-and the relocated subobject as the *source subobject*. Even though once the
-decomposition has occurred, all subobjects are to be considered as complete objects,
-in what follows we will keep this nomenclature to avoid any confusion.
-
-The relocation expression of the source subobject is ill-formed if any of the
-following conditions is met:
-
-- the source subobject is not a **direct, non-virtual** base of the source object,
-    or is not a **direct, non-static** data member ;
-- the source subobject is not ref-qualified and does not have an accessible relocation,
-    move, or copy constructor ;
-- the source subobject type is not an abstract class.
-
-In particular, the relocation is well-formed if the source subobject is a
-direct, non-static data member of an anonymous union.
-
-Note: Relocating a virtual base is ill-formed. Instead virtual bases must be moved
-thanks to their move constructor. The reason behind this is that, because of the
-decomposition, we may have some source subobjects that still point to virtual
-bases, and we still want them to point to valid data
-(albeit potentially in a moved-from state).
-
-### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
-
-When an object is in a decomposed state, then object itself has reached its
-end of life and can no longer be used. However all its non-relocated subobjects,
-now considered as individual complete objects, are alive and they can be accessed
-normally. We do not propose any special syntax to access such objects.
-Instead we rely on explicit cast to base class, or to direct member access with
-the dot operator.
-
-The only well-formed expressions on a decomposed object are:
-
-- any access to static data members or static functions via the *dot operator* ;
-- an explicit cast of the decomposed object to one of its base class, if that
-    class has not been already relocated ;
-- any access to a direct data member via the *dot operator*, if that data member
-    has not been relocated ;
-- any access to a data member or member function inherited from a base class,
-    if that base class has not been relocated ;
-- any well-formed *dot-reloc* operation on a source subobject which has not
-    been relocated.
 
 ### Examples ### {#decomposed-object-examples}
 
@@ -2783,7 +2999,7 @@ Specifically, we would amend [over.ics.rank]/3.2.3 to read:
 
 ### Discussion ### {#structured-reloc-discussion}
 
-`auto [x, y] = foo(); sink(reloc y);`, if ill-formed given the rules we
+`auto [x, y] = foo(); sink(reloc y);` is ill-formed given the rules we
 established for `reloc`. `x` and `y` are not complete objects but aliases to some anonymous
 object the language creates behind the scene.
 
