@@ -1881,6 +1881,18 @@ The state of a given variable (including function parameters) is evaluated as fo
         the state analysis for this code branch stops here. Otherwise the new
         state prior the jump is updated and the jump re-examined.
 
+- In a try block, if the variable was declared before the block: at the end of
+    an expression that may throw,
+    a code jump to each catch block may be examined.
+    This code jump is necessary:
+
+    - if the state of the variable has changed prior to when the last jump
+        to the catch blocks was made.
+    - or if no last jumps to catch blocks were made, then compare the state
+        the variable had when entering the try block against the current state
+        and perform the jumps if they differ.
+
+    This will assess the well-formedness of the catch blocks.
 - This state analysis stops until code reaches the natural end of scope of a
     variable.
 
@@ -1899,7 +1911,7 @@ Thanks to this compile-time state analysis, new ill-formed conditions arise:
     conditions described [here](#ill-formed-decomposed-object-uses) apply in any
     expression using the variable.
 
-### Ill-formedness showcase ### {#reloc-dot-reloc-ill-formed-showcase}
+### Examples ### {#reloc-dot-reloc-ill-formed-showcase}
 
 Consider the following examples:
 
@@ -2190,22 +2202,65 @@ void reloc_showcase_18()
 	}
 	else if (othertest(x))
 	{
-        if (anothertest(x))
-        {
-	        do_smth_else(reloc x); // x state is relocated
-        }
-        else
-        {
-		    do_smth(x.reloc m2); // x state is decomposed,  x.m2 is relocated
-		    do_smth(x.m); // x.m is alive
-        }
+		if (anothertest(x))
+		{
+			do_smth_else(reloc x); // x state is relocated
+		}
+		else
+		{
+			do_smth(x.reloc m2); // x state is decomposed,  x.m2 is relocated
+			do_smth(x.m); // x.m is alive
+		}
 	}
-    else
-    {
-        do_another_thing(x.m); // x is alive
-    }
+	else
+	{
+		do_another_thing(x.m); // x is alive
+	}
 	// x state is A-R-D
-    // x.m and x.m2 states are A-R
+	// x.m and x.m2 states are A-R
+}
+```
+```cpp
+void reloc_showcase_19()
+{
+	// unspecified evaluation order
+	{ T x; auto y = reloc x + reloc x; } // ill-formed
+	{ T x; auto y = x + reloc x; } // ill-formed
+	{ T x; auto y = reloc x + x; } // ill-formed
+	{ T x; auto y = x[reloc x]; } // ill-formed
+
+	// sequenced evaluation order
+	{ T x; auto y = x, reloc x; } // well-formed
+	{ T x; auto y = reloc x, x; } // ill-formed
+	{ T x; auto y = x or reloc x; } // well-formed
+	{ T x; auto y = reloc x or x; } // ill-formed
+
+	// unspecified evaluation order with ternary
+	{ T x; foo(x, reloc x); } // ill-formed
+	{ T x; foo(x, test() ? reloc x : x); } // ill-formed
+	{ T x; foo(test() ? reloc x : x); } // well-formed
+}
+```
+
+If two or more expressions have an unspecified evaluation order,
+then to determine the well-formedness with regards to `reloc` and *dot-reloc*,
+we examine the expressions containing `reloc` first, *dot-reloc* second, and
+examine the rest.
+
+```cpp
+void reloc_showcase_20()
+{
+	T x = getT();
+	try
+	{
+		foo();
+		bar(reloc x);
+	}
+	catch (std::exception const& excp)
+	{
+		std::cerr << excp.what() << " for " << x << std::endl;
+		// ill-formed: x state is alive or relocated
+	}
 }
 ```
 
@@ -2250,12 +2305,6 @@ cases, the user can recover our preferred behavior in library, using `std::optio
 to add the tracking flags that in our proposal would be provided by the language.
 
 ## Relocation constructor ## {#reloc-ctor}
-
-NOTE: Speak of reloc ctor with virtual bases
-
-NOTE: to rewrite: the relocation constructor acts as a destructor for the source
-object. In particular all the subobjects of the source object will be destructed
-by their destructor at function exit, unless they have been relocated.
 
 Now that we have introduced the `reloc` and *dot-reloc* operators, we
 introduce the relocation constructor, which is built upon those new concepts.
