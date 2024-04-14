@@ -222,7 +222,7 @@ void bar()
 ```
 </td>
 </tr></table>
-
+<br/>
 <table>
 <tr><th>Constified + relocation (no IIFE)</th></tr>
 <tr>
@@ -500,7 +500,7 @@ simplifies reasoning and usability throughout the code.
 We didn't have this guarantee before because of the move-constructor: the `TcpConnection`
 class might not have held an open connection, had it been moved-from before.
 
-## Safety against use-after-move ## {#motivation-never-empty}
+## Safety against use-after-move ## {#motivation-safer-use-after-move}
 
 Moved-from objects are in an unspecified yet valid state. This is true even
 in cases where there exists a natural empty state (like for `std::string` or
@@ -889,7 +889,12 @@ If the source object is ref-qualified, then it performs the following cast:
 `static_cast<decltype(obj)>(obj)`.
 
 This makes `reloc` the one operator to use to perfectly forward objects, whether
-they are ref-qualified or not. It also prevents from use-after-move and use-after-relocation errors.
+they are ref-qualified or not.
+It also prevents from use-after-move and use-after-relocation errors.
+
+### reloc in constexpr ### {#reloc-constexpr}
+
+`reloc` can be used in constexpr functions and constant-evaluated expressions.
 
 ### reloc returns a temporary ### {#reloc-value-change}
 
@@ -1111,7 +1116,7 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     move, or copy constructor ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-reloc">structured relocation declaration</a>) ;
-- the source object is a lambda capture from a [non-decomposing lambda](#decomposing-lambda) ;
+- the source object is a lambda capture ;
 - the source object is the first parameter of the relocation constructor
     (only applicable in a [user-provided relocation constructor](#reloc-ctor-delegate)) ;
 
@@ -1287,7 +1292,7 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
 ## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
 
 In addition to the `reloc` operator, this paper introduces the *dot-reloc* (`.reloc`)
-operator, which can be used to decompose a source object and relocate its
+operator, which can be used to **decompose** a source object and relocate its
 subobjects. The *dot-reloc* is necessary to have user-defined relocation
 constructors and relocation assignment operators.
 
@@ -1420,8 +1425,6 @@ The only well-formed expressions on a decomposed object are:
     if that base class has not been relocated with *dot-reloc* ;
 - any well-formed *dot-reloc* operation if the right operand has not
     been relocated.
-
-
 
 ### Decomposition of a lambda closure type ### {#decompose-lambda}
 
@@ -1646,6 +1649,11 @@ catch (...) {}
 </pre></td>
 </tr>
 </table>
+
+### dot-reloc in constexpr ### {#dot-reloc-constexpr}
+
+As with `reloc`, *dot-reloc* can be used in constexpr functions and
+constant-evaluated expressions.
 
 ### Examples ### {#decomposed-object-examples}
 
@@ -1892,13 +1900,31 @@ The state of a given variable (including function parameters) is evaluated as fo
         the variable had when entering the try block against the current state
         and perform the jumps if they differ.
 
-    This will assess the well-formedness of the catch blocks.
 - This state analysis stops until code reaches the natural end of scope of a
     variable.
 
 NOTE: We don't expect this analysis to be costly. It is only necessary in functions
 for the variables that are relocated or decomposed. If none of the two are used,
 then this analysis is not needed.
+
+### reloc and dot-reloc in unevaluated operands ### {#unevaluated-operands}
+
+`reloc` or *dot-reloc* operators can be used in
+[unevaluated operands](https://eel.is/c++draft/expr.context#1).
+Such expressions are ignored by the code analysis described
+[above](#variable-state-tracking).
+If `reloc` or *dot-reloc* are used in an unevaluated operands,
+then (a) their operands are always considered to have the *alive* state,
+and (b) the state of their operands do not change.
+
+For instance:
+```c++
+void foo(T x)
+{
+    decltype(reloc x) y = reloc x; // well-formed
+    decltype(reloc x, x.reloc m) z = y.m; // well-formed
+}
+```
 
 ### Ill-formed expressions ### {#reloc-dot-reloc-ill-formed}
 
@@ -3002,9 +3028,6 @@ destructor on the source object.
 
 ## Overload resolution ## {#overload-resolution}
 
-Note: Compare [[P2665R0]] "Allow calling overload sets containing T,
-const T&".
-
 The current overload resolution rules are not suitable for relocation by prvalue.
 
 Indeed, consider the following scenario:
@@ -3043,6 +3066,52 @@ Specifically, we would amend [over.ics.rank]/3.2.3 to read:
         ...
         ```
         &#45; end example]
+
+
+### Comparison against P2665R0 ### {#overload-against-P2665R0}
+
+[[P2665R0]] "Allow calling overload sets containing T, const T&" also proposes
+to modify the overload resolution rules. It allows overload sets containing
+both `T` and `T const&` to exist, and which overload is selected is
+implementation-defined. The main motivation is for performance: "small" trivial
+types, such as built-in integral types, are best passed by value than by
+reference.
+
+In what we propose, overload sets with `T`, `T const&` and `T&&` can also exist.
+However, which is picked is (almost always) specified clearly by the standard
+(depending on the value category of the parameter) and
+not *implementation-defined*.
+
+The `reloc` or *dot-reloc* operators can be used to turn not-ref-qualified
+automatic variables
+into prvalues, which allows the user to force the right overload.
+
+The only situation where the overload being selected is implementation-defined,
+is when a function parameter passed by value is being relocated. Whether the
+relocation constructor is considered in the overload resolution is
+implementation-defined, as it depends on the ABI capabilities. Consider:
+
+```c++
+void foo(T);
+void foo(T&&);
+
+void bar(T value)
+{
+    foo(reloc value); /* always calls foo(T),
+        but how foo's parameter is constructed
+        is implementation-defined (reloc, move or copy ctor) */
+}
+```
+
+In this example, `bar` will always call the `foo(T)` overload, as `reloc value`
+is always a prvalue. However, the materialization of this prvalue is
+implementation-defined, the relocation constructor being potentially
+evicted.
+
+NOTE: This proposal and P2665R0 can co-exist. Even with the updated overload
+resolution rules that we propose, compilers may still be allowed to pick the
+prvalue overload if they analyse it may bring a performance boost, as P2665R0
+suggests.
 
 ## Structured relocation ## {#structured-reloc}
 
@@ -3185,7 +3254,7 @@ public:
     // Possible implementation:
     auto get_all(this MyType self)
     {
-        return std::tuple{std::relocate, self.reloc _name, self._flag,
+        return std::tuple{self.reloc _name, self._flag,
             !self._nodes.empty()};
     }
 
@@ -3197,13 +3266,9 @@ private:
 };
 ```
 
-The implementation relies on the proposed new constructor for `std::tuple`:
-```c+++
-template <class... Tp>
-tuple::tuple(std::relocate_t, Tp);
-```
-which captures the tuple elements by value and relocates them inside the tuple.
-`std::relocate_t` is just a tag type used for overload disambiguation.
+The implementation relies on a putative new constructor for `std::tuple`
+(not proposed) which captures the tuple elements by value category,
+which allows to relocated objects into a tuple.
 
 Then, in following snippet:
 ```c++
@@ -3301,35 +3366,13 @@ This may introduce an ABI break, detectable at link-time (aliased symbols missin
     remains visible nonetheless, then no ABI breaks are introduced ;
 - otherwise the ABI break happens, but remains detectable at link-time.
 
-### Decomposing functions ### {#decomposing-func-abi}
-
-A decomposing function has an extra ABI requirement: the function must be in
-charge of the lifetime of its explicit `this` parameter. How this requirement is
-satisfied is up to compiler vendors.
-
-Some tricks are possible for ABIs that do not natively meet this requirement.
-An attractive solution is to proceed as with the relocation assignment operator;
-when a decomposing function is defined, two functions are emitted:
-
-- an eliding one: this function takes the explicit `this` parameter as if by reference
-    and is in charge of its lifetime. Its body is the body of the decomposing
-    function provided by the user.
-- a non-eliding one:
-    - If the explicit `this` parameter is not an *unowned parameter*, then it simply calls
-        the eliding one, passing the `this` parameter object as if by reference.
-    - Otherwise it makes a temporary copy of the source object, and calls the
-        eliding one, passing the copy as if by reference. Upon function exit,
-        the destructor of the copy is not called as its lifetime already ended
-        when it was passed the eliding function.
-    - In all cases, it forwards as return value whatever the decomposing function
-        returns.
-
-The attentive reader will have noticed that a program with a decomposing function
-is ill-formed if the class-type does not provide a relocation, move or copy
-constructor. Hence, the non-eliding function is able to perform a copy if necessary
-without adding extra requirements on the class-type.
-
 # Proposed library changes # {#proposed-lib-changes}
+
+NOTE: Adding support for relocation in the STL is another major change.
+What we are proposing to add for the moment is the bare minimum to allow
+library writers to benefit from relocation. Support for relocation in the STL
+will be done in a separate proposal, depending on whether the work on this
+proposal is pursued.
 
 ## Memory header ## {#std-mem-header}
 
@@ -3347,7 +3390,7 @@ used in constant expression evaluations.
 
 Note: this overload would be unnecessary if the [[#future-capture-value]]
 direction were to be adopted; instead the existing signature should be
-altered to use the `decltype(auto)` placeholder.
+altered to use the `decltype(Args)...` placeholder.
 
 ### std::reloc_and_uninitialize and std::reloc_and_reclaim ### {#std-reloc_and_uninitialize}
 
@@ -3467,369 +3510,6 @@ If an exception is thrown by `std::reloc_and_uninitialize`, then the destructor 
 remaining elements in the source range is called, as well as the destructor of
 all constructed objects in the output iterator.
 
-## Utility header ## {#std-utility-header}
-
-### std::relocate ### {#std-relocate}
-
-We propose to add the following tag type in the `std` namespace in the `utility`
-header (mainly useful with templates):
-
-```cpp
-namespace std
-{
-// tag type to indicate that the parameters are passed by value
-struct relocate_t {};
-inline constexpr relocate_t relocate = {};
-}
-```
-
-Note: this facility would be unnecessary if the [[#future-capture-value]]
-direction were to be adopted; instead the existing signatures should be
-altered to use the `decltype(auto)` placeholder.
-
-## Bring relocate-only type support to the STL ## {#stl-relocate-only}
-
-### std::pair and std::tuple ### {#std-pair-tuple}
-
-We propose to add a default relocation constructor and a default relocation
-assignment operator to `std::pair` and `std::tuple`.
-
-We also porpose to add the following functions:
-
-```c++
-template <class T1, class T2>
-pair<T1, T2>::pair(std::relocate_t, T1, T2); // constructs by relocation
-
-template <class... Types>
-tuple<Types...>::tuple(std::relocate_t, Types...); // constructs by relocation
-
-template <class... Types>
-template <class U1, class U2>
-tuple<Types...>::tuple(std::pair<U1, U2>); // constructs by relocation
-```
-
-Note that we do not introduce extra template parameters for type arguments, as
-relocation can only happen from matching types.
-
-### std::optional ### {#std-optional}
-
-We propose to add the following functions to `std::optional`:
-
-```c++
-// relocation constructor
-template <class T>
-optional<T>::optional(optional);
-
-// relocation assignment operator
-template <class T>
-optional& optional<T>::operator=(optional);
-
-// Converting constructor
-template <class T>
-optional<T>::optional(T val);
-
-// Converting assignment
-template <class T>
-optional& optional<T>::operator=(T val);
-
-/**
- * \brief Extracts the contained value from the optional
- *
- * The returned value is relocated from the contained value.
- *
- * After this call the optional no longer contains any value.
- *
- * \throws std::bad_optional_access if the optional did not contain any value.
- */
-template <class T>
-T optional<T>::extract();
-```
-
-### std::variant ### {#std-variant}
-
-```c++
-// relocation constructor
-template <class... Types>
-variant<Types...>::variant(variant);
-
-// relocation assignment operator
-template <class... Types>
-variant& variant<Types...>::operator=(variant);
-
-// Converting constructor
-template <class... Types>
-template <class T>
-constexpr variant<Types...>::variant(T val);
-
-// Converting assignment
-template <class... Types>
-template <class T>
-variant& variant<Types...>::operator=(T);
-```
-
-### std::any ### {#std-any}
-
-```c++
-// relocation constructor
-any::any(any);
-
-// relocation assignment operator
-any& any::operator=(any);
-
-// Converting constructor
-template <class T>
-any::any(T);
-
-// Converting assignment
-template <class T>
-any& any::operator=(T);
-```
-
-## Containers ## {#lib-change-containers}
-
-All containers must provide a relocation constructor and a
-relocation assignment operator.
-
-Also, in order to fully support relocate-only types, containers should provide
-a way to insert and remove elements by relocation.
-
-### Insertion overloads ### {#lib-insertion-overloads}
-
-Existing APIs cannot fulfill this need. They all take the element
-to insert as a reference parameter, while relocation requires to pass elements
-by value.
-
-As such we suggest adding overloads to all insertion functions, where the
-element to insert is passed by value.
-
-### Extracting functions ### {#lib-extract-functions}
-
-The STL does not provide any function to erase an element
-from a container and return it as return value.
-
-Consider a container of relocate-only types. If an element of that container is to be
-"moved out" of it, it could only happen through relocation as it is
-the only operation supported by the type. Hence the relocated element must
-necessarily be simultaneously erased from the container as its lifetime ended.
-
-This is why we propose to add various "value-extracting" functions to existing
-containers, which erase an element and return it. Those functions are overloads
-over existing `pop*()` and `erase()` functions, but they take the `std::relocate_t`
-[tag type](#std-relocate) as first parameter. The return value will be constructed by
-relocation (likely thanks to `std::reloc_and_uninitialize`).
-
-All extracting functions will operate the same way. First, the return value is constructed
-as if by `std::reloc_and_uninitialize` from the container element. Second, the container
-adjusts its size and memory to effectively erase the contained element from
-its internal data structures.
-
-If an exception is emitted during the first step, then the container proceeds
-to erase its element nonetheless (as if in the second step) and then propagates
-the exception.
-If an exception is emitted during the second step
-(regardless of whether the second step was triggered normally of by an exception
-caught during the first step), then `std::terminate` is called.
-
-### relocate_out ### {#lib-relocate_out}
-
-We further propose to add a `relocate_out` function to some containers.
-`relocate_out` takes three iterators as parameters. The first two iterators
-belong to the container and define the range to relocate. The last parameter
-is an output iterator where the relocated elements will be constructed.
-This is similar the `erase` functions that take a range of elements, except that
-an extra output iterator is provided.
-It returns a pair of iterators, whose first iterator is the next valid iterator
-in the container (similar to what `erase` returns), and whose second iterator
-is the output iterator, past the last element copied (similar to what `std::copy`
-returns).
-
-`relocate_out` is proposed to improve support of relocate-only types. Without this,
-it would not be possible to move a range of relocate-only elements from one container to
-another, without writing complex and inefficient loops calling some value-extracting
-function at each iteration.
-
-Note that there is less need for a `relocate_in` function as the `std::insert_iterator`
-family will have an overload to enable relocation.
-
-`relocate_out` proceeds as follows:
-
-1. relocates the elements within range to the output iterator.
-    The elements within range inside the container are then in a *destructed state*.
-2. The destructed elements are removed from the container. How this is achieved
-    depends on the container. For instance `std::vector` may call
-    `std::uninitialized_relocate` to move the trailing part of the container
-    in the destructed range, and simply reduce its size.
-
-If an exception leaks through the first step, then the second step is run
-to erase from the container all the elements that are in a *destructed state*
-(i.e. those which got succesfully relocated plus the one responsible for the exception)
-, and the exception is propagated.
-If an exception is emitted during the second step
-(regardless of whether the second step was triggered normally of by an exception
-caught in the first step), then `std::terminate` is called.
-
-### std::vector ### {#std-vector}
-```cpp
-// pushes a value by relocation
-template <class T, class Alloc>
-constexpr void vector<T, Alloc>::push_back(T value);
-
-// inserts a value by relocation
-template <class T, class Alloc>
-iterator vector<T, Alloc>::insert(const_iterator pos, T value);
-
-// removes the last item from the vector and returns it
-template <class T, class Alloc>
-T vector<T, Alloc>::pop_back(std::relocate_t);
-
-// removes the item from the vector and returns it with the next valid iterator
-template <class T, class Alloc>
-std::pair<T, iterator> vector<T, Alloc>::erase(std::relocate_t, const_iterator pos);
-
-// relocates items in [from, to[ into out,
-// as if by doing iteratively: *out++ = std::reloc_and_uninitialize(&*src++);
-// items within range are removed from *this.
-template <class T, class Alloc>
-template <class OutputIterator>
-std::pair<iterator, OutputIterator> vector<T, Alloc>::relocate_out(
-	const_iterator from, const_iterator to, OutputIterator out);
-```
-
-### std::deque ### {#std-deque}
-```cpp
-// pushes a value by relocation
-template <class T, class Alloc>
-constexpr void deque<T, Alloc>::push_front(T value);
-template <class T, class Alloc>
-constexpr void deque<T, Alloc>::push_back(T value);
-
-// inserts a value by relocation
-template <class T, class Alloc>
-iterator deque<T, Alloc>::insert(const_iterator pos, T value);
-
-// removes the last item from the queue and returns it
-template <class T, class Alloc>
-T deque<T, Alloc>::pop_back(std::relocate_t);
-// removes the first item from the queue and returns it
-template <class T, class Alloc>
-T deque<T, Alloc>::pop_front(std::relocate_t);
-// removes the item from the queue and returns it with the next valid iterator
-template <class T, class Alloc>
-std::pair<T, iterator> deque<T, Alloc>::erase(std::relocate_t, const_iterator pos);
-
-// relocates items in [from, to[ into out.
-// items within range are removed from *this.
-template <class T, class Alloc>
-template <class OutputIterator>
-std::pair<iterator, OutputIterator> deque<T, Alloc>::relocate_out(
-	const_iterator from, const_iterator to, OutputIterator out);
-```
-
-### std::list ### {#std-list}
-```cpp
-// pushes a value by relocation
-template <class T, class Alloc>
-void list<T, Alloc>::push_front(T value);
-template <class T, class Alloc>
-void list<T, Alloc>::push_back(T value);
-
-// inserts a value by relocation
-template <class T, class Alloc>
-iterator list<T, Alloc>::insert(const_iterator pos, T value);
-
-// removes the last item from the list and returns it
-template <class T, class Alloc>
-T list<T, Alloc>::pop_back(std::relocate_t);
-// removes the first item from the list and returns it
-template <class T, class Alloc>
-T list<T, Alloc>::pop_front(std::relocate_t);
-// removes the item from the list and returns it with the next valid iterator
-template <class T, class Alloc>
-std::pair<T, iterator> list<T, Alloc>::erase(std::relocate_t, const_iterator pos);
-
-// relocates items in [from, to[ into out.
-// items within range are removed from *this.
-template <class T, class Alloc>
-template <class OutputIterator>
-std::pair<iterator, OutputIterator> list<T, Alloc>::relocate_out(
-	const_iterator from, const_iterator to, OutputIterator out);
-```
-
-### std::forward_list ### {#std-forward_list}
-```cpp
-// inserts a value by relocation
-template <class T, class Alloc>
-iterator forward_list<T, Alloc>::insert_after(const_iterator pos,
-	T value);
-template <class T, class Alloc>
-void forward_list<T, Alloc>::push_front(T value);
-
-// removes the first item from the list and returns it
-template <class T, class Alloc>
-T forward_list<T, Alloc>::pop_front(std::relocate_t);
-// removes the item after pos from the list and returns it with the iterator following pos
-template <class T, class Alloc>
-std::pair<T, iterator> forward_list<T, Alloc>::erase_after(std::relocate_t, const_iterator pos);
-
-// relocates items in ]from, to[ into out.
-// items within range are removed from *this.
-template <class T, class Alloc>
-template <class OutputIterator>
-OutputIterator forward_list<T, Alloc>::relocate_after(
-	const_iterator from, const_iterator to, OutputIterator out);
-```
-
-### set and map containers ### {#std-set-and-map}
-```cpp
-// std::set, std::multiset, std::map, std::multimap,
-// std::flat_set, std::flat_multiset, std::flat_map, std::flat_multimap,
-// std::unordered_set, std::unordered_multiset, std::unordered_map
-// and std::unordered_multimap, all aliased as 'map':
-std::pair<iterator, bool> map::insert(value_type value);
-iterator map::insert(const_iterator hint, value_type value);
-
-// extract the stored value from the container
-std::pair<value_type, iterator> map::erase(std::relocate_t, const_iterator position);
-```
-
-### queues ### {#std-queues}
-```cpp
-// for std::stack, std::queue, std::priority_queue, aliased queue below:
-void queue::push(T value);
-
-// removes the next element from the queue, calling the appropriate pop function
-// on the underlying container with std::relocate as parameter
-T queue::pop(std::relocate_t);
-```
-
-### Iterator library ### {#std-iterator}
-
-We propose to add the following overloads:
-
-```c++
-template <class Container>
-back_insert_iterator<Container>& operator=( typename Container::value_type value );
-
-template <class Container>
-front_insert_iterator<Container>& operator=( typename Container::value_type value );
-
-template <class Container>
-insert_iterator<Container>& operator=( typename Container::value_type value );
-```
-
-### Other STL classes ### {#std-misc-classes}
-
-We propose to add a relocation constructor and a relocation assignment operator
-to all the following classes:
-
-- **String library**: `std::basic_string` ;
-- **Utility**: `std::function`, `std::reference_wrapper`,
-    `std::shared_ptr`, `std::weak_ptr`, `std::unique_ptr` ;
-- **Regular expression**: `std::basic_regex`, `std::match_results` ;
-- **Thread support**: `std::thread`, `std::jthread`, `std::unique_lock`,
-    `std::promise`, `std::future`, `std::shared_future`, `std::packaged_task` ;
-- **Filesystem**: `std::filesystem::path`.
-
 # Discussions # {#discuss}
 
 ## Why a new keyword? ## {#reloc-new-keyword}
@@ -3926,50 +3606,6 @@ The impact seems to be minimal, where only a few files might need to be fixed
 here and there. To smooth the transition, compilers may also warn that existing
 code will break as `reloc` will become a keyword in a next C++ version.
 
-## STL API changes ## {#stl-api-changes}
-
-### Why add overload to the value-extracting functions in STL containers? ### {#value-extract-api-choice}
-
-In the original draft, all value-extracting functions were named `pilfer` (or `pilfer_back`
-and so on). However we felt it was better to reuse the function names that already
-exist.
-
-We thought of simply changing the return value of existing functions: `vector::pop_back()`
-would return the erased value. C++17 already changed the return value of `vector::emplace_back`.
-It caused no ABI issue (the return type of template member function is part of the mangling),
-and no performance hit (as template functions are inlined,
-when the reference returned from `vector::emplace_back` is not used, then the
-instructions that return the reference are not emitted).
-
-We could have done the same with `vector::pop_back()`. However, doing so would require
-that the type stored in the container to have one of the three constructors
-(relocation, move or copy). This is a requirement that doesn't exist today
-for node-based containers (`std::list`, `std::set` etc...).
-To state it otherwise, making an `T list<T>::pop_back()` will add unwanted
-constraints on what can be stored in a list.
-
-In order to preserve a consistent API across all STL containers, we opted in favor
-of `pop(std::relocate_t)` overloads.
-
-### Why name the value-extracting function of optional extract? ### {#optional-extract-api-choice}
-
-As mentioned we introduce `T optional<T>::extract()` to relocate a value out of
-the optional.
-
-Alternatively, this function could have been named `pop` if
-we want to stay consistent with what's done with containers.
-
-However a container `pop()` function doesn't return anything, only the
-`pop(std::relocate_t)` overload does.
-
-We prefer `extract()` over `pop(std::relocate_t)` for `std::optional`, as it
-better conveys the intent, is easier to write, and `std::optional` is not after
-all a container.
-
-Another alternative would be to name all value-extracting functions with a new
-name, and have it in common with `std::optional` (like `pilfer()`), however we
-prefer to stick with existing API for containers.
-
 ## Future directions ## {#future-directions}
 
 We removed some of the changes we initilialy had in mind, to keep for future
@@ -3985,34 +3621,46 @@ at the same time the situation is worsened by making relocate-only types viable;
 such types cannot be relocated when passed by universal reference.
 
 <table>
-<tr><th>Before</th><th>After</th><th>Future</th></tr>
+<tr><th>Before</th><th>After</th></tr>
 <tr>
-<td><pre lang="c++">
+<td>
+```c++
 template <class... Args>
 void fwd(Args&&... args)
 {
     do_stuff(std::forward<Args>(args)...);
 }
-</pre></td>
-<td><pre lang="c++">
+```
+</td>
+<td>
+```c++
 template <class... Args>
 void fwd(Args&&... args)
 {
     do_stuff(reloc args...);
 }
-</pre></td>
-<td><pre lang="c++">
-void fwd(decltype(auto)... args)
+```
+</td>
+</tr>
+</table>
+<br/>
+<table>
+<tr><th>Future</th></tr>
+<td>
+```c++
+template <class... Args>
+void fwd(decltype(Args)... args)
 {
     do_stuff(reloc args...);
 }
-</pre></td>
+```
+</td>
 </tr>
 </table>
 
-By allowing `decltype(auto)` as a *placeholder-type-specifier* in a
-*parameter-declaration*
-(i.e. relaxing <a href="http://wg21.link/dcl.fct#22.sentence-6">[dcl.fct] paragraph 22</a>)
+We suggest a new way to deduce template type parameters, by allowing
+`decltype(T)` in the function parameters (only if `T` is a function template
+type parameter). With this addition,
 it would become possible to deduce each parameter to value, lvalue
 reference or rvalue reference according to whether the argument is of
 value category prvalue, lvalue or xvalue, and forward by relocation.
@@ -4045,9 +3693,18 @@ solving those ABI issues.
 
 ## Will it make C++ easier? ## {#easier-cpp}
 
-Even though it does come with new rules, we argue that it mostly removes the
-moved-from state understanding problem, as well as used-after-move errors
-(if `reloc` is used instead of `std::move`).
+This proposal introduces a new keyword, and a bunch of new concepts
+(relocation contructor, decomposition), which are additional things to teach.
+However we have hopes this proposal will improve the language on many areas
+and eradicate some gotchas:
+
+- support for relocation-only types, which allow for better class design
+    with stronger class invariants ;
+- `reloc` aims to fix the "moved-from state" understanding problem,
+    and the used-after-move errors ;
+- relocation fixes the `const` pessimization with move constructor ;
+- `reloc` creates more opportunities to declare constant variables, improving on
+    code readability and performance.
 
 <pre class=biblio>
 {
