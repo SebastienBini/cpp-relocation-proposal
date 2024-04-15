@@ -43,15 +43,16 @@ This tackles every flaw not solved by move-semantics:
 - classes that want to support relocation can do so without breaking their class invariant,
     as the relocated-from object is simultaneously destructed.
 
-The proposal introduces:
+This proposal introduces:
 
 - two new special member functions: a relocation constructor `T(T)` and a relocation
     assignment operator `T& operator=(T)` ;
-- a new keyword: `reloc` ;
+- a new keyword: `reloc` which backs two new operators: `reloc` and `.reloc` (*dot-reloc*) ;
 - slight changes to overload resolution rules ;
 - might introduce ABI breaks to some functions (opt-in).
 
-The proposal does not introduce a new value type; instead relocation will happen from prvalues.
+This proposal does not introduce a new value category: instead it completes C++
+tripartite value system as we propose relocation to happen from prvalues.
 
 ## Changes from previous revisions of P2785 ## {#changes}
 
@@ -60,12 +61,12 @@ The proposal does not introduce a new value type; instead relocation will happen
 #### Motivation #### {#changes-from-r3-motivation}
 
 The motivation section is more complete, giving more explanations, describing
-today's C++ lacks which we intend to resolve, each time illustrated with an
+where today's C++ falls short, how we intend to improve, and each time illustrated with an
 example.
 
 #### Dot reloc instead of decomposing functions #### {#changes-from-r3-dot-reloc}
 
-One of the major changes we introduced is the `.reloc` (dot reloc) operator
+One of the major changes we introduced is the `.reloc` (*dot-reloc*) operator
 that can easily decompose an object. This has several advantages:
 
 - it greatly simplifies the writing and the understanding of the relocation constructor
@@ -89,6 +90,8 @@ Discussion about this change is detailed in the
 section.
 
 #### Clarify reloc behavior with copy-only objects #### {#changes-from-r3-copy-only}
+
+**TODO** this section seems to contradict what's said later.
 
 `reloc` can be used with a copy-only source object. By copy-only, we mean that
 the class type only declares a copy constructor.
@@ -118,14 +121,17 @@ never formerly presented.
 
 # Motivation # {#motivation}
 
-## Allow constness where we intend to ## {#const-vs-move}
+## More constness! ## {#const-vs-move}
 
-Unlike some other languages, C++ provides the `const` keyword to declare constant
-objects. This is an extremely valuable feature, as it provides better code readability,
-safety, performance optimization on some occasions, and last, in class design,
-enable to explicitly write some class invariants.
+Automatic objects are recommended by various guidelines to be constant, since a constant object
+will not change throughout its lifetime, simplifying reasoning about program state both for
+humans (coders, reviewers, maintainers) and for machines (compilers, tooling).
+In addition when used in class design, `const` on member functions and data-members
+enables to explicitly write class invariants. Last, allowing an object
+to be `const` throughout its lifetime but give up its resources at the end of its lifetime allows
+for better, safer code.
 
-However its usefulness is greatly diminished because of move-semantics.
+However `const` usefulness is greatly diminished because of move-semantics.
 The move constructor cannot work with a constant source object.
 Hence for those, the program either
 silently falls back to calling their copy constructor, or is simply ill-formed...
@@ -157,12 +163,6 @@ bar(reloc a);
 ```
 
 ### Constant local variables cannot be moved ### {#const-var}
-
-Automatic objects are recommended by various guidelines to be constant, since a constant object
-will not change throughout its lifetime, simplifying reasoning about program state both for
-humans (coders, reviewers, maintainers) and for machines (compilers, tooling). Allowing an object
-to be `const` throughout its lifetime but give up its resources at the end of its lifetime allows
-for better, safer code.
 
 We also have to consider that the Immediately Invoked Function Expressions (IIFE)
 decouples the possibilities to declare constant variables (even when they have
@@ -222,7 +222,10 @@ void bar()
 ```
 </td>
 </tr></table>
-<br/>
+
+NOTE: We expect the `reloc` operator to also multiply the
+possibilities to declare constant variables, with ou without the IIFE idiom:
+
 <table>
 <tr><th>Constified + relocation (no IIFE)</th></tr>
 <tr>
@@ -297,7 +300,7 @@ that the deep copy will have been done for nothing.
 This issue is solved with relocation:
 
 <table>
-<tr><th>Before</th><th>After</th></tr>
+<tr><th>Before (fixed)</th><th>After</th></tr>
 <tr>
 <td valign="top">
 ```c++
@@ -310,10 +313,10 @@ public:
   SomeType(SomeType&&) = default;
 
 private:
-  std::string _key1; /* constant but cannot
+  std::string _key1; /* const but cannot
     mark it so because of the
     move constructor */
-  std::string _key2; /* constant but cannot
+  std::string _key2; /* const but cannot
     mark it so because of the
     move constructor */
 
@@ -380,23 +383,27 @@ can only be:
 
 - constructed as a function local variable ;
 - returned from said function if copy-elision is guaranteed ;
+- constructed in-place in a node-based container ;
 - or constructed in-place in the parameter slot of another function.
 
 We cannot however, perform any operation that will move or copy the object to
 another address in memory:
 
 - we cannot pass such objects by value in the parameter slots of other functions,
-    unless the object is constructed in the parameter slot. As a consequence,
-    such types cannot be stored in any non-node-based containers.
+    unless the object is constructed in the parameter slot.
+- Such types cannot be stored in any non node-based containers. Node-based
+    containers have a performance overhead as they require more
+    memory allocations. The node-based property may not be desired by users
+    but they are forced to pay for it anyway as there is no support for such
+    types in other containers.
+
+Relocation fixes those issues by bringing support for relocate-only types.
+Thanks to relocation, relocate-only types can for instance be stored in a `std::vector`
+or passed from functions to functions.
 
 ### Accidental relocate-only types ### {#motivation-accidental-relocate-only-types}
 
-Classes that have an implicitly deleted copy and move constructors are quite
-impractical to handle in C++. They cannot be moved around
-in program memory (passed down to function, stored and removed from containers,
-etc...), while in principle there is no good reason to prevent that.
-
-Of course some classes do need to be immovable by design (like `std::mutex`) ;
+Some classes do need to be immovable by design (like `std::mutex`) ;
 those types can perfectly remain so with this proposal. However there is still
 the case of some types which are accidentally made immovable, because they are
 being wrapped with another type, or merely because of their cv-qualifiers
@@ -412,15 +419,17 @@ Hence this type is non-copyable and non-movable. Another example is simply
 Those objects are legitimate since
 they improve code correctness (the user need not check whether they are empty,
 or are sure the pointed address hasn't changed) and performance. However, we
-choose not to use such types in our code when we know they need to be moved.
+choose not to use such types in our code because we know how impractical they
+are to handle, especially if we know they will need to be moved.
 
 This is once again a missed opportunity ; our proposal fixes this issue.
 With the relocation
 semantics in mind, this would be allowed: each time `gsl::not_null<std::unique_ptr<T>>`
 or `std::unique_ptr<T> const`
 are moved in memory, the previous instance is simultaneously destroyed (very often in practice,
-this simply means the memory occupied by the source object just becomes uninitialized,
-and in particular, the source object's destructor is not called).
+this simply means the memory is moved as if by `memcpy`, and the memory occupied
+by the source object just becomes uninitialized.
+In particular, the source object's destructor is not called).
 
 ### Move constructor breaks class invariant ### {#motivation-never-empty}
 
@@ -434,29 +443,29 @@ adding checks to the destructor; all of these inhibit performance and are opport
 to introduce bugs. Relocation would replace all of this with a single defaulted special
 member function declaration.
 
-For instance, consider a TCP connection class, which creates a socket and
-connects it in its constructor (throws in case of failure), and closes it in its destructor.
+For instance, consider a file descriptor class, which opens a file in its
+constructor (throws in case of failure), and closes it in its destructor.
 
 <table>
 <tr><th>Before</th><th>After</th></tr>
 <tr>
 <td valign="top">
 ```c++
-class TcpConnection
+class FileDesc
 {
 public:
   // some parameterized constructor, which
   // guarantees _fd != -1 or else throws
-  // TcpConnection(...)
+  // FileDesc(...)
 
-  ~TcpConnection()
+  ~FileDesc()
   { if (_fd != -1) ::close(_fd); }
 
-  TcpConnection(TcpConnection&& rhs) noexcept :
+  FileDesc(FileDesc&& rhs) noexcept :
     _fd{std::exchange(rhs._fd, -1)} {}
 
-  TcpConnection&
-    operator=(TcpConnection&& rhs) noexcept
+  FileDesc&
+  operator=(FileDesc&& rhs) noexcept
   {
     _fd = std::exchange(rhs._fd, -1);
     return *this;
@@ -469,20 +478,19 @@ private:
 </td>
 <td valign="top">
 ```c++
-class TcpConnection
+class FileDesc
 {
 public:
   // some parameterized constructor, which
   // guarantees _fd != -1 or else throws
-  // TcpConnection(...)
+  // FileDesc(...)
 
-  ~TcpConnection() { ::close(_fd); }
+  ~FileDesc() { ::close(_fd); }
 
-  TcpConnection(TcpConnection) noexcept
-    = default;
-  TcpConnection&
-    operator=(TcpConnection) noexcept
-      = default;
+  FileDesc(FileDesc) noexcept = default;
+
+  FileDesc&
+  operator=(FileDesc) noexcept = default;
 
 private:
   int _fd;
@@ -494,11 +502,12 @@ private:
 The code on the right is easier to write, to maintain and to understand.
 This is because there is no need to handle the *moved-from* state in which
 `_fd == -1`. But first and foremost, the version with relocation benefits from
-an **improved class-invariant**: it provides at all times an open connection. This
-simplifies reasoning and usability throughout the code.
+an **improved class-invariant**: it provides at all times a valid file
+descriptor. This simplifies reasoning and usability throughout the code.
 
-We didn't have this guarantee before because of the move-constructor: the `TcpConnection`
-class might not have held an open connection, had it been moved-from before.
+We didn't have this guarantee before because of the move-constructor: the `FileDesc`
+class might not have held a valid file
+descriptor, had it been moved-from before.
 
 ## Safety against use-after-move ## {#motivation-safer-use-after-move}
 
@@ -536,7 +545,7 @@ its end of scope. It's often the case when a particular destructor side-effect
 is wanted early:
 
 ```c++
-std::scope_exit guard{[this] { updateMetrics(); }};
+std::experimental::scope_exit guard{[this] { updateMetrics(); }};
 // [...]
 if (someTest())
 {
@@ -573,6 +582,7 @@ if (someTest())
 ```
 </td>
 </tr></table>
+<br/>
 <table>
 <tr><th>Before (Temporary)</th></tr>
 <td valign="top">
@@ -589,6 +599,7 @@ if (someTest())
 ```
 </td>
 </tr></table>
+<br/>
 <table>
 <tr><th>After</th></tr>
 <td valign="top">
@@ -703,7 +714,7 @@ operations into a single memcpy. But there are places where this optimization
 could not happen, and we are left with suboptimized move constructor and destructor calls.
 
 The relocation constructor that we propose offers a customization point, and
-especially allow for a more optimized relocation technique than move and destruct.
+especially allows for a more optimized relocation technique than move and destruct.
 If trivial, then it can be optimized into a `memcpy`.
 
 ## P1144R8: Object relocation in terms of move plus destroy by Arthur O'Dwyer ## {#compare-P1144R8}
@@ -759,8 +770,8 @@ Here, under the terms of [[P0023R0]], relocation may not happen because of ABI
 constraints (if `x` is an unowned parameter).
 This will cause `foo` to fallback to a move+deferred detroy paradigm.
 
-This proposal has another take on this issue: if `T` is relocate-only, then any
-function
+This proposal has another take on this issue: if `T` has a relocation constructor
+but no move constructor, then any function
 that takes a `T` parameter by value is required to have an ABI that allows it to
 relocate
 its input parameter (e.g. callee-destroy ABI).
@@ -3739,12 +3750,6 @@ and eradicate some gotchas:
     "title": "Valueless Variants Considered Harmful",
     "href": "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0308r0.html",
     "date": "March 2016"
-  },
-  "P0847R6": {
-    "title": "Deducing this",
-    "authors": [ "Gašper Ažman", "Sy Brand", "Ben Deane", "Barry Revzin" ],
-    "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2021/p0847r6.html",
-    "date": "January 2021"
   },
   "IIFE": {
     "authors": [ "Bartlomiej Filipek" ],
