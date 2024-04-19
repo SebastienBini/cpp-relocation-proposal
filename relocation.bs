@@ -89,31 +89,6 @@ Discussion about this change is detailed in the
 [reloc with function parameters](#reloc-with-function-param)
 section.
 
-#### Clarify reloc behavior with copy-only objects #### {#changes-from-r3-copy-only}
-
-**TODO** this section seems to contradict what's said later.
-
-`reloc` can be used with a copy-only source object. By copy-only, we mean that
-the class type only declares a copy constructor.
-
-In P2785R3, using `reloc` on a copy-only object may not cause the immediate
-destruction of the source object. (The destruction either happened at the end
-of the expression evaluation, or at function exit).
-That behavior was implementation-defined.
-
-However we expect this to trigger unwanted side-effects. When an object is copy-constructed,
-all the resources owned by the source object are *copied* to the target object.
-As such if the destructor has a side-effect, it will be applied twice, once
-for the destruction of each object.
-
-Hence, if the destruction time of the source object is implementation-defined,
-then so is the time when the destructor side-effects are applied. We fear this
-may lead to code that behave differently across different implementations.
-
-`reloc` now behaves differently with copy-only source objects. It no longer
-tries to destruct the source object early. Instead, the source object is destructed
-normally, at its end of scope.
-
 ### Changes from older revisions ### {#changes-from-older}
 
 R0, R1 and R2 revisions are internal versions bumps that were
@@ -887,11 +862,13 @@ identifiers introduced through the syntax of structured binding declarations).
 `reloc obj` does the following:
 
 - if `obj` is ref-qualified, then performs perfect-forwarding
-    (as if by `static_cast<decltype(obj)>(obj)`);
-- otherwise returns a temporary obtained from the source object, leaving
-    it in a *destructed state* or a "*pending-destruction*" state ;
+    (as if by `static_cast<decltype(obj)>(obj)`) ;
+- otherwise returns a temporary obtained from the source object, constructed
+    from the relocation, move or copy constructor. At the end of the
+    full-expression, the source object is in a *destructed state* or a
+    "*pending-destruction*" state ;
 - in all cases, marks the "early" end-of-scope of the variable `obj`, preventing
-    from use-after-relocation errors.
+    reuses of the variable.
 
 ### reloc to perfectly forward all value categories ### {#reloc-perfect-fwd}
 
@@ -912,7 +889,7 @@ It also prevents from use-after-move and use-after-relocation errors.
 Unlike `std::move`, `reloc` does perform some form of relocation.
 Through misuse of language, we say that `reloc` returns a temporary object,
 created by relocation, move or copy constructor. In truth,
-given that the source object is not ref-qualified, then `reloc` merely
+given that the source object is not ref-qualified, `reloc` merely
 changes the value category of the source object from lvalue to prvalue
 (if the source object is ref-qualified, see [above](#reloc-perfect-fwd)).
 
@@ -936,7 +913,8 @@ Depending on the ABI in use, a function parameter may be destroyed at caller-sit
 or at callee-site (before the function exits).
 
 Enforcing the relocation constructor when `reloc` is used on a function
-parameter will not be compatible with all existing ABIs (see Itanium ABI for
+parameter, which would effectively destroy the function parameter,
+will not be compatible with all existing ABIs (see Itanium ABI for
 instance). We could propose this nonetheless, by stating that the relocation
 constructor must be used if declared.
 However we fear this would propagate ABI changes with too little control
@@ -945,9 +923,30 @@ and the proposal would meet to much resistance to go further.
 We could take a very conservative approach, and mandate the ABI change
 for *relocate-only* value parameters. Such types don't exist today, so the
 likelihood of breaking any existing ABI is relatively small. However this may
-lead to suboptimized code, where `reloc` would perform worse than the move
-constructor. Consider now the following code:
+lead to suboptimized code, where `reloc` would perform worse than move semantics.
+Consider now the following code:
 
+
+<table>
+<tr><th>With move semantics</th><th>With relocation</th></tr>
+<tr>
+<td valign="top">
+```c++
+struct A
+{
+    // [...]
+    A(A const&) = default;
+    A(A&&) = default;
+};
+
+void bar(A);
+void foo(A a)
+{
+    bar(std::move(a));
+}
+```
+</td>
+<td valign="top">
 ```c++
 struct A
 {
@@ -963,6 +962,9 @@ void foo(A a)
     bar(reloc a);
 }
 ```
+</td>
+</tr>
+</table>
 
 Since `A` has a copy constructor, it is not relocate-only. With the conservative
 approach, we have no guarantee
@@ -981,7 +983,7 @@ support for relocation, we take a slightly less conservative approach.
 We would like function parameters passed by value, whose type declares
 a relocation constructor but no move constructor, to be *owned parameters*.
 As the C++ standard leaves this area implementation-defined, we are going to force
-this another way, although the effect will likely be the same.
+this another way, although the effect will likely be the same:
 
 **Rule:** If the source object is a function parameter passed by value, and its type
 provides an eligible move constructor, then the relocation constructor (if any)
@@ -1041,23 +1043,27 @@ To prevent uses of a potentially destructed object, we state that the program is
 regardless of whether the relocation constructor was called. For a detailed
 explanation of how this is enforced, please refer to [the dedicated section](#ill-formed-reuse).
 
+NOTE: The rest of this section only applies to `reloc` operands that are
+not ref-qualified.
+
 That early end of scope provides us with a strong guarantee. We know that the
 source object cannot be reused, and as such we may be tempted to call the
-destructor of the source object early. For instance, we may want to destroy the
+destructor of the source object early (in cases where the relocation constructor
+was not selected). For instance, we may want to destroy the
 source object at the end of the full-expression evaluation, when temporaries are
 destroyed. It would be the natural thing to do:
 
 - for consistency, if the object had been relocated (with the relocation constructor),
     then it already reached its end of life. The same could be expected for
     copy and move constructor ;
-- the source object cannot be reused anyway, why deffer its destruction?
+- the source object cannot be reused anyway, why defer its destruction?
 
 Unfortunately, this cannot be done without breaking some ABIs. If the source
 object is an *unowned parameter*, then the function cannot destroy it early.
 The problem does not happen if the source object is a function-local variable
 or an *owned parameter*.
-Let us see what happens if we allow the early destruction of function parameters,
-given the ABI constraints:
+Let us see what happens if we allow the early destruction of function parameters
+to be *implementation-defined*:
 
 - If `reloc` calls the copy constructor:
     all the resources owned by the source object are *copied* to the target object.
@@ -1088,7 +1094,8 @@ We prefer to keep this behavior implementation-defined, same as
 today, except that the source object may also be destructed early, at the end
 of the full-expression evaluation that contained `reloc`.
 
-In conclusion, we establish the following rules:
+In conclusion, we establish the following rules when a `reloc` expression
+is evaluated:
 
 - **Rule:** If the source object passed to `reloc` is not a function parameter, and
     the source object has not been relocated by its relocation constructor, then
@@ -1097,13 +1104,15 @@ In conclusion, we establish the following rules:
 - **Rule:** If the source object passed to `reloc` is a function parameter, and
     the source object has not been relocated by its relocation constructor, then
     its destructor may be called at the end of the full-expression
-    containing `reloc`, upon function exit, or at the caller site at the end of the
+    containing the evaluated `reloc` expression, upon function exit,
+    or at the caller site at the end of the
     full-expression evaluation. Which it is is *implementation-defined*.
 
-One might argue that we may exacerbate this *implementation-defined* destruction
-behavior with `reloc`, as we allow for more code to be executed between
-the end of the full-expression which contained `reloc`, and when control returns to the caller
-site. However please keep in mind that:
+We acknowledge that with `reloc` expressions we allow for more code to be executed between
+the end of the full-expression which contained `reloc`,
+and when control returns to the caller site.
+One might argue that we exacerbate this destruction time discrepancy between
+implementations. However please keep in mind that:
 
 - this only concerns copy-only value parameters, whose destructor have a side-effect, and
     are passed to `reloc` ;
@@ -1112,7 +1121,9 @@ site. However please keep in mind that:
     at caller-site. Indeed, all function parameters need to be destructed,
     and their destruction order remains *implementation-defined* as of today,
     leaving the door open for any arbitrary code from a destructor,
-    to be executed before the destructor of our source object.
+    to be executed before the destructor of our source object ;
+- code that relies on a precise destruction timing of a function parameter is
+    poor code as this timing is implementation-defined, even today.
 
 ### Illegal uses of reloc ### {#reloc-illegal-uses}
 
@@ -1222,7 +1233,7 @@ Note that, if the temporary is materialized and that the source object:
     all the owned
     resources of the source object will be *transferred* to the temporary. For this
     reason, we expect that destroying the temporary *will have the same effects
-    as destroying the source object directly*.
+    as* destroying the source object directly.
 2. *only has an eligible copy constructor*:
     all the owned resources of the source object will be *copied* to the temporary.
     This is very likely a useless operation.
@@ -1240,7 +1251,7 @@ destroyed). But whether this statement indeed calls a destructor early
 
 To summarize, it means that `reloc obj;` has the following behavior:
 
-- Otherwise, if `obj` is an *owned parameter* or a function-local variable then:
+- If `obj` is an *owned parameter* or a function-local variable then:
     - The temporary is likely elided, effectively only calling the
         destructor of `obj`.
     - Otherwise a temporary is initialized from the
@@ -1322,7 +1333,7 @@ Any amount of whitespace between `.` and `reloc` is allowed.
 Both expressions return a prvalue of the type of the subobject.
 The effect of the *dot-reloc* operator is twofold:
 
-1. If not already decomposed, then `src` transitions to its decomposition state ;
+1. If not already decomposed, then `src` transitions into its decomposed state ;
 2. Triggers the relocation of the said subobject, as if done by the `reloc`
     operator on any complete object.
 
@@ -1342,7 +1353,8 @@ When a complete object enters its decomposed state:
 - *The lifetime of the source object ends*, its destructor is never called.
     All its non-static subobjects, now considered as complete objects, are still
     alive and will
-    follow normal destruction rules: they will be destructed at the end of their scope
+    follow normal destruction rules: they will be destructed at the end of their
+    scope (which is the source object scope)
     unless they have been relocated before.
 
 Note: If not for changing the runtime type of the direct bases that have one,
@@ -1399,13 +1411,13 @@ The *dot-reloc* expression is ill-formed if any of the
 following conditions is met:
 
 - the right operand is not a **direct, non-virtual** base of the source object,
-    or is not a **direct, non-static** data member ;
+    or is not a **direct, non-static** data-member ;
 - the right operand is not ref-qualified and does not have an accessible relocation,
     move, or copy constructor ;
 - the right operand type is not an abstract class.
 
 In particular, the relocation is well-formed if the right operand is a
-direct, non-static data member of an anonymous union.
+direct, non-static data-member of an anonymous union.
 
 Note: Relocating a virtual base is ill-formed. Instead virtual bases must be moved
 thanks to their move constructor. The reason behind this is that, because of the
@@ -1415,24 +1427,25 @@ bases, and we still want them to point to valid data
 
 ### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
 
-When an object is in a decomposed state, then object itself has reached its
+When an object is in a decomposed state, then the object itself has reached its
 end of life and can no longer be used. However all its non-relocated subobjects,
 now considered as individual complete objects, are alive and they can be accessed
 normally. We do not propose any special syntax to access such objects.
-Instead we rely on explicit cast to base class, or to direct member access with
-the dot operator.
+Instead we rely on explicit casts to access base classes, or the dot operator
+to access data-members.
 
 The only well-formed expressions on a decomposed object are:
 
-- any access to static data members or static functions via the *dot operator* ;
-- an explicit cast of the decomposed object to one of its base class, if that
+- any access to static data-members or static functions via the *dot operator* ;
+- an explicit cast (of any kind) of the decomposed object to one of its base class, if that
     base class has not been already relocated with *dot-reloc* ;
-- any access to a direct data member via the *dot operator*, if that data member
+- any access to a direct data-member via the *dot operator*, if that data-member
     has not been relocated with *dot-reloc* ;
-- any access to a direct data member through a pointer to data-member which
+- any access to a direct data-member through a pointer to data-member which
     can be evaluated at compile time, and whose corresponding data-member
     has not been relocated with *dot-reloc* ;
-- any access to a data member or member function inherited from a base class,
+- any access to a data-member (by identifier or pointer to data-member)
+    or member function inherited from a base class,
     if that base class has not been relocated with *dot-reloc* ;
 - any well-formed *dot-reloc* operation if the right operand has not
     been relocated.
@@ -1517,7 +1530,7 @@ std::string s = getPair().first; /* under conditions, equivalent to:
     auto pair = getPair(); std::string s = pair.reloc first; */
 ```
 
-Inspired by [class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)
+Inspired by [[class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)]
 we add a clause to when a subobject of a temporary is to be converted to a
 prvalue (for instance because passed to the relocation constructor or relocation
 assignment operator).
@@ -1538,7 +1551,7 @@ recursively uses the *dot-reloc* operator to extract the desired subobject.
 
 All the incurred *dot-reloc* expressions must be legal, as defined
 [here](#ill-formed-decomposition), or else the *implicit decomposition* is
-illegal. In particular, if any virtual base is to used as right operand of
+illegal. In particular, if any virtual base is used as right operand of
 *dot-reloc*, then the *implicit decomposition* is illegal.
 
 For instance:
@@ -1713,7 +1726,7 @@ auto val1 = getT().getVal();
 auto val2 = (reloc src).getVal();
 ```
 
-#### Putative release #### {#decomposed-object-putative-release}
+#### Putative std::unique_ptr::release #### {#decomposed-object-putative-release}
 
 ```c++
 template <class T, class Deleter>
@@ -1845,7 +1858,7 @@ Let us formally introduce the new states a local variable can have:
 - *alive* (**A**): this is the default state. As of today in C++, all variables are in this
     state.
 - *relocated* (**R**): the variable was passed as operand to the `reloc` operator.
-- *decomposed* (**D**): the variable was passed as operand to the *dot-reloc* operator.
+- *decomposed* (**D**): the variable was passed as left operand to the *dot-reloc* operator.
 
 In addition, a variable may have any **OR**-combination of those three states:
 
@@ -1864,16 +1877,21 @@ the well-formedness of expressions.
 The state of a given variable (including function parameters) is evaluated as follows:
 
 - The variable starts in the *alive* state ;
-- The state of the variable is tracked from one expression to the next, following
-    the evaluation order ;
-- If two or more expressions have an unspecified evaluation order, then the
-    expression containing `reloc` is examined first (if any), followed by any
-    expression containing *dot-reloc* ;
+- The state of the variable is tracked from one expression to the next,
+    following the evaluation order ;
+- If two or more expressions have an unspecified evaluation order with one another, then:
+
+    - expressions containing a `reloc` operator with the tracked variable as
+        operand are examined first (in any order),
+    - expressions containing a *dot-reloc* operator with the
+        tracked variable as left operand are examined second (in any order),
+    - and followed by the rest of the expressions in any order.
+
 - If the *alive* variable is used as operand of a `reloc` expression, then
     the variable transitions to the *relocated* state at the end of the expression ;
 - If a *non-relocated* variable is used as left operand of a *dot-reloc* expression,
     then the variable transitions to the *decomposed* state at the end of the
-    expression, if not already decomposed.
+    expression.
 
     When the variable enters its decomposed state, all its subobjects are now
     tracked in the same way. They all start in the *alive* state, except for the
@@ -1887,31 +1905,39 @@ The state of a given variable (including function parameters) is evaluated as fo
     branches must not be examined.
 - If two or more code paths rejoin, then the resulting state of the variable
     is the **OR**-combination of the state it had in all the joined code branches.
+- In a [logical AND](https://eel.is/c++draft/expr.compound#expr.log.and) or
+    [OR expression](https://eel.is/c++draft/expr.compound#expr.log.or), both
+    operands are examined sequentially. The state of the variable at the end
+    of the logical AND or OR expression is the **OR**-combination of the state
+    it had on both operands.
 - On a code jump:
 
     - if the code jumps before the variable declaration or after the variable
-        enclosing scope, then the state analysis for this code branch stops here.
+        enclosing scope, then the state analysis for this code branch stops here
+        for this variable.
     - otherwise the state of the variable after the jump is the **OR**-combination
-        of the state it had before the jump, and the state it had before at the
-        destination code location. The state of the variable prior the jump is
-        memorized for this code jump.
-    - if a code jump needs to be taken an extra time, the state of the variable
+        of the state it had before the jump, and the state it would have had at the
+        destination code location without taking the jump.
+        If the destination code location cannot be reached without jump, then
+        the jump does not change the state the variable.
+        The state of the variable prior to the jump is memorized for this code jump.
+    - if a same code jump needs to be taken an extra time, then the state of the variable
         is compared to the one previously memorized. If they are identical then
-        the state analysis for this code branch stops here. Otherwise the new
-        state prior the jump is updated and the jump re-examined.
+        the state analysis for this code branch stops here for this variable.
+        Otherwise the new state prior the jump is updated and the jump re-examined.
 
 - In a try block, if the variable was declared before the block: at the end of
     an expression that may throw,
     a code jump to each catch block may be examined.
     This code jump is necessary:
 
-    - if the state of the variable has changed prior to when the last jump
-        to the catch blocks was made.
+    - if the state of the variable has changed prior to when the last jumps
+        to the catch blocks were made.
     - or if no last jumps to catch blocks were made, then compare the state
         the variable had when entering the try block against the current state
         and perform the jumps if they differ.
 
-- This state analysis stops until code reaches the natural end of scope of a
+- This state analysis stops until code reaches the natural end of scope of the
     variable.
 
 NOTE: We don't expect this analysis to be costly. It is only necessary in functions
@@ -1942,11 +1968,11 @@ void foo(T x)
 Thanks to this compile-time state analysis, new ill-formed conditions arise:
 
 - If the variable potentially has the *relocated* state (i.e. the variable is
-    **R**, **A-R**, **R-D** or **A-R-D**), then any expression using the
-    variable is ill-formed.
+    **R**, **A-R**, **R-D** or **A-R-D**), then any potentially-evaluated
+    expressions using the variable are ill-formed.
 - If the variable potentially has the *decomposed* state, then the ill-formed
     conditions described [here](#ill-formed-decomposed-object-uses) apply in any
-    expression using the variable.
+    potentially-evaluated expressions using the variable.
 
 ### Examples ### {#reloc-dot-reloc-ill-formed-showcase}
 
@@ -2051,7 +2077,7 @@ void reloc_showcase_07()
 	else
 		do_smth(var); // OK
 	// [...]
-    // var state is A-R if relocated_v is true, A otherwise
+    // var state is R if relocated_v is true, A otherwise
 	if constexpr(!relocated_v)
 		do_smth_else(var); // OK
 }
@@ -2137,9 +2163,11 @@ void reloc_showcase_12()
 	}
 }
 ```
-`var` is local to the for-loop body, so `reloc` is well-formed here. The next loop
-iteration inspected by the code path analysis will see that `var` is a new object
-that shadows that of the previous iteration.
+`var` is local to the for-loop body, so `reloc` is well-formed here.
+The code path analysis for this variable does not require several loop iterations,
+as the variable scope ends before the code jump leading to the next iteration
+is evaluated.
+
 ```cpp
 void reloc_showcase_13()
 {
@@ -2156,7 +2184,8 @@ from:
 	goto from;
 }
 ```
-Because of the `goto` instruction, `var` may be reused after `reloc var`.
+When `goto from;` is reached the first time, `var` state is A-R.
+After the jump, all the expressions that use `var` are ill-formed.
 ```cpp
 void reloc_showcase_14()
 {
@@ -2194,7 +2223,7 @@ void reloc_showcase_15()
 	do_smth_else(reloc y); // well-formed
 }
 ```
-`reloc` does not prevent reusing the names of anonymous union members.
+`reloc` does not prevent from reusing the names of anonymous union members.
 ```cpp
 void reloc_showcase_16()
 {
@@ -2237,9 +2266,9 @@ void reloc_showcase_18()
 		do_smth(x.reloc m); // x state is decomposed, x.m is relocated
 		do_smth(x.m2); // x.m2 state is alive
 	}
-	else if (othertest(x))
+	else if (othertest(x)) // x state is alive
 	{
-		if (anothertest(x))
+		if (anothertest(x)) // x state is alive
 		{
 			do_smth_else(reloc x); // x state is relocated
 		}
@@ -2259,6 +2288,54 @@ void reloc_showcase_18()
 ```
 ```cpp
 void reloc_showcase_19()
+{
+	T x;
+	if (sometest(x) || sometest(reloc x)) // well-formed: x state is A-R
+	{
+		do_smth(x); // ill-formed: x state is A-R
+	}
+	else if (othertest(x)) // ill-formed: x state is A-R
+	{
+		foo();
+	}
+}
+```
+```cpp
+void reloc_showcase_20()
+{
+	T x;
+	if (othertest(x.reloc m) && sometest(x)) // ill-formed: x state
+	// is D when examining the second operand of the && operator
+	{
+		foo();
+	}
+	else
+	{
+		do_another_thing(x.m2); // well-formed: x is A-D
+	}
+	// x state is A-D
+	// x.m state is A-R
+}
+```
+```cpp
+void reloc_showcase_21()
+{
+	T x;
+	if (sometest(x) && othertest(x.reloc m) && anothertest(reloc x))
+	// well-formed: x state is A-R-D
+	{
+		bar();
+	}
+	else
+	{
+		do_another_thing(x.m); // ill-formed: x state is A-R-D
+	}
+	// x state is A-R-D
+	// x.m state is A-R
+}
+```
+```cpp
+void reloc_showcase_22()
 {
 	// unspecified evaluation order
 	{ T x; auto y = reloc x + reloc x; } // ill-formed
@@ -2285,7 +2362,7 @@ we examine the expressions containing `reloc` first, *dot-reloc* second, and
 examine the rest.
 
 ```cpp
-void reloc_showcase_20()
+void reloc_showcase_23()
 {
 	T x = getT();
 	try
@@ -2303,15 +2380,31 @@ void reloc_showcase_20()
 
 ### Conditional destruction ### {#conditional-reloc}
 
+NOTE: This section only applies to variables that are not ref-qualified.
+
 The variable state analysis described [here](#variable-state-tracking)
-must be used to know what kind of cleanup is necessary at scope exit
+may be used to know what kind of cleanup is necessary at scope exit
 (i.e. if the end of scope is reached or an exception is emitted).
 
 When this happens, if the variable is in any of **A-R**, **A-D**, **R-D** or
 **A-R-D** state, and that its type is not trivial, then
 implementations must track *at runtime* the actual state of the variable
 (**A**, **R** or **D**)
-and process its destruction accordingly. How this runtime tracking is done is
+and process its destruction accordingly:
+
+- If the variable was the operand in an evaluated `reloc` expression, then
+    the variable may need to be destructed following the rules described [here](#reloc-src-obj-lifetime).
+- Otherwise, if the variable was the left operand in an evaluated *dot-reloc* expression,
+    then the variable must not be destructed as it has reached its end of scope.
+- Otherwise the variable must be destructed by its destructor following normal
+    rules.
+
+NOTE: If the variable was the operand of a `reloc` expression, or the left operand
+    of a *dot-reloc* expression, but that expression was *not evaluated*, then
+    *its lifetime is not affected* and the variable must still be destroyed
+    normally.
+
+How this runtime tracking is done is
 *implementation-defined*, although it will probably take the form of extra flags
 in the function stack.
 
