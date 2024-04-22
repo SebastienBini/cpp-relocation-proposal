@@ -1343,6 +1343,8 @@ When a complete object enters its decomposed state:
 
 - All its direct bases and non-static data members are now considered as
     distinct complete objects:
+    - the introduced complete objects have the same scope as the source object,
+        even if the *dot-reloc* expression was used in a nested scope ;
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
     - if any of the direct base had a runtime type information, it now points
@@ -2520,7 +2522,7 @@ i.e. if none of the following are user-declared:
 * move constructor
 * move assignment operator
 * destructor
-* relocating assignment operator
+* relocation assignment operator
 
 #### Deleted implicitly-declared or defaulted relocation constructor #### {#reloc-ctor-declaration-deleted}
 
@@ -2578,6 +2580,56 @@ to the source object:
 - If the constructor exits because of an exception, this destruction sequence
     is triggered by stack unwinding.
 
+##### Destruction of virtual bases ##### {#reloc-dtor-virtual-bases}
+
+Virtual bases have a special treatment in constructors and destructors:
+they are only contructed and destructed by the class-type of the complete object,
+and not by its base classes.
+The relocation constructor have the same behavior.
+Hence the relocation constructor must be passed extra information:
+whether it is charge of the construction of the virtual bases, and
+whether it is charge of the destructon of the virtual bases of the source object.
+
+It follows that the relocation constructor will only destroy the virtual
+bases of the source object if the extra information states so.
+
+For instance:
+```c++
+class B
+{
+    B(B src);
+    // [...]
+};
+class C : public virtual B
+{
+    C(C src);
+    // [...]
+};
+class D : public C
+{
+    D(D src);
+    // [...]
+};
+
+void foo(C);
+
+void bar()
+{
+    D const d = getD();
+    foo(d.reloc C);
+}
+```
+
+Here, when `bar` calls the `C`'s relocation constructor to build the parameter of
+`foo`:
+
+- `C(C)` is in charge of constructing the virtual base `B` ;
+- `C(C)` is **not** in charge of destroying the virtual base `B` of its parameter.
+    `src.~B()` is not called by the relocation constructor ;
+- The default implementation of `C(C)` will move-construct the virtual base ;
+- `static_cast<B&&>(src)` still points to valid data in `C(C)` ;
+- `foo` gets a `C` object owning its virtual base.
+
 #### Default definition #### {#reloc-ctor-default-definition}
 
 The default relocation constructor implementation for a class-type `T` depends
@@ -2628,7 +2680,7 @@ struct U
 {
     std::string _a;
 
-    ~U() {}
+    ~U();
 
     // Second dummy example.
     U(U src) {} /*
@@ -2840,7 +2892,7 @@ constructor.
 
 #### Definition #### {#virtual-reloc-ctor-def}
 
-Let `T` be a class-type with an overridden relocation constructor.
+Let `T` be a class-type with a virtual relocation constructor.
 If `T` relocation constructor has been called normally (not through a
 virtual function call), then it proceeds normally as if non-virtual.
 
@@ -2884,14 +2936,14 @@ subobject is relocated at the desired location.
 NOTE: To detect how the relocation constructor is called,
 implementations may emit two relocation constructor definitions, one virtual
 and one non-virtual. User code can only call the non-virtual version, which
-ensures the virtual one is only called through virtual function call.
+ensures the virtual one is only called through virtual function calls.
 
 #### Ill-fomed definition #### {#virtual-reloc-ctor-def-ill-formed}
 
 A virtual relocation constructor definition of a class-type `T` is ill-formed if:
 
 - any of the direct base of `T`, which declares (maybe implicitly) a virtual
-    relocation constructor, have a non-accessible relocation constructor ;
+    relocation constructor, has a non-accessible relocation constructor ;
 - or if any of the subobject of `T` have an inaccessible destructor.
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
@@ -3036,7 +3088,7 @@ Other definitions are possible, notably the famous *copy-and-swap*
 ```c++
 T& T::operator=(T src)
 {
-    *this = src.reloc B; // relocate base
+    static_cast<B&>(*this) = src.reloc B; // relocate base
     this->_a = src.reloc _a;
     return *this;
 }
