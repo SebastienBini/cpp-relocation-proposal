@@ -101,7 +101,7 @@ never formerly presented.
 Automatic objects are recommended by various guidelines to be constant, since a constant object
 will not change throughout its lifetime, simplifying reasoning about program state both for
 humans (coders, reviewers, maintainers) and for machines (compilers, tooling).
-In addition when used in class design, `const` on member functions and data-members
+In addition when used in class design, `const` on member functions and data members
 enables to explicitly write class invariants. Last, allowing an object
 to be `const` throughout its lifetime but give up its resources at the end of its lifetime allows
 for better, safer code.
@@ -240,7 +240,7 @@ The `reloc` keyword relocates the objects to the parameter slots of `foo`. `a`,
 can no longer be used in `bar`. In particular, should `a`, `b` and `c` be relocatable,
 their destructor will not even be called.
 
-### Constant data-members ### {#const-data-members}
+### Constant data members ### {#const-data-members}
 
 It's not uncommon to find in production codebase things like this:
 
@@ -823,7 +823,7 @@ We believe a language solution is best suited here:
 - the `reloc` keyword makes sure the relocated object is not reused,
     while `std::pilfer` does not ;
 - the pilfering constructor is inconvenient to write as we need to unwrap from
-    `std::pilfered` and rewrap to propagate to base classes and data-members ;
+    `std::pilfered` and rewrap to propagate to base classes and data members ;
 - as a library solution, the pilfering constructor cannot be defaulted ;
 - trivial relocation is not possible with pilfering, which makes [[P0308R0]] miss
     the performance boost that is so longed for.
@@ -1314,28 +1314,88 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
 ## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
 
 In addition to the `reloc` operator, this paper introduces the *dot-reloc* (`.reloc`)
-operator, which can be used to **decompose** a source object and relocate its
-subobjects. The *dot-reloc* is necessary to have user-defined relocation
-constructors and relocation assignment operators.
+operator, which can be used to **decompose** a source object and **relocate its
+subobjects**. The *dot-reloc* is necessary to allow user-defined relocation
+constructors and relocation assignment operators that look similar to their copy
+and move counterparts.
 
-### dot-reloc syntax ### {#dot-reloc-syntax}
+### dot-reloc expression ### {#dot-reloc-syntax}
 
-The *dot-reloc* operator is a binary operator. Its left operand is the source
+The *dot-reloc* operator is a binary operator.
+Both operands must be id-expressions separated by `.` and `reloc`.
+Its left operand is the source
 object to decompose, and its right operand is the subobject to relocate.
-It may be used in one of the following way (with `src`
-the source object of type `T`):
 
-- `src.reloc B`, `B` being a **direct, non-virtual** base class of `T` ;
-- `src.reloc m`, `m` being a **direct, non-static** data member of `T`.
+Let `T` be the type of the left operand.
+The left operand must verify all the following:
 
-Any amount of whitespace between `.` and `reloc` is allowed.
+- the id-expression must designate a function-local variable
+    (can be a function parameter passed by value) ;
+- it must be a complete object ;
+- it must not be a lambda
+    capture, a structured binding, or a subobject promoted to a complete object
+    because of a previous decomposition ([see below](#decomposed-state)) ;
+- `T` must be a non-union class-type ;
+- `T` must not be ref-qualified ;
+- `T` must not be not an array-type.
+- `T` may be cv-qualified ;
 
-Both expressions return a prvalue of the type of the subobject.
+The right operand is an id-expression which must designate either:
+- *data member relocation case*: a non-static data member of a class `X`,
+    with `X` being `T` or a non-virtual base of `T`. In particular, the
+    expression may designate a data member of an anonymous union of `X` ;
+- *base class relocation case*: a class-type `X` which is a non-virtual base of `T` ;
+- In both cases, if `X` is not a direct base of `T`, then there must not be any
+    virtual base on the inheritance path from `T` to `X`.
+
+For instance:
+```c++
+void foo(pair<string const, non_null<unique_ptr<int>>> p)
+{
+    bar(p.reloc first, p.reloc second);
+}
+```
+
+If any of the requirements on any operand is not satisfied, then the program is ill-formed.
+
+The result of the *dot-reloc* expression is:
+- an lvalue of the type of its right operand in the *data member relocation case*
+    and if said data member is ref-qualified ;
+- a prvalue of the type of its right operand otherwise.
+
 The effect of the *dot-reloc* operator is twofold:
 
-1. If not already decomposed, then `src` transitions into its decomposed state ;
+1. If not already decomposed, then `src` (along with base classes up to the base
+    class which holds the subobject to relocate) [transitions into its decomposed state](#decomposed-state) ;
 2. Triggers the relocation of the said subobject, as if done by the `reloc`
     operator on any complete object.
+
+#### Pointer to members with dot-reloc #### {#dot-reloc-star}
+
+*dot-reloc* expressions can be used with pointer-to-members:
+
+- the `.reloc*` operator must be used instead of `.*` or `.reloc` ;
+- the right operand must be a pointer to data member, and not a pointer to
+    a member function ;
+- the right operand must be constant-evaluated ;
+- the left operand has the same constraints as in the *dot-reloc* expression ;
+- once the right operand has been resolved at compile-time to the data member to relocate,
+    the *dot-reloc-star* expression has the exact same effects as the *dot-reloc* expression.
+
+```c++
+template <auto Member, class Pair>
+auto GetMember(Pair pair)
+{
+    return pair.reloc *Member;
+}
+
+void foo()
+{
+    using pair_t = pair<string const, non_null<unique_ptr<int>>>;
+    pair_t const p = // ...
+    auto const p_second = GetMember<&pair_t::second>(reloc p);
+}
+```
 
 ### Decomposed state transition ### {#decomposed-state}
 
@@ -1343,7 +1403,7 @@ When a complete object enters its decomposed state:
 
 - All its direct bases and non-static data members are now considered as
     distinct complete objects:
-    - the introduced complete objects have the same scope as the source object,
+    - the introduced complete objects **have the same scope as the source object**,
         even if the *dot-reloc* expression was used in a nested scope ;
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
@@ -1362,64 +1422,21 @@ When a complete object enters its decomposed state:
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
 
-### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
+#### Incurred decompositions #### {#incurred-decomposition}
 
-An expression using the *dot-reloc* operator is ill-formed
-if any of the following conditions is met:
+The source object is decomposed using the [steps described above](#decomposed-state).
+However extra decompositions may occur, depending on the subobject that is
+being relocated.
 
-- applying the `reloc` operator on the left operand (i.e. the source object) would be ill-formed.
-    See [illegal uses of reloc](#reloc-illegal-uses) ;
-- the left operand is ref-qualified ;
-- the incurred decomposition is ill-formed.
-    See [below](#ill-formed-decomposition) ;
-- the relocation operation on the subobject is ill-formed.
-    See [below](#ill-formed-dot-reloc-relocation).
+##### Base class relocation case ##### {#incurred-decomposition-base-class}
 
-#### Illegal decomposition #### {#ill-formed-decomposition}
+If `X` is not a direct base of `T`, then let `U` be the direct base of `T`
+which is on the inheritance path from `T` to `X`.
 
-A decomposition is well-formed if and only if all of the following conditions
-are satisfied:
-
-- all subobjects of the source object are accessible. They all need to be since their
-    destructor will be called if not relocated ;
-- the source object type has no user-defined special member function,
-    **or else** the call-site has private access privilege to the source object type ;
-- at no point in time, the source object was a subobject of a now decomposed object.
-
-The first two requirements ensure that we can only relocate (a) compound types,
-where subobjects have no dependencies with one another (like an `std::pair`),
-or (b) types that we are in control of (because of the private access).
-
-The last requirement ensures that you cannot have nested decompositions.
-We don't believe nested decompositions are a necessity, and we fear it will
-only bring extra complexity to compiler vendors.
-Hence code like this is ill-formed:
-
-```c++
-T src;
-auto n = src.reloc m.reloc n; // ill-formed
-```
-
-Instead, it needs to be rewritten as:
-```c++
-T src;
-auto m = src.reloc m;
-auto n = m.reloc n;
-```
-
-#### Illegal relocation #### {#ill-formed-dot-reloc-relocation}
-
-The *dot-reloc* expression is ill-formed if any of the
-following conditions is met:
-
-- the right operand is not a **direct, non-virtual** base of the source object,
-    or is not a **direct, non-static** data-member ;
-- the right operand is not ref-qualified and does not have an accessible relocation,
-    move, or copy constructor ;
-- the right operand type is not an abstract class.
-
-In particular, the relocation is well-formed if the right operand is a
-direct, non-static data-member of an anonymous union.
+`U` is decomposed as well (it is considered as the source object
+being decomposed in the [steps described above](#decomposed-state)). This step occurs recursively and stops
+when all classes on the inheritance path from `T` to `X` are decomposed,
+but `X` itself is not decomposed.
 
 Note: Relocating a virtual base is ill-formed. Instead virtual bases must be moved
 thanks to their move constructor. The reason behind this is that, because of the
@@ -1427,26 +1444,115 @@ decomposition, we may have some source subobjects that still point to virtual
 bases, and we still want them to point to valid data
 (albeit potentially in a moved-from state).
 
+##### Data member relocation case ##### {#incurred-decomposition-data-member}
+
+If `X` is not `T` then all classes on the inheritance path from `T` to `X`
+are decomposed, including `X` itself, starting with the most derived classes.
+
+### Illegal uses of dot-reloc ### {#ill-formed-dot-reloc}
+
+An expression using the *dot-reloc* operator is ill-formed
+if any of the following conditions is met:
+
+- any of [the requirements on any operand](#dot-reloc-syntax) is not satisfied ;
+- any of the incurred decompositions is illegal.
+    See [below](#ill-formed-decomposition) ;
+- the relocation operation on the subobject is ill-formed.
+    See [below](#ill-formed-dot-reloc-relocation).
+
+#### Illegal decomposition #### {#ill-formed-decomposition}
+
+A decomposition is ill-formed if any of the following conditions
+is not satisfied:
+
+- all subobjects of the source object are accessible. They all need to be since their
+    destructor will be called if not relocated ;
+- the source object type has no user-defined special member function,
+    **or** the call-site has private access privilege to the source object type
+
+These requirements ensure that we can only relocate (a) compound types,
+where subobjects have no dependencies with one another (like an `std::pair`),
+or (b) types that we are in control of (because of the private access).
+
+#### Illegal relocation #### {#ill-formed-dot-reloc-relocation}
+
+The *dot-reloc* expression in the *base class relocation case* is ill-formed
+if `X` does not have an eligible relocation, move or copy constructor.
+
+The *dot-reloc* expression in the *data member relocation case* is ill-formed
+if the data member type is not ref-qualified and does not have an eligible
+relocation, move or copy constructor.
+
 ### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
 
-When an object is in a decomposed state, then the object itself has reached its
-end of life and can no longer be used. However all its non-relocated subobjects,
+When an object transitions into its decomposed state, it has reached its
+end of scope. The object itself cannot be reused.
+In addition, its member functions can no longer be called.
+However all its non-relocated subobjects,
 now considered as individual complete objects, are alive and they can be accessed
-normally. We do not propose any special syntax to access such objects.
-Instead we rely on explicit casts to access base classes, or the dot operator
-to access data-members.
+normally.
+
+We do not propose any special syntax to access such objects. Instead we restrict
+the expressions in which a decomposed object can be used.
+The *id-expression* which designates the decomposed
+object is **ill-formed**, unless it is used with the following expressions
+(and only those):
+
+#### Data member access #### {#ill-formed-decomposed-object-dm}
+
+All the expressions listed under [class member access](https://eel.is/c++draft/expr.ref) (but [7.3.2](https://eel.is/c++draft/expr.ref#7.3.2))
+where the decomposed object is the [object expression](https://eel.is/c++draft/expr.ref#4.sentence-1),
+remain well-formed.
+
+Non-static member function expressions [[7.3.2](https://eel.is/c++draft/expr.ref#7.3.2)],
+where the function is declared in class-type `X`
+and that `X` subobject has been decomposed, are ill-formed.
+If `X` is not decomposed, then the expression is valid.
+
+NOTE: Accesses to relocated subobjects are ill-formed as well, although this is
+not enforced by the rules of this section. [Read more](#ill-formed-reuse).
+
+#### Pointer to members #### {#ill-formed-decomposed-object-pm}
+
+All the expressions listed under [pointer-to-member operators](https://eel.is/c++draft/expr.mptr.oper)
+where the decomposed object is the [object expression](https://eel.is/c++draft/expr.mptr.oper#4.sentence-1),
+remain well-formed under conditions.
+
+The right operand of the `.*` operator must be constant-evaluated. In addition:
+
+- If the result of the expression is a member function, where the function is
+    declared in class-type `X` and that `X` subobject has been decomposed, then
+    the expression is ill-formed. If `X` is not decomposed, then the expression is valid.
+- If the result of the expression is an object, then the expression is well-formed.
+
+NOTE: Again, accesses to relocated subobjects are ill-formed. The main reason
+why the right operand must be constant-evaluated is to allow for better tracking
+of data members and their relocation state. [Read more](#ill-formed-reuse).
+
+#### Explicit cast to base classes #### {#ill-formed-decomposed-object-bc}
+
+
+
+#### Further dot-reloc expressions #### {#ill-formed-decomposed-object-dr}
+
+
+
+#### Pointer to members with dot-reloc expressions #### {#ill-formed-decomposed-object-drpm}
+
+
+NEW `.reloc*` operator!!!!
 
 The only well-formed expressions on a decomposed object are:
 
-- any access to static data-members or static functions via the *dot operator* ;
+- any access to static data members or static functions via the *dot operator* ;
 - an explicit cast (of any kind) of the decomposed object to one of its base class, if that
     base class has not been already relocated with *dot-reloc* ;
-- any access to a direct data-member via the *dot operator*, if that data-member
+- any access to a direct data member via the *dot operator*, if that data member
     has not been relocated with *dot-reloc* ;
-- any access to a direct data-member through a pointer to data-member which
-    can be evaluated at compile time, and whose corresponding data-member
+- any access to a direct data member through a pointer to data member which
+    can be evaluated at compile time, and whose corresponding data member
     has not been relocated with *dot-reloc* ;
-- any access to a data-member (by identifier or pointer to data-member)
+- any access to a data member (by identifier or pointer to data member)
     or member function inherited from a base class,
     if that base class has not been relocated with *dot-reloc* ;
 - any well-formed *dot-reloc* operation if the right operand has not
@@ -1479,15 +1585,15 @@ auto const getPtr = [p = reloc ptr](this auto self)
 auto ptr2 = getPtr.reloc p; // ill-formed, no access privilege to the captures
 ```
 
-### Decomposition from a pointer to data-member ### {#decompose-from-ptr-to-data-mbr}
+### Decomposition from a pointer to data member ### {#decompose-from-ptr-to-data-mbr}
 
-The *dot-reloc* operator can be used with a pointer to data-member as right operand,
+The *dot-reloc* operator can be used with a pointer to data member as right operand,
 if and only if that pointer can be evaluated at compile time.
-If the pointer to data-member cannot be evaluated at compile-time, then the
+If the pointer to data member cannot be evaluated at compile-time, then the
 *dot-reloc* expression is ill-formed.
 
 The language will resolve at compile-time which data member the pointer refers
-to, and will proceed as if the name of the data-member was supplied as right
+to, and will proceed as if the name of the data member was supplied as right
 operand of *dot-reloc*.
 
 For instance:
@@ -1497,7 +1603,7 @@ using reloc_pair_t = std::pair<reloc_only_t, reloc_only_t>;
 
 reloc_only_t get01(reloc_pair_t pair, reloc_only_t reloc_pair_t::*member)
 {
-    return pair.reloc *member; // ill-formed: pointer to data-member not known at compile-time
+    return pair.reloc *member; // ill-formed: pointer to data member not known at compile-time
 }
 
 template <reloc_only_t reloc_pair_t::*member>
@@ -3806,11 +3912,11 @@ total number of files, lines and words of the repository.
     words:  16,669,085; commit: cde9d22e8614
 - [llvm-project](https://github.com/llvm/llvm-project): **124 hits in 11 files**
     (`reloc` only used as local variable or
-    data-member, counting all uses); files:  39,048 ; lines:  9,760,587 ;
+    data member, counting all uses); files:  39,048 ; lines:  9,760,587 ;
     words:  385,429,611; commit: 9816c1912d56
 - [gcc](https://github.com/gcc-mirror/gcc): **244 hits in 31 files**
     (`reloc` only used as local variable or
-    data-member, counting all uses); files:  15,337 ; lines:  4,616,875 ;
+    data member, counting all uses); files:  15,337 ; lines:  4,616,875 ;
     words:  146,146,684; commit: ee6f262b87fe
 - [rapidjson](https://github.com/Tencent/rapidjson): 0 hits; files:  96 ;
     lines:  39,828 ; words:  1,492,060;
