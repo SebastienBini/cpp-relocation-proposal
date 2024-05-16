@@ -19,8 +19,8 @@ Date: 2023-06-14
 
 # Overview # {#intro}
 
-Move semantics have been around since C++11, and have improved the language in
-many aspects. However move-semantics have also brought their lot of defects:
+Move semantics were introduced with C++11, and have improved the language in
+many aspects. However they have also brought their lot of defects:
 
 - `std::move` does not move ;
 - moved-from objects are in an unspecified state, and more often than not,
@@ -33,15 +33,46 @@ many aspects. However move-semantics have also brought their lot of defects:
 We propose to resolve all these issues with a new kind of operation: "relocation".
 Relocation is the operation of constructing a
 new target object while simultaneously destructing the source object.
-Relocation will happen thanks to a new keyword `reloc` and a new constructor.
+Relocation will happen thanks to a new keyword `reloc` and a new relocation
+constructor (with signature `T(T)`).
+
+```c++
+// with: void foo(non_null<unique_ptr<T>>)
+
+non_null<unique_ptr<T>> const ptr{new T};
+ptr->do_stuff();
+foo(reloc ptr);
+// ptr cannot be reused or the program is ill-formed
+```
 
 This tackles every flaw not solved by move-semantics:
 
 - `reloc` does perform the relocation ;
 - relocated objects cannot be re-used, or else the program is ill-formed ;
 - relocation disregards cv-qualifiers, so constant objects can be relocated ;
-- classes that want to support relocation can do so without breaking their class invariant,
-    as the relocated-from object is simultaneously destructed.
+- classes that want to support relocation can do so without breaking their
+    class invariant, as the relocated-from object is simultaneously destructed.
+
+Another major addition of this proposal is the `.reloc` operator which allows
+to relocate subobjects. This allows to relocate data members of compound types
+(such as `std::pair`) and to easily write used-defined relocation constructor.
+
+```c++
+pair<std::string const, int> const keyValue = extractKV();
+storeKey(keyValue.reloc first);
+```
+```c++
+template <class First, class Second>
+class MyPair
+{
+public:
+    First first;
+    Second second;
+
+    // user-defined relocation constructor (could have been defaulted)
+    MyPair(MyPair rhs) : first{rhs.reloc first}, second{rhs.reloc second} {}
+};
+```
 
 This proposal introduces:
 
@@ -73,7 +104,9 @@ that can easily decompose an object. This has several advantages:
     and reloc assignment operator ;
 - it simplifies the handling of relocate-only subobjects in user code ;
 - it removes the *decomposing functions* feature as they are being replaced by
-    `.reloc`.
+    `.reloc` ;
+- the whole proposal is more unified as all those changes are now built on top
+    of the *dot-reloc* operator.
 
 #### Value parameter ownership rule #### {#changes-from-r3-value-param-ownership}
 
@@ -88,6 +121,13 @@ that takes a parameter by value, whose type provides a relocation constructor*
 Discussion about this change is detailed in the
 [reloc with function parameters](#reloc-with-function-param)
 section.
+
+#### Library changes #### {#changes-from-r3-stl}
+
+In P2785R3, we enumerated all the desired changes in the STL to properly
+support relocation. Now the suggested library changes only contain the bare
+minimum for library writers. A more comprehensive list of changes
+will be proposed separately, depending on the reception of the current proposal.
 
 ### Changes from older revisions ### {#changes-from-older}
 
@@ -468,7 +508,7 @@ public:
   operator=(FileDesc) noexcept = default;
 
 private:
-  int _fd;
+  int const _fd; //< can now be const
 };
 ```
 </td>
@@ -1374,7 +1414,7 @@ The effect of the *dot-reloc* operator is twofold:
 
 *dot-reloc* expressions can be used with pointer-to-members:
 
-- the `.reloc*` operator must be used instead of `.*` or `.reloc` ;
+- the `.reloc*` operator must be used as a natural mix of `.*` and `.reloc` operators ;
 - the right operand must be a pointer to data member, and not a pointer to
     a member function ;
 - the right operand must be constant-evaluated ;
@@ -1396,6 +1436,11 @@ void foo()
     auto const p_second = GetMember<&pair_t::second>(reloc p);
 }
 ```
+
+NOTE: As the *dot-reloc-star* operator can be expressed at compile-time
+in term of a *dot-reloc* operator, the remainder of this proposal will only
+address the *dot-reloc* operator (which encompasses the *dot-reloc-star*
+operator).
 
 ### Decomposed state transition ### {#decomposed-state}
 
@@ -1485,9 +1530,9 @@ relocation, move or copy constructor.
 
 ### Illegal uses of a decomposed object ### {#ill-formed-decomposed-object-uses}
 
-When an object transitions into its decomposed state, it has reached its
-end of scope. The object itself cannot be reused.
-In addition, its member functions can no longer be called.
+When an object transitions into its decomposed state, it reaches its
+end of scope. The object itself cannot be reused,
+and its member functions can no longer be called.
 However all its non-relocated subobjects,
 now considered as individual complete objects, are alive and they can be accessed
 normally.
@@ -1512,6 +1557,20 @@ If `X` is not decomposed, then the expression is valid.
 NOTE: Accesses to relocated subobjects are ill-formed as well, although this is
 not enforced by the rules of this section. [Read more](#ill-formed-reuse).
 
+```c++
+struct B { int _b; void b_func(); };
+struct C : B { int _c; void c_func(); };
+struct D : C { int _d; void d_func(); };
+
+D obj;
+foo(obj.reloc _c); // decomposes D and C
+// - `obj`, `(C&)obj`, `obj.d_func` and `obj.c_func` are now
+//      ill-formed expressions because of the decomposition
+// - `obj._c` is ill-formed because of the relocation
+// - `(B&)obj`, `obj.b_func`, `obj._b` and `obj._d` are still
+//      well-formed expressions
+```
+
 #### Pointer to members #### {#ill-formed-decomposed-object-pm}
 
 All the expressions listed under [pointer-to-member operators](https://eel.is/c++draft/expr.mptr.oper)
@@ -1531,32 +1590,36 @@ of data members and their relocation state. [Read more](#ill-formed-reuse).
 
 #### Explicit cast to base classes #### {#ill-formed-decomposed-object-bc}
 
+`static_cast<D>(v)`, `const_cast<D>(v)`, `dynamic_cast<D>(v)` and explicit type
+conversion `(D) v` expressions, where `v` is the *id-expression* which
+designates the decomposed object, remain well-formed under the following
+conditions:
 
+- `D` is a possibly ref-qualified, possibly cv-qualified base of `T` (the type of `v`), and
+- the `D` part of `v` has not been decomposed.
+
+The cast expression evaluation and return value do not change.
+
+`reinterpret_cast<D>(v)` expressions remain well-formed.
+
+```c++
+struct B { int _b; void b_func(); };
+struct C : B { int _c; void c_func(); };
+struct D : C { int _d; void d_func(); };
+
+D obj, obj2;
+foo(obj.reloc _c, obj2.reloc C); // decomposes D and C
+// - `obj`, `(C&)obj` are now ill-formed expressions because of the
+//      decomposition
+// - `(B)obj`, `static_cast<B const&>(obj)`, `const_cast<B&>(obj)`
+//      are still well-formed expressions
+// - `(C&)obj2`, `(B&)obj2` are ill-formed because of the relocation
+```
 
 #### Further dot-reloc expressions #### {#ill-formed-decomposed-object-dr}
 
-
-
-#### Pointer to members with dot-reloc expressions #### {#ill-formed-decomposed-object-drpm}
-
-
-NEW `.reloc*` operator!!!!
-
-The only well-formed expressions on a decomposed object are:
-
-- any access to static data members or static functions via the *dot operator* ;
-- an explicit cast (of any kind) of the decomposed object to one of its base class, if that
-    base class has not been already relocated with *dot-reloc* ;
-- any access to a direct data member via the *dot operator*, if that data member
-    has not been relocated with *dot-reloc* ;
-- any access to a direct data member through a pointer to data member which
-    can be evaluated at compile time, and whose corresponding data member
-    has not been relocated with *dot-reloc* ;
-- any access to a data member (by identifier or pointer to data member)
-    or member function inherited from a base class,
-    if that base class has not been relocated with *dot-reloc* ;
-- any well-formed *dot-reloc* operation if the right operand has not
-    been relocated.
+Further *dot-reloc* expressions, with the decomposed object as left operand,
+remain well-formed given that the right operand has not been relocated yet.
 
 ### Decomposition of a lambda closure type ### {#decompose-lambda}
 
@@ -1583,43 +1646,6 @@ auto const getPtr = [p = reloc ptr](this auto self)
     return self.reloc p;
 };
 auto ptr2 = getPtr.reloc p; // ill-formed, no access privilege to the captures
-```
-
-### Decomposition from a pointer to data member ### {#decompose-from-ptr-to-data-mbr}
-
-The *dot-reloc* operator can be used with a pointer to data member as right operand,
-if and only if that pointer can be evaluated at compile time.
-If the pointer to data member cannot be evaluated at compile-time, then the
-*dot-reloc* expression is ill-formed.
-
-The language will resolve at compile-time which data member the pointer refers
-to, and will proceed as if the name of the data member was supplied as right
-operand of *dot-reloc*.
-
-For instance:
-```c++
-using reloc_only_t = gsl::non_null<std::unique_ptr<int>>;
-using reloc_pair_t = std::pair<reloc_only_t, reloc_only_t>;
-
-reloc_only_t get01(reloc_pair_t pair, reloc_only_t reloc_pair_t::*member)
-{
-    return pair.reloc *member; // ill-formed: pointer to data member not known at compile-time
-}
-
-template <reloc_only_t reloc_pair_t::*member>
-reloc_only_t get02(reloc_pair_t pair)
-{
-    return pair.reloc *member; // well-formed
-}
-
-template <reloc_only_t reloc_pair_t::*member>
-reloc_pair_t getMemberAndSecond(reloc_pair_t pair)
-{
-    return reloc_pair_t{pair.reloc *member, pair.reloc second};
-    // getMemberAndSecond<&reloc_pair_t::first> is well-formed
-    // getMemberAndSecond<&reloc_pair_t::second> is ill-formed
-    // as pair.second would be relocated twice
-}
 ```
 
 ### Implicit decomposition of temporaries ### {#decompose-tmp}
@@ -1911,7 +1937,8 @@ struct D : public virtual VB2, public B0, public B1, public B2, public Iface
 };
 ```
 
-Now let's see what happens when we decompose a D object:
+Now let's see what happens when we decompose a `D` object:
+
 ```c++
 D src;
 // decomposition does not happen until the first dot-reloc
@@ -1922,26 +1949,31 @@ bar(src.reloc _d2); // decomposition happens now
 // Iface dynamic type is now Iface
 
 /* The following expressions are now ill-formed:
-  src;                            // cannot access decomposed object.
-  auto cp = src;                  // cannot access decomposed object.
-  auto* address = &src;           // cannot access decomposed object.
-  src.d_func();                   // cannot call function on decomposed object.
-  src.b0_vfunc();                 // cannot call function on decomposed object.
-  src.iface_vfunc();              // cannot call function on decomposed object.
+  src;                            // `src` id-expression is ill-formed.
+  auto cp = src;                  // `src` id-expression is ill-formed.
+  auto* address = &src;           // `src` id-expression is ill-formed.
+  src.d_func();                   // `src.d_func` expression is ill-formed.
+  src.b0_vfunc();                 // `src.B0::b0_vfunc` would be well-formed.
+  src.iface_vfunc();              // `src.iface_vfunc` expression is ill-formed.
   auto* address2 = src._d2.get(); // src._d2 has been relocated.
   auto vb2 = src.reloc VB2;       // cannot relocate virtual base.
   auto iface = src.reloc Iface;   // cannot relocate abstract base.
-  auto b2base = src.reloc B2Base; // cannot relocate non-direct base.
 */
 
 // well-formed: access to non-relocated data members and bases is still allowed,
 // or calling member functions from non-relocated bases is also allowed.
-auto vb = std::move(src._vb);
+auto vb = src._vb;
 auto vb2 = static_cast<VB2&&>(src);
 auto b2base = static_cast<B2Base const&>(src);
 auto d = src._d;
 src.B2::b2_vfunc();
-auto b0 = src._b0;
+
+// triggers the decomposition of B0 base class:
+auto b0 = src.reloc _b0;
+/* The following expressions become ill-formed:
+  static_cast<B0 const&>(src);
+  src.b0_vfunc();
+*/
 
 // relocates base class
 auto b2 = src.reloc B2;
@@ -1952,6 +1984,9 @@ auto b2 = src.reloc B2;
   src._b2base;
   src.B2::b2_vfunc();
 */
+
+// Although B2 was relocated, we can still access its virtual base class:
+vb = src._vb; // OK
 ```
 
 ## Ill-formed reuse of relocated or decomposed objects ## {#ill-formed-reuse}
@@ -1972,7 +2007,7 @@ In addition, a variable may have any **OR**-combination of those three states:
 
 - *alive-or-relocated* (**A-R**): the variable may be *relocated* or *alive*. For instance
     the variable will have this state at the end of an if statement,
-    if the variable was *relocated* in one path and *alive* in the other.
+    if the variable was *relocated* in one path and remained *alive* in the other.
 - *alive-or-decomposed* (**A-D**): the variable may be *decomposed* or *alive*.
 - *relocated-or-decomposed* (**R-D**): the variable may be *relocated* or *decomposed*,
     but not *alive*.
@@ -1984,9 +2019,9 @@ the well-formedness of expressions.
 
 The state of a given variable (including function parameters) is evaluated as follows:
 
-- The variable starts in the *alive* state ;
-- The state of the variable is tracked from one expression to the next,
-    following the evaluation order ;
+- The variable starts in the **A** state ;
+- The state of the variable is tracked by *examining* expressions,
+    from one expression to the next, following the evaluation order ;
 - If two or more expressions have an unspecified evaluation order with one another, then:
 
     - expressions containing a `reloc` operator with the tracked variable as
@@ -1995,17 +2030,27 @@ The state of a given variable (including function parameters) is evaluated as fo
         tracked variable as left operand are examined second (in any order),
     - and followed by the rest of the expressions in any order.
 
-- If the *alive* variable is used as operand of a `reloc` expression, then
-    the variable transitions to the *relocated* state at the end of the expression ;
-- If a *non-relocated* variable is used as left operand of a *dot-reloc* expression,
-    then the variable transitions to the *decomposed* state at the end of the
-    expression.
+- In a `reloc` expression, if the variable used as operand is not **A**
+    (prior to the expression examination), then the expression is ill-formed.
+    Otherwise the variable transitions to the **R** state after the
+    expression examination.
+- In a *dot-reloc* expression, the state of variable used in the left operand
+    must match **A-D**, and the base class or data member of the right operand
+    must be **A**. If the right operand does not designate a subobject of the left
+    operand (i.e. because it designates a subobject of a base class of the left operand),
+    then all the intermediary base classes that lead to that subobject must
+    match **A-D**. If any of those constraints is not verified (prior to the
+    expression examination) then the expression is ill-formed.
 
-    When the variable enters its decomposed state, all its subobjects are now
-    tracked in the same way. They all start in the *alive* state, except for the
-    subobject that was in the right operand, which starts in the *relocated* state.
-    Note that the newly introduced objects may only have **A**, **R** or **A-R**
-    states ;
+    At the end of the expression examination, the left operand transitions to
+    the **D** state. All its subobjects will be tracked separately in another
+    pass of this algorithm. Any intermediary base classes which got decomposed
+    also transitions to the **D** state and their subobjects will likewise need
+    to be tracked. The subobject that was in the right operand starts in the
+    **R** state. All the other introduced objects start in the **A** state.
+
+    Note that the newly introduced objects, if they were non-static data
+    members, cannot be decomposed so they may only have **A**, **R** or **A-R** states ;
 - If the code path forks (for instance because of an if statement), then all the
     different code branches need to be examined. **Exception:** if it is known
     at compile-time that some code branches will never be evaluated (for
@@ -2015,9 +2060,7 @@ The state of a given variable (including function parameters) is evaluated as fo
     is the **OR**-combination of the state it had in all the joined code branches.
 - In a [logical AND](https://eel.is/c++draft/expr.compound#expr.log.and) or
     [OR expression](https://eel.is/c++draft/expr.compound#expr.log.or), both
-    operands are examined sequentially. The state of the variable at the end
-    of the logical AND or OR expression is the **OR**-combination of the state
-    it had on both operands.
+    operands are examined sequentially.
 - On a code jump:
 
     - if the code jumps before the variable declaration or after the variable
@@ -2077,7 +2120,7 @@ Thanks to this compile-time state analysis, new ill-formed conditions arise:
 
 - If the variable potentially has the *relocated* state (i.e. the variable is
     **R**, **A-R**, **R-D** or **A-R-D**), then any potentially-evaluated
-    expressions using the variable are ill-formed.
+    expressions using the variable is ill-formed.
 - If the variable potentially has the *decomposed* state, then the ill-formed
     conditions described [here](#ill-formed-decomposed-object-uses) apply in any
     potentially-evaluated expressions using the variable.
@@ -2429,16 +2472,16 @@ void reloc_showcase_20()
 void reloc_showcase_21()
 {
 	T x;
-	if (sometest(x) && othertest(x.reloc m) && anothertest(reloc x))
-	// well-formed: x state is A-R-D
+	if (sometest(x) && othertest(x.reloc m))
+	// well-formed: x state is A-D
 	{
-		bar();
+		bar(reloc x); // ill-formed: x state must be A
 	}
 	else
 	{
-		do_another_thing(x.m); // ill-formed: x state is A-R-D
+		do_another_thing(x.m); // ill-formed: x.m state is A-R
 	}
-	// x state is A-R-D
+	// x state is A-D
 	// x.m state is A-R
 }
 ```
@@ -3663,7 +3706,7 @@ then `reloc_and_uninitialize` is guaranteed to leave the source object in a
 destructed state.
 
 `reloc_and_reclaim` reclaims the memory by calling the appropriate deallocation
-function (class defined `delete` or global `delete`). If any exception is thrown,
+function (class-defined `delete` or global `delete`). If any exception is thrown,
 then `reloc_and_reclaim` is guaranteed to leave the source object in a destructed
 state and to have deallocated its memory.
 
