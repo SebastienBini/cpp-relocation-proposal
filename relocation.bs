@@ -54,7 +54,7 @@ This tackles every flaw not solved by move-semantics:
     class invariant, as the relocated-from object is simultaneously destructed.
 
 Another major addition of this proposal is the `.reloc` operator which allows
-to relocate subobjects. This allows to relocate data members of compound types
+to relocate subobjects. This enables to relocate data members of compound types
 (such as `std::pair`) and to easily write used-defined relocation constructor.
 
 ```c++
