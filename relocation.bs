@@ -1448,10 +1448,12 @@ When a complete object enters its decomposed state:
 
 - All its direct bases and non-static data members are now considered as
     distinct complete objects:
-    - the introduced complete objects **have the same scope as the source object**,
-        even if the *dot-reloc* expression was used in a nested scope ;
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
+    - the introduced objects **have the same scope as the source object**,
+        even if the *dot-reloc* expression was used in a nested scope ;
+    - the introduced objects are still restrained by the cv-qualifiers,
+        if any, of the source object ;
     - if any of the direct base had a runtime type information, it now points
         to that of the base class, and no longer points to the type of the source
         object.

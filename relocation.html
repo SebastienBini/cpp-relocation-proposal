@@ -1561,10 +1561,10 @@ Possible extra rowspan handling
     blockquote c-[vi] { color: inherit; } /* Name.Variable.Instance */
     blockquote c-[il] { color: inherit; } /* Literal.Number.Integer.Long */
   </style>
-  <meta content="Bikeshed version d5d58a306, updated Fri Jan 26 16:12:28 2024 -0800" name="generator">
+  <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="7bfa58c5e85b433883914bea42412eccfe8912a5" name="revision">
+  <meta content="b327dc791424be09d0a20511415e9e093fb5fdc0" name="document-revision">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -1636,6 +1636,7 @@ pre .property::before, pre .property::after {
 }
 </style>
 <style>/* Boilerplate: style-colors */
+
 /* Any --*-text not paired with a --*-bg is assumed to have a transparent bg */
 :root {
     color-scheme: light dark;
@@ -1905,6 +1906,7 @@ a[href].issue-return {
 }
 </style>
 <style>/* Boilerplate: style-selflinks */
+
 :root {
     --selflink-text: white;
     --selflink-bg: gray;
@@ -1964,6 +1966,7 @@ a.self-link::before            { content: "¶"; }
 dfn > a.self-link::before      { content: "#"; }
 </style>
 <style>/* Boilerplate: style-syntax-highlighting */
+
 code.highlight { padding: .1em; border-radius: .3em; }
 pre.highlight, pre > code.highlight { display: block; padding: 1em; margin: .5em 0; overflow: auto; border-radius: 0; }
 
@@ -2020,6 +2023,7 @@ c-[vc] { color: #0077aa } /* Name.Variable.Class */
 c-[vg] { color: #0077aa } /* Name.Variable.Global */
 c-[vi] { color: #0077aa } /* Name.Variable.Instance */
 c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
+
 
 @media (prefers-color-scheme: dark) {
     .highlight:not(.idl) { background: rgba(255, 255, 255, .05); }
@@ -2109,8 +2113,9 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <div class="p-summary" data-fill-with="abstract">
    <h2 class="no-num no-toc no-ref heading settled" id="abstract"><span class="content">Abstract</span></h2>
    <p>This paper proposes several mechanisms to enable real relocation in C++.
-We cover several topics, such as trivial relocatibility, container optimizations,
-supports for relocate-only types, library changes and the impact of the existing code base.</p>
+
+  We cover several topics, such as trivial relocatibility, container optimizations,
+  supports for relocate-only types, library changes and the impact of the existing code base.</p>
   </div>
   <nav data-fill-with="table-of-contents" id="toc">
    <h2 class="no-num no-toc no-ref" id="contents">Table of Contents</h2>
@@ -2477,7 +2482,7 @@ silently falls back to calling their copy constructor, or is simply ill-formed..
 <pre class="language-c++ highlight"><c- c1>// with: void bar(A);</c->
 
 <c- n>A</c-> <c- k>const</c-> <c- n>a</c-> <c- o>=</c-> <c- n>someFunc</c-><c- p>();</c->
-<c- n>bar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>a</c-><c- p>));</c-> <c- c1>// silently calls A's copy ctor, performing a deep copy...</c->
+<c- n>bar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>a</c-><c- p>));</c-> <c- c1>// silently calls A’s copy ctor, performing a deep copy...</c->
 </pre>
    <p>Declaring an object with <code class="highlight"><c- k>const</c-></code> may have unwanted side-effects. As a consequence:</p>
    <ul>
@@ -3429,7 +3434,7 @@ This is intended to work in much the same way as the named return value optimiza
 for example:</p>
 <pre class="language-c+ highlight"><c- b>void</c-> <c- nf>f</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>g</c-><c- p>()</c-> <c- p>{</c->
-    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>;</c->  <c- c1>// may be created in f's argument slot</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>;</c->  <c- c1>// may be created in f’s argument slot</c->
     <c- n>f</c-><c- p>(</c-><c- n>reloc</c-> <c- n>s</c-><c- p>);</c->  <c- c1>// relocation may be elided</c->
 <c- p>}</c->
 </pre>
@@ -3521,12 +3526,12 @@ source object, and then destructed.</p>
     <c- k>if</c-> <c- p>(</c-><c- o>!</c-><c- n>some_test</c-><c- p>())</c->
     <c- p>{</c->
         <c- n>reloc</c-> <c- n>guard</c-><c- p>;</c-> <c- d>/* well-formed: temporary is likely elided regardless of</c->
-<c- d>            do_something_03's ABI, only calling the destructor of guard. */</c->
+<c- d>            do_something_03’s ABI, only calling the destructor of guard. */</c->
         <c- n>log</c-><c- p>(</c-><c- s>"thread "</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>this_thread</c-><c- o>::</c-><c- n>get_id</c-><c- p>(),</c-> <c- s>" failed"</c-><c- p>);</c->
         <c- k>return</c-><c- p>;</c->
     <c- p>}</c->
     <c- n>bar</c-><c- p>();</c->
-    <c- d>/* guard destructor is called only if it wasn't passed to reloc. */</c->
+    <c- d>/* guard destructor is called only if it wasn’t passed to reloc. */</c->
 <c- p>}</c->
 <c- c1>// assuming non_null does not have a relocation constructor</c->
 <c- b>void</c-> <c- nf>do_something_04</c-><c- p>(</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>copyOnlyObj</c-><c- p>)</c->
@@ -3646,11 +3651,14 @@ address the <em>dot-reloc</em> operator (which encompasses the <em>dot-reloc-sta
 distinct complete objects:</p>
      <ul>
       <li data-md>
-       <p>the introduced complete objects <strong>have the same scope as the source object</strong>,
-even if the <em>dot-reloc</em> expression was used in a nested scope ;</p>
-      <li data-md>
        <p>the decomposition does not odr-use any of the copy, move or relocation
 constructor of the subobjects. In particular, their address remains unchanged ;</p>
+      <li data-md>
+       <p>the introduced objects <strong>have the same scope as the source object</strong>,
+even if the <em>dot-reloc</em> expression was used in a nested scope ;</p>
+      <li data-md>
+       <p>the introduced objects are still restrained by the cv-qualifiers,
+if any, of the source object ;</p>
       <li data-md>
        <p>if any of the direct base had a runtime type information, it now points
 to that of the base class, and no longer points to the type of the source
@@ -3868,7 +3876,7 @@ illegal. In particular, if any virtual base is used as right operand of <em>dot-
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getU</c-><c- p>().</c-><c- n>_pub</c-><c- p>[</c-><c- mi>2</c-><c- p>];</c-> <c- d>/* implicit-decomposition is ill-formed</c->
 <c- d>    as dot-reloc cannot be used on array elements, move constructor is used */</c->
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>().</c-><c- n>second</c-><c- p>;</c-> <c- d>/* implicit-decomposition is well-formed</c->
-<c- d>    std::string's relocation constructor is used */</c->
+<c- d>    std::string’s relocation constructor is used */</c->
 </pre>
    <h4 class="heading settled" data-level="5.2.7" id="decompose-value-param"><span class="secno">5.2.7. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
    <p>As we have seen, decomposition ends the lifetime of the source object.
@@ -3888,8 +3896,7 @@ workaround and is not part of the proposal.</em></p>
       <th>Putative equivalent generated code
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c->
 <c- p>{</c->
     <c- c1>// ...</c->
     <c- n>sink</c-><c- p>(</c-><c- n>obj</c-><c- p>.</c-><c- n>reloc</c-> <c- n>m</c-><c- p>);</c->
@@ -3897,8 +3904,7 @@ workaround and is not part of the proposal.</em></p>
 <c- p>}</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
 <c- p>{</c->
     <c- k>auto</c-> <c- n>obj</c-><c- p>{</c-><c- n>reloc</c-> <c- n>__obj</c-><c- p>};</c->
     <c- c1>// ...</c->
@@ -3908,8 +3914,7 @@ workaround and is not part of the proposal.</em></p>
 </pre>
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c->
 <c- p>{</c->
     <c- c1>// ...</c->
     <c- k>if</c-> <c- p>(</c-><c- n>test</c-><c- p>())</c->
@@ -3920,8 +3925,7 @@ workaround and is not part of the proposal.</em></p>
 <c- p>}</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
 <c- p>{</c->
     <c- k>auto</c-> <c- n>obj</c-><c- p>{</c-><c- n>reloc</c-> <c- n>__obj</c-><c- p>};</c->
     <c- c1>// ...</c->
@@ -3934,8 +3938,7 @@ workaround and is not part of the proposal.</em></p>
 </pre>
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo03</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c-> <c- k>try</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo03</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>)</c-> <c- k>try</c->
 <c- p>{</c->
     <c- c1>// ...</c->
     <c- k>if</c-> <c- p>(</c-><c- n>test</c-><c- p>())</c->
@@ -3947,8 +3950,7 @@ workaround and is not part of the proposal.</em></p>
 <c- k>catch</c-> <c- p>(...)</c-> <c- p>{}</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- b>void</c-> <c- nf>foo03</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c-> <c- k>try</c->
+<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo03</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c-> <c- k>try</c->
 <c- p>{</c->
     <c- k>auto</c-> <c- n>obj</c-><c- p>{</c-><c- n>reloc</c-> <c- n>__obj</c-><c- p>};</c->
     <c- c1>// ...</c->
@@ -4611,8 +4613,8 @@ After the jump, all the expressions that use <code class="highlight"><c- n>var</
   <c- c1>// sequenced evaluation order</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>,</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
-  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-> <c- k>or</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
-  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-> <c- k>or</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
+  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-> <c- n>or</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
+  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-> <c- n>or</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
 
   <c- c1>// unspecified evaluation order with ternary</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- n>foo</c-><c- p>(</c-><c- n>x</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>);</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
@@ -4898,7 +4900,7 @@ self-referencing pointers.</p>
         <c- n>_a</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>src</c-><c- p>.</c-><c- n>_a</c-><c- p>)},</c-> <c- n>_c</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>reloc</c-> <c- n>_c</c-><c- p>}</c-> <c- p>{}</c-> <c- d>/*</c->
 <c- d>        1. T::_a is constructed using the move constructor.</c->
 <c- d>        2. T::_b is default constructed.</c->
-<c- d>        3. T::_c is constructed using std::string's relocation</c->
+<c- d>        3. T::_c is constructed using std::string’s relocation</c->
 <c- d>           constructor, from src._c.</c->
 <c- d>        4. src._b and src._a are destructed (in that order)</c->
 <c- d>           when the constructor body exits.</c->
@@ -5024,8 +5026,7 @@ immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href
       <th>After
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c->
+<pre class="highlight" lang="cpp"><c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c->
 <c- p>{</c->
     <c- n>T</c-> <c- n>x</c-><c- p>;</c->
     <c- n>x</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
@@ -5033,8 +5034,7 @@ immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href
 <c- p>});</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp">
-<c- n>T</c-> <c- n>x_mut</c-><c- p>;</c->
+<pre class="highlight" lang="cpp"><c- n>T</c-> <c- n>x_mut</c-><c- p>;</c->
 <c- n>x_mut</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
 <c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x_mut</c-><c- p>;</c->
 </pre>
@@ -5338,7 +5338,7 @@ as it will provide better exception safety for similar performance.</p>
     <c- n>T</c-> <c- k>const</c-> <c- n>tmp</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>reloc_and_uninitialize</c-><c- p>(</c-><c- n>this</c-><c- p>)};</c->
     <c- n>std</c-><c- o>::</c-><c- n>construct_at</c-><c- p>(</c-><c- n>this</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>src</c-><c- p>);</c->
     <c- n>guard</c-><c- p>.</c-><c- n>release</c-><c- p>();</c->
-    <c- k>return</c-> <c- o>*</c-><c- n>this</c-><c- p>;</c-> <c- c1>// we don't care if tmp.~T() throws</c->
+    <c- k>return</c-> <c- o>*</c-><c- n>this</c-><c- p>;</c-> <c- c1>// we don’t care if tmp.~T() throws</c->
 <c- p>}</c->
 </pre>
    <p>Again, the exception-safe version is only possible if <code class="highlight"><c- n>T</c-></code> can be default-constructed.</p>
@@ -5389,7 +5389,7 @@ destructor on the source object.</p>
 
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>val</c-><c- p>)</c->
 <c- p>{</c->
-    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* ambiguous call using today's rules */</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* ambiguous call using today’s rules */</c->
 <c- p>}</c->
 </pre>
    <p>Hence we propose a change in the overload resolution rules to prefer passing by
@@ -5447,7 +5447,7 @@ implementation-defined, as it depends on the ABI capabilities. Consider:</p>
 <c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>)</c->
 <c- p>{</c->
     <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>value</c-><c- p>);</c-> <c- d>/* always calls foo(T),</c->
-<c- d>        but how foo's parameter is constructed</c->
+<c- d>        but how foo’s parameter is constructed</c->
 <c- d>        is implementation-defined (reloc, move or copy ctor) */</c->
 <c- p>}</c->
 </pre>
@@ -6070,7 +6070,7 @@ code readability and performance.</p>
       on = !document.body.classList.contains('toc-sidebar');
     }
 
-    /* Don't scroll to compensate for the ToC if we're above it already. */
+    /* Don’t scroll to compensate for the ToC if we’re above it already. */
     var headY = 0;
     var head = document.querySelector('.head');
     if (head) {
@@ -6101,16 +6101,16 @@ code readability and performance.</p>
       }
       if (toggle.matches(':hover')) {
         /* Unfocus button when not using keyboard navigation,
-           because I don't know where else to send the focus. */
+           because I don’t know where else to send the focus. */
         toggle.blur();
       }
     }
   }
 
   function createSidebarToggle() {
-    /* Create the sidebar toggle in JS; it shouldn't exist when JS is off. */
+    /* Create the sidebar toggle in JS; it shouldn’t exist when JS is off. */
     var toggle = document.createElement('a');
-      /* This should probably be a button, but appearance isn't standards-track.*/
+      /* This should probably be a button, but appearance isn’t standards-track.*/
     toggle.id = 'toc-toggle';
     toggle.class = 'toc-toggle';
     toggle.href = '#toc';
@@ -6126,7 +6126,7 @@ code readability and performance.</p>
     toggle.addEventListener('click', toggler, false);
 
 
-    /* Get <nav id=toc-nav>, or make it if we don't have one. */
+    /* Get <nav id=toc-nav>, or make it if we don’t have one. */
     var tocNav = document.getElementById('toc-nav');
     if (!tocNav) {
       tocNav = document.createElement('p');
@@ -6134,7 +6134,7 @@ code readability and performance.</p>
       /* Prepend for better keyboard navigation */
       document.body.insertBefore(tocNav, document.body.firstChild);
     }
-    /* While we're at it, make sure we have a Jump to Toc link. */
+    /* While we’re at it, make sure we have a Jump to Toc link. */
     var tocJump = document.getElementById('toc-jump');
     if (!tocJump) {
       tocJump = document.createElement('a');
@@ -6162,7 +6162,7 @@ code readability and performance.</p>
     }, false);
   }
   else {
-    console.warn("Can't find Table of Contents. Please use <nav id='toc'> around the ToC.");
+    console.warn("Can’t find Table of Contents. Please use <nav id='toc'> around the ToC.");
   }
 
   /* Wrap tables in case they overflow */
