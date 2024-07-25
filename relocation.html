@@ -1564,7 +1564,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="b327dc791424be09d0a20511415e9e093fb5fdc0" name="document-revision">
+  <meta content="f5775cd2145e41bc61692158616c56185658bf73" name="document-revision">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -2191,133 +2191,149 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
         <li><a href="#discarded-reloc-expr"><span class="secno">5.1.8</span> <span class="content">Discarded reloc expressions</span></a>
        </ol>
       <li>
-       <a href="#dot-reloc-operator"><span class="secno">5.2</span> <span class="content">Decomposing operator (dot reloc)</span></a>
+       <a href="#decomposed-object"><span class="secno">5.2</span> <span class="content">Decomposed object</span></a>
        <ol class="toc">
+        <li><a href="#decomposed-object-decl"><span class="secno">5.2.1</span> <span class="content">Declaration and definition</span></a>
+        <li><a href="#decomposed-state"><span class="secno">5.2.2</span> <span class="content">Decomposed state</span></a>
+        <li><a href="#ill-formed-decomposition"><span class="secno">5.2.3</span> <span class="content">Illegal decomposition</span></a>
         <li>
-         <a href="#dot-reloc-syntax"><span class="secno">5.2.1</span> <span class="content">dot-reloc expression</span></a>
-         <ol class="toc">
-          <li><a href="#dot-reloc-star"><span class="secno">5.2.1.1</span> <span class="content">Pointer to members with dot-reloc</span></a>
-         </ol>
-        <li>
-         <a href="#decomposed-state"><span class="secno">5.2.2</span> <span class="content">Decomposed state transition</span></a>
-         <ol class="toc">
-          <li>
-           <a href="#incurred-decomposition"><span class="secno">5.2.2.1</span> <span class="content">Incurred decompositions</span></a>
-           <ol class="toc">
-            <li><a href="#incurred-decomposition-base-class"><span class="secno">5.2.2.1.1</span> <span class="content">Base class relocation case</span></a>
-            <li><a href="#incurred-decomposition-data-member"><span class="secno">5.2.2.1.2</span> <span class="content">Data member relocation case</span></a>
-           </ol>
-         </ol>
-        <li>
-         <a href="#ill-formed-dot-reloc"><span class="secno">5.2.3</span> <span class="content">Illegal uses of dot-reloc</span></a>
-         <ol class="toc">
-          <li><a href="#ill-formed-decomposition"><span class="secno">5.2.3.1</span> <span class="content">Illegal decomposition</span></a>
-          <li><a href="#ill-formed-dot-reloc-relocation"><span class="secno">5.2.3.2</span> <span class="content">Illegal relocation</span></a>
-         </ol>
-        <li>
-         <a href="#ill-formed-decomposed-object-uses"><span class="secno">5.2.4</span> <span class="content">Illegal uses of a decomposed object</span></a>
+         <a href="#allowed-expr-decomposed-obj"><span class="secno">5.2.4</span> <span class="content">Allowed expressions on a decomposed object</span></a>
          <ol class="toc">
           <li><a href="#ill-formed-decomposed-object-dm"><span class="secno">5.2.4.1</span> <span class="content">Data member access</span></a>
           <li><a href="#ill-formed-decomposed-object-pm"><span class="secno">5.2.4.2</span> <span class="content">Pointer to members</span></a>
           <li><a href="#ill-formed-decomposed-object-bc"><span class="secno">5.2.4.3</span> <span class="content">Explicit cast to base classes</span></a>
-          <li><a href="#ill-formed-decomposed-object-dr"><span class="secno">5.2.4.4</span> <span class="content">Further dot-reloc expressions</span></a>
+          <li><a href="#ill-formed-decomposed-object-dr"><span class="secno">5.2.4.4</span> <span class="content">dot-reloc expressions</span></a>
          </ol>
-        <li><a href="#decompose-lambda"><span class="secno">5.2.5</span> <span class="content">Decomposition of a lambda closure type</span></a>
-        <li><a href="#decompose-tmp"><span class="secno">5.2.6</span> <span class="content">Implicit decomposition of temporaries</span></a>
-        <li><a href="#decompose-value-param"><span class="secno">5.2.7</span> <span class="content">Decomposition of value parameters</span></a>
-        <li><a href="#dot-reloc-constexpr"><span class="secno">5.2.8</span> <span class="content">dot-reloc in constexpr</span></a>
-        <li>
-         <a href="#decomposed-object-examples"><span class="secno">5.2.9</span> <span class="content">Examples</span></a>
-         <ol class="toc">
-          <li><a href="#decomposed-object-ex-nominal"><span class="secno">5.2.9.1</span> <span class="content">Nominal case</span></a>
-          <li><a href="#decomposed-object-ex-extractor"><span class="secno">5.2.9.2</span> <span class="content">Custom extractor</span></a>
-          <li><a href="#decomposed-object-putative-release"><span class="secno">5.2.9.3</span> <span class="content">Putative std::unique_ptr::release</span></a>
-          <li><a href="#decomposed-object-ex-ill-formed"><span class="secno">5.2.9.4</span> <span class="content">Ill-formedness showcase</span></a>
-         </ol>
+        <li><a href="#decomposed-unevaluated"><span class="secno">5.2.5</span> <span class="content">Decomposed objects in unevaluated operands</span></a>
        </ol>
       <li>
-       <a href="#ill-formed-reuse"><span class="secno">5.3</span> <span class="content">Ill-formed reuse of relocated or decomposed objects</span></a>
+       <a href="#dot-reloc-operator"><span class="secno">5.3</span> <span class="content">Relocating subobjects (dot-reloc operator)</span></a>
        <ol class="toc">
-        <li><a href="#variable-state-tracking"><span class="secno">5.3.1</span> <span class="content">Variable state tracking</span></a>
-        <li><a href="#unevaluated-operands"><span class="secno">5.3.2</span> <span class="content">reloc and dot-reloc in unevaluated operands</span></a>
-        <li><a href="#reloc-dot-reloc-ill-formed"><span class="secno">5.3.3</span> <span class="content">Ill-formed expressions</span></a>
-        <li><a href="#reloc-dot-reloc-ill-formed-showcase"><span class="secno">5.3.4</span> <span class="content">Examples</span></a>
-        <li><a href="#conditional-reloc"><span class="secno">5.3.5</span> <span class="content">Conditional destruction</span></a>
-       </ol>
-      <li>
-       <a href="#reloc-ctor"><span class="secno">5.4</span> <span class="content">Relocation constructor</span></a>
-       <ol class="toc">
-        <li><a href="#reloc-ctor-is-2nd-dtor"><span class="secno">5.4.1</span> <span class="content">The relocation constructor is a second destructor</span></a>
         <li>
-         <a href="#reloc-ctor-declaration"><span class="secno">5.4.2</span> <span class="content">Declaration</span></a>
+         <a href="#dot-reloc-syntax"><span class="secno">5.3.1</span> <span class="content">dot-reloc expression</span></a>
          <ol class="toc">
-          <li><a href="#reloc-ctor-declaration-implicit"><span class="secno">5.4.2.1</span> <span class="content">Implicit declaration</span></a>
-          <li><a href="#reloc-ctor-declaration-deleted"><span class="secno">5.4.2.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation constructor</span></a>
-          <li><a href="#trivial-relocation"><span class="secno">5.4.2.3</span> <span class="content">Trivial relocation</span></a>
+          <li><a href="#dot-reloc-star"><span class="secno">5.3.1.1</span> <span class="content">Pointer to members with dot-reloc</span></a>
          </ol>
         <li>
-         <a href="#reloc-ctor-definition"><span class="secno">5.4.3</span> <span class="content">Definition</span></a>
+         <a href="#decomposed-state①"><span class="secno">5.3.2</span> <span class="content">Decomposed state transition</span></a>
          <ol class="toc">
           <li>
-           <a href="#reloc-ctor-dtor-def"><span class="secno">5.4.3.1</span> <span class="content">Destruction of the source object</span></a>
+           <a href="#incurred-decomposition"><span class="secno">5.3.2.1</span> <span class="content">Incurred decompositions</span></a>
            <ol class="toc">
-            <li><a href="#reloc-dtor-virtual-bases"><span class="secno">5.4.3.1.1</span> <span class="content">Destruction of virtual bases</span></a>
+            <li><a href="#incurred-decomposition-base-class"><span class="secno">5.3.2.1.1</span> <span class="content">Base class relocation case</span></a>
+            <li><a href="#incurred-decomposition-data-member"><span class="secno">5.3.2.1.2</span> <span class="content">Data member relocation case</span></a>
            </ol>
-          <li><a href="#reloc-ctor-default-definition"><span class="secno">5.4.3.2</span> <span class="content">Default definition</span></a>
-          <li><a href="#reloc-ctor-user-definition"><span class="secno">5.4.3.3</span> <span class="content">User-provided definition</span></a>
-          <li><a href="#reloc-ctor-delegate"><span class="secno">5.4.3.4</span> <span class="content">Delegating relocation constructor</span></a>
-          <li><a href="#reloc-ctor-additional-params"><span class="secno">5.4.3.5</span> <span class="content">Additional parameters</span></a>
          </ol>
-        <li><a href="#reloc-ctor-invoke"><span class="secno">5.4.4</span> <span class="content">Invocation</span></a>
         <li>
-         <a href="#virtual-reloc-ctor"><span class="secno">5.4.5</span> <span class="content">Virtual relocation constructor</span></a>
+         <a href="#ill-formed-dot-reloc"><span class="secno">5.3.3</span> <span class="content">Illegal uses of dot-reloc</span></a>
          <ol class="toc">
-          <li><a href="#virtual-reloc-ctor-decl"><span class="secno">5.4.5.1</span> <span class="content">Declaration</span></a>
-          <li><a href="#virtual-reloc-ctor-def"><span class="secno">5.4.5.2</span> <span class="content">Definition</span></a>
-          <li><a href="#virtual-reloc-ctor-def-ill-formed"><span class="secno">5.4.5.3</span> <span class="content">Ill-fomed definition</span></a>
+          <li><a href="#ill-formed-decomposition①"><span class="secno">5.3.3.1</span> <span class="content">Illegal decomposition</span></a>
+          <li><a href="#ill-formed-dot-reloc-relocation"><span class="secno">5.3.3.2</span> <span class="content">Illegal relocation</span></a>
+         </ol>
+        <li>
+         <a href="#ill-formed-decomposed-object-uses"><span class="secno">5.3.4</span> <span class="content">Illegal uses of a decomposed object</span></a>
+         <ol class="toc">
+          <li><a href="#ill-formed-decomposed-object-dm①"><span class="secno">5.3.4.1</span> <span class="content">Data member access</span></a>
+          <li><a href="#ill-formed-decomposed-object-pm①"><span class="secno">5.3.4.2</span> <span class="content">Pointer to members</span></a>
+          <li><a href="#ill-formed-decomposed-object-bc①"><span class="secno">5.3.4.3</span> <span class="content">Explicit cast to base classes</span></a>
+          <li><a href="#ill-formed-decomposed-object-dr①"><span class="secno">5.3.4.4</span> <span class="content">Further dot-reloc expressions</span></a>
+         </ol>
+        <li><a href="#decompose-lambda"><span class="secno">5.3.5</span> <span class="content">Decomposition of a lambda closure type</span></a>
+        <li><a href="#decompose-tmp"><span class="secno">5.3.6</span> <span class="content">Implicit decomposition of temporaries</span></a>
+        <li><a href="#decompose-value-param"><span class="secno">5.3.7</span> <span class="content">Decomposition of value parameters</span></a>
+        <li><a href="#dot-reloc-constexpr"><span class="secno">5.3.8</span> <span class="content">dot-reloc in constexpr</span></a>
+        <li>
+         <a href="#decomposed-object-examples"><span class="secno">5.3.9</span> <span class="content">Examples</span></a>
+         <ol class="toc">
+          <li><a href="#decomposed-object-ex-nominal"><span class="secno">5.3.9.1</span> <span class="content">Nominal case</span></a>
+          <li><a href="#decomposed-object-ex-extractor"><span class="secno">5.3.9.2</span> <span class="content">Custom extractor</span></a>
+          <li><a href="#decomposed-object-putative-release"><span class="secno">5.3.9.3</span> <span class="content">Putative std::unique_ptr::release</span></a>
+          <li><a href="#decomposed-object-ex-ill-formed"><span class="secno">5.3.9.4</span> <span class="content">Ill-formedness showcase</span></a>
          </ol>
        </ol>
       <li>
-       <a href="#reloc-assign-operator"><span class="secno">5.5</span> <span class="content">Relocation assignment operator</span></a>
+       <a href="#ill-formed-reuse"><span class="secno">5.4</span> <span class="content">Ill-formed reuse of relocated or decomposed objects</span></a>
        <ol class="toc">
-        <li>
-         <a href="#reloc-assign-declaration"><span class="secno">5.5.1</span> <span class="content">Declaration</span></a>
-         <ol class="toc">
-          <li><a href="#reloc-assign-operator-implicit"><span class="secno">5.5.1.1</span> <span class="content">Implicit declaration</span></a>
-          <li><a href="#reloc-assign-declaration-deleted"><span class="secno">5.5.1.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span></a>
-         </ol>
-        <li>
-         <a href="#aliased-reloc-assign"><span class="secno">5.5.2</span> <span class="content">Relocation assignment operator parameter relocation elision</span></a>
-         <ol class="toc">
-          <li><a href="#aliased-reloc-assign-declaration"><span class="secno">5.5.2.1</span> <span class="content">Elision at declaration level</span></a>
-          <li><a href="#aliased-reloc-assign-definition"><span class="secno">5.5.2.2</span> <span class="content">Elision at definition level</span></a>
-         </ol>
-        <li>
-         <a href="#reloc-assign-definition"><span class="secno">5.5.3</span> <span class="content">Definition</span></a>
-         <ol class="toc">
-          <li><a href="#reloc-assign-default-definition"><span class="secno">5.5.3.1</span> <span class="content">Default definition</span></a>
-          <li><a href="#reloc-assign-user-definition"><span class="secno">5.5.3.2</span> <span class="content">Possible user definitions</span></a>
-         </ol>
-        <li><a href="#reloc-assign-invoke"><span class="secno">5.5.4</span> <span class="content">Invocation</span></a>
+        <li><a href="#variable-state-tracking"><span class="secno">5.4.1</span> <span class="content">Variable state tracking</span></a>
+        <li><a href="#unevaluated-operands"><span class="secno">5.4.2</span> <span class="content">reloc and dot-reloc in unevaluated operands</span></a>
+        <li><a href="#reloc-dot-reloc-ill-formed"><span class="secno">5.4.3</span> <span class="content">Ill-formed expressions</span></a>
+        <li><a href="#reloc-dot-reloc-ill-formed-showcase"><span class="secno">5.4.4</span> <span class="content">Examples</span></a>
+        <li><a href="#conditional-reloc"><span class="secno">5.4.5</span> <span class="content">Conditional destruction</span></a>
        </ol>
       <li>
-       <a href="#overload-resolution"><span class="secno">5.6</span> <span class="content">Overload resolution</span></a>
+       <a href="#reloc-ctor"><span class="secno">5.5</span> <span class="content">Relocation constructor</span></a>
        <ol class="toc">
-        <li><a href="#overload-against-P2665R0"><span class="secno">5.6.1</span> <span class="content">Comparison against P2665R0</span></a>
+        <li><a href="#reloc-ctor-is-2nd-dtor"><span class="secno">5.5.1</span> <span class="content">The relocation constructor is a second destructor</span></a>
+        <li>
+         <a href="#reloc-ctor-declaration"><span class="secno">5.5.2</span> <span class="content">Declaration</span></a>
+         <ol class="toc">
+          <li><a href="#reloc-ctor-declaration-implicit"><span class="secno">5.5.2.1</span> <span class="content">Implicit declaration</span></a>
+          <li><a href="#reloc-ctor-declaration-deleted"><span class="secno">5.5.2.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation constructor</span></a>
+          <li><a href="#trivial-relocation"><span class="secno">5.5.2.3</span> <span class="content">Trivial relocation</span></a>
+         </ol>
+        <li>
+         <a href="#reloc-ctor-definition"><span class="secno">5.5.3</span> <span class="content">Definition</span></a>
+         <ol class="toc">
+          <li>
+           <a href="#reloc-ctor-dtor-def"><span class="secno">5.5.3.1</span> <span class="content">Destruction of the source object</span></a>
+           <ol class="toc">
+            <li><a href="#reloc-dtor-virtual-bases"><span class="secno">5.5.3.1.1</span> <span class="content">Destruction of virtual bases</span></a>
+           </ol>
+          <li><a href="#reloc-ctor-default-definition"><span class="secno">5.5.3.2</span> <span class="content">Default definition</span></a>
+          <li><a href="#reloc-ctor-user-definition"><span class="secno">5.5.3.3</span> <span class="content">User-provided definition</span></a>
+          <li><a href="#reloc-ctor-delegate"><span class="secno">5.5.3.4</span> <span class="content">Delegating relocation constructor</span></a>
+          <li><a href="#reloc-ctor-additional-params"><span class="secno">5.5.3.5</span> <span class="content">Additional parameters</span></a>
+         </ol>
+        <li><a href="#reloc-ctor-invoke"><span class="secno">5.5.4</span> <span class="content">Invocation</span></a>
+        <li>
+         <a href="#virtual-reloc-ctor"><span class="secno">5.5.5</span> <span class="content">Virtual relocation constructor</span></a>
+         <ol class="toc">
+          <li><a href="#virtual-reloc-ctor-decl"><span class="secno">5.5.5.1</span> <span class="content">Declaration</span></a>
+          <li><a href="#virtual-reloc-ctor-def"><span class="secno">5.5.5.2</span> <span class="content">Definition</span></a>
+          <li><a href="#virtual-reloc-ctor-def-ill-formed"><span class="secno">5.5.5.3</span> <span class="content">Ill-fomed definition</span></a>
+         </ol>
        </ol>
       <li>
-       <a href="#structured-reloc"><span class="secno">5.7</span> <span class="content">Structured relocation</span></a>
+       <a href="#reloc-assign-operator"><span class="secno">5.6</span> <span class="content">Relocation assignment operator</span></a>
        <ol class="toc">
-        <li><a href="#structured-reloc-discussion"><span class="secno">5.7.1</span> <span class="content">Discussion</span></a>
-        <li><a href="#structured-reloc-declaration"><span class="secno">5.7.2</span> <span class="content">Structured relocation declaration</span></a>
         <li>
-         <a href="#structured-reloc-obj-decomposition"><span class="secno">5.7.3</span> <span class="content">Structured relocation protocols</span></a>
+         <a href="#reloc-assign-declaration"><span class="secno">5.6.1</span> <span class="content">Declaration</span></a>
          <ol class="toc">
-          <li><a href="#structured-reloc-array"><span class="secno">5.7.3.1</span> <span class="content">array protocol</span></a>
-          <li><a href="#structured-reloc-get_all"><span class="secno">5.7.3.2</span> <span class="content">get_all protocol</span></a>
-          <li><a href="#structured-reloc-dm"><span class="secno">5.7.3.3</span> <span class="content">data members protocol</span></a>
-          <li><a href="#structured-reloc-tuple"><span class="secno">5.7.3.4</span> <span class="content">Implementation-defined library support</span></a>
-          <li><a href="#structured-reloc-implem"><span class="secno">5.7.3.5</span> <span class="content">Possible get_all implementations</span></a>
+          <li><a href="#reloc-assign-operator-implicit"><span class="secno">5.6.1.1</span> <span class="content">Implicit declaration</span></a>
+          <li><a href="#reloc-assign-declaration-deleted"><span class="secno">5.6.1.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span></a>
+         </ol>
+        <li>
+         <a href="#aliased-reloc-assign"><span class="secno">5.6.2</span> <span class="content">Relocation assignment operator parameter relocation elision</span></a>
+         <ol class="toc">
+          <li><a href="#aliased-reloc-assign-declaration"><span class="secno">5.6.2.1</span> <span class="content">Elision at declaration level</span></a>
+          <li><a href="#aliased-reloc-assign-definition"><span class="secno">5.6.2.2</span> <span class="content">Elision at definition level</span></a>
+         </ol>
+        <li>
+         <a href="#reloc-assign-definition"><span class="secno">5.6.3</span> <span class="content">Definition</span></a>
+         <ol class="toc">
+          <li><a href="#reloc-assign-default-definition"><span class="secno">5.6.3.1</span> <span class="content">Default definition</span></a>
+          <li><a href="#reloc-assign-user-definition"><span class="secno">5.6.3.2</span> <span class="content">Possible user definitions</span></a>
+         </ol>
+        <li><a href="#reloc-assign-invoke"><span class="secno">5.6.4</span> <span class="content">Invocation</span></a>
+       </ol>
+      <li>
+       <a href="#overload-resolution"><span class="secno">5.7</span> <span class="content">Overload resolution</span></a>
+       <ol class="toc">
+        <li><a href="#overload-against-P2665R0"><span class="secno">5.7.1</span> <span class="content">Comparison against P2665R0</span></a>
+       </ol>
+      <li>
+       <a href="#structured-reloc"><span class="secno">5.8</span> <span class="content">Structured relocation</span></a>
+       <ol class="toc">
+        <li><a href="#structured-reloc-discussion"><span class="secno">5.8.1</span> <span class="content">Discussion</span></a>
+        <li><a href="#structured-reloc-declaration"><span class="secno">5.8.2</span> <span class="content">Structured relocation declaration</span></a>
+        <li>
+         <a href="#structured-reloc-obj-decomposition"><span class="secno">5.8.3</span> <span class="content">Structured relocation protocols</span></a>
+         <ol class="toc">
+          <li><a href="#structured-reloc-array"><span class="secno">5.8.3.1</span> <span class="content">array protocol</span></a>
+          <li><a href="#structured-reloc-get_all"><span class="secno">5.8.3.2</span> <span class="content">get_all protocol</span></a>
+          <li><a href="#structured-reloc-dm"><span class="secno">5.8.3.3</span> <span class="content">data members protocol</span></a>
+          <li><a href="#structured-reloc-tuple"><span class="secno">5.8.3.4</span> <span class="content">Implementation-defined library support</span></a>
+          <li><a href="#structured-reloc-implem"><span class="secno">5.8.3.5</span> <span class="content">Possible get_all implementations</span></a>
          </ol>
        </ol>
      </ol>
@@ -2402,7 +2418,7 @@ class invariant, as the relocated-from object is simultaneously destructed.</p>
    <p>Another major addition of this proposal is the <code class="highlight"><c- p>.</c-><c- n>reloc</c-></code> operator which allows
 to relocate subobjects. This enables to relocate data members of compound types
 (such as <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>) and to easily write used-defined relocation constructor.</p>
-<pre class="language-c++ highlight"><c- n>pair</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-><c- p>,</c-> <c- b>int</c-><c- o>></c-> <c- k>const</c-> <c- n>keyValue</c-> <c- o>=</c-> <c- n>extractKV</c-><c- p>();</c->
+<pre class="language-c++ highlight"><c- n>pair</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-><c- p>,</c-> <c- b>int</c-><c- o>></c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>keyValue</c-> <c- o>=</c-> <c- n>extractKV</c-><c- p>();</c->
 <c- n>storeKey</c-><c- p>(</c-><c- n>keyValue</c-><c- p>.</c-><c- n>reloc</c-> <c- n>first</c-><c- p>);</c->
 </pre>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>First</c-><c- p>,</c-> <c- n>class</c-> <c- n>Second</c-><c- o>></c->
@@ -2413,9 +2429,11 @@ to relocate subobjects. This enables to relocate data members of compound types
     <c- n>Second</c-> <c- n>second</c-><c- p>;</c->
 
     <c- c1>// user-defined relocation constructor (could have been defaulted)</c->
-    <c- n>MyPair</c-><c- p>(</c-><c- n>MyPair</c-> <c- n>rhs</c-><c- p>)</c-> <c- o>:</c-> <c- n>first</c-><c- p>{</c-><c- n>rhs</c-><c- p>.</c-><c- n>reloc</c-> <c- n>first</c-><c- p>},</c-> <c- n>second</c-><c- p>{</c-><c- n>rhs</c-><c- p>.</c-><c- n>reloc</c-> <c- n>second</c-><c- p>}</c-> <c- p>{}</c->
+    <c- n>MyPair</c-><c- p>(</c-><c- n>MyPair</c-> <c- n>reloc</c-> <c- n>rhs</c-><c- p>)</c-> <c- o>:</c-> <c- n>first</c-><c- p>{</c-><c- n>rhs</c-><c- p>.</c-><c- n>reloc</c-> <c- n>first</c-><c- p>},</c-> <c- n>second</c-><c- p>{</c-><c- n>rhs</c-><c- p>.</c-><c- n>reloc</c-> <c- n>second</c-><c- p>}</c-> <c- p>{}</c->
 <c- p>};</c->
 </pre>
+   <p>The <code class="highlight"><c- n>reloc</c-></code> specifier in the object declaration indicates that the object
+is <em>decomposed</em>, which allows the relocation of its subobjects with <em>dot-reloc</em></p>
    <p>This proposal introduces:</p>
    <ul>
     <li data-md>
@@ -3545,57 +3563,254 @@ source object, and then destructed.</p>
     <c- n>bar</c-><c- p>();</c->
 <c- p>}</c->
 </pre>
-   <h3 class="heading settled" data-level="5.2" id="dot-reloc-operator"><span class="secno">5.2. </span><span class="content">Decomposing operator (dot reloc)</span><a class="self-link" href="#dot-reloc-operator"></a></h3>
+   <h3 class="heading settled" data-level="5.2" id="decomposed-object"><span class="secno">5.2. </span><span class="content">Decomposed object</span><a class="self-link" href="#decomposed-object"></a></h3>
+   <p>This proposal introduces the concept of object decomposition.
+Only complete objects can be <em>decomposed</em>. An object is <em>decomposed</em> if the <code class="highlight"><c- n>reloc</c-></code> keyword appears in its definition.
+If an object is <em>decomposed</em>, then the complete object ceases to exist, but all
+its subobjects are considered as complete objects.</p>
+   <h4 class="heading settled" data-level="5.2.1" id="decomposed-object-decl"><span class="secno">5.2.1. </span><span class="content">Declaration and definition</span><a class="self-link" href="#decomposed-object-decl"></a></h4>
+   <p>The <code class="highlight"><c- n>reloc</c-></code> keyword is allowed to appear alongside the cv-qualifiers
+in an object definition expression.
+Note that <code class="highlight"><c- n>reloc</c-></code> is not a cv-qualifier, but can merely be specified among
+them in some circumstances. <code class="highlight"><c- n>reloc</c-></code> is not part of the C++ type system.</p>
+   <p><code class="highlight"><c- n>reloc</c-></code> cannot be used in an object declaration or else the program is ill-formed.</p>
+   <p>An object of type <code class="highlight"><c- n>T</c-></code> may be defined with <code class="highlight"><c- n>reloc</c-></code> if all the
+following conditions are verified:</p>
+   <ul>
+    <li data-md>
+     <p>the object is a complete object with automatic storage ;</p>
+    <li data-md>
+     <p>the object is a function parameter or a function-local object ;</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>T</c-></code> is a class-type ;</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>T</c-></code> is not ref-qualified ;</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>T</c-></code> is not a pointer type ;</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>T</c-></code> is not an array type ;</p>
+    <li data-md>
+     <p><code class="highlight"><c- n>T</c-></code> is not a union type ;</p>
+   </ul>
+   <p>If any of the above conditions is not verified, then the definition is ill-formed.
+For instance:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>X</c->
+<c- p>{</c->
+    <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>></c-> <c- n>reloc</c-> <c- n>m</c-><c- p>;</c-> <c- c1>// ill-formed</c->
+<c- p>};</c->
+
+<c- k>static</c-> <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>></c-> <c- n>reloc</c-> <c- n>g</c-><c- p>;</c-> <c- c1>// ill-formed</c->
+
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-><c- o>&amp;</c-> <c- n>a</c-><c- p>)</c-> <c- p>{}</c-> <c- c1>// ill-formed</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-><c- o>*</c-> <c- n>a</c-><c- p>)</c-> <c- p>{}</c-> <c- c1>// ill-formed</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-><c- o>*</c-> <c- n>reloc</c-><c- o>*</c-> <c- n>a</c-><c- p>)</c-> <c- p>{}</c-> <c- c1>// ill-formed</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-><c- o>**</c-> <c- n>a</c-><c- p>)</c-> <c- p>{}</c-> <c- c1>// ill-formed</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-><c- o>*</c-> <c- n>reloc</c-> <c- n>a</c-><c- p>)</c-> <c- p>{}</c-> <c- c1>// ill-formed</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>()</c->
+<c- p>{</c->
+    <c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>a</c-><c- p>[]</c-> <c- o>=</c-> <c- p>{</c-> <c- p>};</c-> <c- c1>// ill-formed</c->
+<c- p>}</c->
+
+<c- c1>// But</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>)</c-> <c- c1>// well-formed</c->
+<c- p>{</c->
+    <c- n>reloc</c-> <c- n>T</c-> <c- n>obj2</c-><c- p>;</c-> <c- c1>// well-formed</c->
+<c- p>}</c->
+</pre>
+   <p>In particular, functions must be declared without <code class="highlight"><c- n>reloc</c-></code> on their parameters,
+while the function definition does. In other words, <code class="highlight"><c- n>reloc</c-></code> is not
+part of the function signature, and is only effective in the function
+definition. For instance:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>X</c->
+<c- p>{</c->
+    <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-><c- p>);</c->
+<c- p>};</c->
+
+<c- b>void</c-> <c- nf>X::foo</c-><c- p>(</c-><c- n>T</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>)</c-> <c- c1>// well-formed</c->
+<c- p>{</c->
+    <c- c1>// ...</c->
+<c- p>}</c->
+
+<c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>decltype</c-><c- p>(</c-><c- o>&amp;</c-><c- n>X</c-><c- o>::</c-><c- n>foo</c-><c- p>),</c-> <c- b>void</c-> <c- p>(</c-><c- n>X</c-><c- o>::*</c-><c- p>)(</c-><c- n>T</c-><c- p>)</c-><c- o>></c-><c- p>);</c-> <c- c1>// ok</c->
+</pre>
+   <p>If several variables are defined in the same expression, and that <code class="highlight"><c- n>reloc</c-></code> is
+specified in the definition type, then all variables are defined as decomposed.</p>
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>()</c->
+<c- p>{</c->
+    <c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>a</c-><c- p>,</c-> <c- n>b</c-><c- p>;</c-> <c- c1>// a and b are decomposed</c->
+    <c- n>T</c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>c</c-><c- p>,</c-> <c- o>*</c-><c- n>d</c-><c- p>;</c-> <c- c1>// ill-formed, d is not a class-type</c->
+<c- p>}</c->
+</pre>
+   <h4 class="heading settled" data-level="5.2.2" id="decomposed-state"><span class="secno">5.2.2. </span><span class="content">Decomposed state</span><a class="self-link" href="#decomposed-state"></a></h4>
+   <p>When a complete object is defined as <em>decomposed</em>, then:</p>
+   <ul>
+    <li data-md>
+     <p>The object is <em>initialized</em> using the existing rules ;</p>
+    <li data-md>
+     <p>All its direct bases and non-static data members are now considered as
+distinct complete objects:</p>
+     <ul>
+      <li data-md>
+       <p>the decomposition does not odr-use any of the copy, move or relocation
+constructor of the subobjects. In particular, their address remains unchanged ;</p>
+      <li data-md>
+       <p>the introduced objects (i.e. the subobjects of the <em>decomposed</em> object)
+have the same lifetime as the <em>decomposed</em> object,
+had it not been <em>decomposed</em> ;</p>
+      <li data-md>
+       <p>the introduced objects still inherit from the cv-qualifiers,
+if any, of the <em>decomposed</em> object ;</p>
+      <li data-md>
+       <p>for all of the virtual and direct bases which have a runtime type information, they
+now point to that of the base class, and no longer point to the type
+of the <em>decomposed</em> object. This step is identical to what happens with
+the runtime type information of base classes once the destructor body
+is executed ;</p>
+      <li data-md>
+       <p>all virtual bases, if any, keep the same address ; all pointers to such
+virtual bases remain unchanged.</p>
+     </ul>
+    <li data-md>
+     <p><em>The lifetime of the</em> decomposed <em>object ends</em>: its destructor is never invoked implicitly.
+All its non-static subobjects, now considered as complete objects, are still
+alive and will
+follow normal destruction rules: they will be destructed at the end of their
+scope (which is the <em>decomposed</em> object scope)
+unless they have been relocated before.</p>
+   </ul>
+   <p class="note" role="note"><span class="marker">Note:</span> If not for changing the runtime type of the direct bases that have one,
+the decomposition operation would be a no-op.</p>
+   <h4 class="heading settled" data-level="5.2.3" id="ill-formed-decomposition"><span class="secno">5.2.3. </span><span class="content">Illegal decomposition</span><a class="self-link" href="#ill-formed-decomposition"></a></h4>
+   <p>The decomposition of an object <code class="highlight"><c- n>src</c-></code> of type <code class="highlight"><c- n>T</c-></code> is ill-formed if any of
+the following conditions is not satisfied:</p>
+   <ul>
+    <li data-md>
+     <p>all subobjects of <code class="highlight"><c- n>src</c-></code> are accessible. They all need to be
+since their destructor will be called if not relocated ;</p>
+    <li data-md>
+     <p>all declared special member functions of <code class="highlight"><c- n>T</c-></code> are declared either as
+defaulted or deleted, <strong>or</strong> the call-site has private access privilege to <code class="highlight"><c- n>T</c-></code>.</p>
+   </ul>
+   <p>These requirements ensure that we can only decompose (a) compound types,
+where subobjects have no dependencies with one another (like an <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>),
+or (b) types that we are in control of (because of the private access).</p>
+   <h4 class="heading settled" data-level="5.2.4" id="allowed-expr-decomposed-obj"><span class="secno">5.2.4. </span><span class="content">Allowed expressions on a decomposed object</span><a class="self-link" href="#allowed-expr-decomposed-obj"></a></h4>
+   <p>A <em>decomposed</em> object does not exist on its own (its lifetime
+has ended).
+The object itself cannot be used, and its member functions can no longer be called.
+However all its non-relocated subobjects,
+now considered as individual complete objects, are alive and they can be accessed
+normally.</p>
+   <p>We do not propose any special syntax to access such objects. Instead we restrict
+the expressions in which a <em>decomposed</em> object can be used. <strong>Any id-expression</strong> (except in <a href="#decomposed-unevaluated">unevaluated operands</a>)
+which designates the <em>decomposed</em> object is <strong>ill-formed</strong>, unless it is used with the following expressions
+(and only those):</p>
+   <h5 class="heading settled" data-level="5.2.4.1" id="ill-formed-decomposed-object-dm"><span class="secno">5.2.4.1. </span><span class="content">Data member access</span><a class="self-link" href="#ill-formed-decomposed-object-dm"></a></h5>
+   <p>All the expressions listed under <a href="https://eel.is/c++draft/expr.ref">class member access</a> (but <a href="https://eel.is/c++draft/expr.ref#7.3.2">7.3.2</a>)
+where the <a href="https://eel.is/c++draft/expr.ref#4.sentence-1">object expression</a> is the decomposed object or one of its bases,
+remain well-formed.</p>
+   <p>Non-static member function expressions <a href="https://eel.is/c++draft/expr.ref#7.3.2">[7.3.2</a>]
+(once overload resolution has been applied),
+where the function is declared in the class-type of the decomposed object
+(i.e. not in a base class) are ill-formed.</p>
+   <p class="note" role="note"><span class="marker">NOTE:</span> Accesses to relocated subobjects are ill-formed as well, although this is
+not enforced by the rules of this section.
+See the <a href="#dot-reloc-operator">dot-reloc operator</a> for more information.</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>B</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- b>void</c-> <c- nf>b_func</c-><c- p>();</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>B</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- b>void</c-> <c- nf>c_func</c-><c- p>();</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>C</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_d</c-><c- p>;</c-> <c- b>void</c-> <c- nf>d_func</c-><c- p>();</c-> <c- p>};</c->
+
+<c- n>D</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>;</c->
+<c- c1>// `obj`, and `obj.d_func` are now</c->
+<c- c1>// ill-formed expressions because of the decomposition.</c->
+<c- c1>// `obj.b_func`, `obj._b`, `obj._c`, `obj.c_func` and `obj._d` are still</c->
+<c- c1>// well-formed expressions.</c->
+<c- n>foo</c-><c- p>(</c-><c- n>obj</c-><c- p>.</c-><c- n>_c</c-><c- p>);</c-> <c- c1>// well-formed</c->
+
+<c- n>D</c-> <c- n>regular</c-><c- p>;</c->
+<c- p>(</c-><c- n>regular</c-><c- p>,</c-> <c- n>obj</c-><c- p>).</c-><c- n>_d</c-><c- p>;</c-> <c- c1>// ill-formed, cannot use `obj` id-expression in that context</c->
+<c- p>(</c-><c- n>obj</c-><c- p>,</c-> <c- n>regular</c-><c- p>).</c-><c- n>_d</c-><c- p>;</c-> <c- c1>// ill-formed, cannot use `obj` id-expression in that context</c->
+</pre>
+   <h5 class="heading settled" data-level="5.2.4.2" id="ill-formed-decomposed-object-pm"><span class="secno">5.2.4.2. </span><span class="content">Pointer to members</span><a class="self-link" href="#ill-formed-decomposed-object-pm"></a></h5>
+   <p>All the expressions listed under <a href="https://eel.is/c++draft/expr.mptr.oper">pointer-to-member operators</a> where the decomposed object is the <a href="https://eel.is/c++draft/expr.mptr.oper#4.sentence-1">object expression</a>,
+remain well-formed under the condition that the right operand of the <code class="highlight"><c- p>.</c-><c- o>*</c-></code> operator is constant-evaluated.</p>
+   <p>Because of this constant-evaluation constraint, we
+consider such expressions to be equivalent to their regular data member access
+expression counterparts.
+Refer to the <a href="#ill-formed-decomposed-object-dm">section above</a> to determine whether the expression remains well-formed.</p>
+   <p class="note" role="note"><span class="marker">NOTE:</span> The constant-evaluation is needed as the subobject pointed to may have
+been relocated with <em>dot-reloc</em>, and this needs to be verified at compile-time.</p>
+   <h5 class="heading settled" data-level="5.2.4.3" id="ill-formed-decomposed-object-bc"><span class="secno">5.2.4.3. </span><span class="content">Explicit cast to base classes</span><a class="self-link" href="#ill-formed-decomposed-object-bc"></a></h5>
+   <p><code class="highlight"><c- k>static_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code>, <code class="highlight"><c- k>const_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code>, <code class="highlight"><c- k>dynamic_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code> and explicit type
+conversion <code class="highlight"><c- p>(</c-><c- n>D</c-><c- p>)</c-> <c- n>v</c-></code> expressions, where <code class="highlight"><c- n>D</c-></code> is a possibly ref-qualified, possibly cv-qualified base of <code class="highlight"><c- n>T</c-></code> (the type of <code class="highlight"><c- n>v</c-></code>)
+and <code class="highlight"><c- n>v</c-></code> is the <em>id-expression</em> which
+designates the decomposed object, remain well-formed.
+The result and the value category of the cast expression do not change.</p>
+   <p><code class="highlight"><c- k>reinterpret_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code> expressions remain well-formed even if <code class="highlight"><c- n>v</c-></code> is decomposed.</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>B</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- b>void</c-> <c- nf>b_func</c-><c- p>();</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>B</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- b>void</c-> <c- nf>c_func</c-><c- p>();</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>C</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_d</c-><c- p>;</c-> <c- b>void</c-> <c- nf>d_func</c-><c- p>();</c-> <c- p>};</c->
+
+<c- n>D</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>;</c->
+<c- c1>// - `obj`, `(D&amp;)obj` are now ill-formed expressions because of the</c->
+<c- c1>//      decomposition</c->
+<c- c1>// - `(C)obj`, `static_cast&lt;C const&amp;>(obj)`, `const_cast&lt;C&amp;>(obj)`</c->
+<c- c1>//      are still well-formed expressions</c->
+<c- c1>// - `(B)obj`, `static_cast&lt;B const&amp;>(obj)`, `const_cast&lt;B&amp;>(obj)`</c->
+<c- c1>//      are also well-formed expressions</c->
+<c- c1>// - `reinterpret_cast&lt;D&amp;>(obj)` is well-formed.</c->
+
+<c- n>D</c-> <c- n>regular</c-><c- p>;</c->
+<c- n>static_cast</c-><c- o>&lt;</c-><c- n>C</c-> <c- k>const</c-><c- o>&amp;></c-><c- p>((</c-><c- n>regular</c-><c- p>,</c-> <c- n>obj</c-><c- p>));</c-> <c- c1>// ill-formed</c->
+</pre>
+   <h5 class="heading settled" data-level="5.2.4.4" id="ill-formed-decomposed-object-dr"><span class="secno">5.2.4.4. </span><span class="content">dot-reloc expressions</span><a class="self-link" href="#ill-formed-decomposed-object-dr"></a></h5>
+   <p><a href="#dot-reloc-operator">dot-reloc expressions</a>, with the decomposed object as left operand,
+remain well-formed given that the right operand has not been relocated yet.</p>
+   <h4 class="heading settled" data-level="5.2.5" id="decomposed-unevaluated"><span class="secno">5.2.5. </span><span class="content">Decomposed objects in unevaluated operands</span><a class="self-link" href="#decomposed-unevaluated"></a></h4>
+   <p>If a decomposed object appears in an expression which is an
+unevaluated operand, then as a general rule, the rules detailed above
+still apply.</p>
+   <p>The exceptions are for the <code class="highlight"><c- k>decltype</c-></code> and <code class="highlight"><c- k>sizeof</c-></code> operators.
+For those two operators only, decomposed objects
+are considered as if they were not decomposed if they are part of their
+operand expression.</p>
+   <p>If an expression is ill-formed because of the rules described above, and that
+expression is part of a require-clause, then it does not cause the program
+to be ill-formed, but only the require expression to be false.</p>
+<pre class="language-c++ highlight"><c- n>T</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>;</c->
+<c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>decltype</c-><c- p>(</c-><c- n>obj</c-><c- p>),</c-> <c- n>T</c-><c- o>></c-><c- p>);</c-> <c- c1>// ok</c->
+<c- n>decltype</c-><c- p>(</c-><c- n>obj</c-><c- p>)</c-> <c- n>obj2</c-><c- p>;</c-> <c- c1>// ok</c->
+<c- n>decltype</c-><c- p>(</c-><c- n>obj</c-><c- p>)</c-> <c- n>reloc</c-> <c- n>obj3</c-><c- p>;</c-> <c- c1>// ok</c->
+<c- k>sizeof</c-> <c- n>obj</c-><c- p>;</c-> <c- c1>// ok</c->
+<c- n>typeid</c-><c- p>(</c-><c- n>obj</c-><c- p>);</c-> <c- c1>// ill-formed even if unevaluated</c->
+<c- n>typeid</c-><c- p>(</c-><c- n>decltype</c-><c- p>(</c-><c- n>obj</c-><c- p>));</c-> <c- c1>// well-formed</c->
+</pre>
+   <h3 class="heading settled" data-level="5.3" id="dot-reloc-operator"><span class="secno">5.3. </span><span class="content">Relocating subobjects (dot-reloc operator)</span><a class="self-link" href="#dot-reloc-operator"></a></h3>
    <p>In addition to the <code class="highlight"><c- n>reloc</c-></code> operator, this paper introduces the <em>dot-reloc</em> (<code class="highlight"><c- p>.</c-><c- n>reloc</c-></code>)
-operator, which can be used to <strong>decompose</strong> a source object and <strong>relocate its
-subobjects</strong>. The <em>dot-reloc</em> is necessary to allow user-defined relocation
+operator, which can be used to <strong>relocate a subobject</strong> out of a <strong>decomposed</strong> object. The <em>dot-reloc</em> is necessary to allow user-defined relocation
 constructors and relocation assignment operators that look similar to their copy
 and move counterparts.</p>
-   <h4 class="heading settled" data-level="5.2.1" id="dot-reloc-syntax"><span class="secno">5.2.1. </span><span class="content">dot-reloc expression</span><a class="self-link" href="#dot-reloc-syntax"></a></h4>
+   <h4 class="heading settled" data-level="5.3.1" id="dot-reloc-syntax"><span class="secno">5.3.1. </span><span class="content">dot-reloc expression</span><a class="self-link" href="#dot-reloc-syntax"></a></h4>
    <p>The <em>dot-reloc</em> operator is a binary operator.
 Both operands must be id-expressions separated by <code class="highlight"><c- p>.</c-></code> and <code class="highlight"><c- n>reloc</c-></code>.
-Its left operand is the source
-object to decompose, and its right operand is the subobject to relocate.</p>
-   <p>Let <code class="highlight"><c- n>T</c-></code> be the type of the left operand.
-The left operand must verify all the following:</p>
+The left operand <strong>must</strong> designate a <em>decomposed</em> object.
+The right operand is the subobject to relocate.</p>
+   <p>Let <code class="highlight"><c- n>T</c-></code> be the type of the <em>decomposed</em> object.
+The right operand is an id-expression which must designate either:</p>
    <ul>
     <li data-md>
-     <p>the id-expression must designate a function-local variable
-(can be a function parameter passed by value) ;</p>
+     <p><em>data member relocation case</em>: a non-static data member of <code class="highlight"><c- n>T</c-></code>,
+In particular, the
+expression may designate a data member of an anonymous union of <code class="highlight"><c- n>T</c-></code> ;</p>
     <li data-md>
-     <p>it must be a complete object ;</p>
-    <li data-md>
-     <p>it must not be a lambda
-capture, a structured binding, or a subobject promoted to a complete object
-because of a previous decomposition (<a href="#decomposed-state">see below</a>) ;</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>T</c-></code> must be a non-union class-type ;</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>T</c-></code> must not be ref-qualified ;</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>T</c-></code> must not be not an array-type.</p>
-    <li data-md>
-     <p><code class="highlight"><c- n>T</c-></code> may be cv-qualified ;</p>
-   </ul>
-   <p>The right operand is an id-expression which must designate either:</p>
-   <ul>
-    <li data-md>
-     <p><em>data member relocation case</em>: a non-static data member of a class <code class="highlight"><c- n>X</c-></code>,
-with <code class="highlight"><c- n>X</c-></code> being <code class="highlight"><c- n>T</c-></code> or a non-virtual base of <code class="highlight"><c- n>T</c-></code>. In particular, the
-expression may designate a data member of an anonymous union of <code class="highlight"><c- n>X</c-></code> ;</p>
-    <li data-md>
-     <p><em>base class relocation case</em>: a class-type <code class="highlight"><c- n>X</c-></code> which is a non-virtual base of <code class="highlight"><c- n>T</c-></code> ;</p>
-    <li data-md>
-     <p>In both cases, if <code class="highlight"><c- n>X</c-></code> is not a direct base of <code class="highlight"><c- n>T</c-></code>, then there must not be any
-virtual base on the inheritance path from <code class="highlight"><c- n>T</c-></code> to <code class="highlight"><c- n>X</c-></code>.</p>
+     <p><em>base class relocation case</em>: a class-type <code class="highlight"><c- n>X</c-></code> which is a non-virtual, direct base of <code class="highlight"><c- n>T</c-></code>.</p>
    </ul>
    <p>For instance:</p>
-<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>string</c-> <c- k>const</c-><c- p>,</c-> <c- n>non_null</c-><c- o>&lt;</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>>></c-> <c- n>p</c-><c- p>)</c->
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>string</c-> <c- k>const</c-><c- p>,</c-> <c- n>non_null</c-><c- o>&lt;</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>>></c-> <c- n>reloc</c-> <c- n>p</c-><c- p>)</c->
 <c- p>{</c->
     <c- n>bar</c-><c- p>(</c-><c- n>p</c-><c- p>.</c-><c- n>reloc</c-> <c- n>first</c-><c- p>,</c-> <c- n>p</c-><c- p>.</c-><c- n>reloc</c-> <c- n>second</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
-   <p>If any of the requirements on any operand is not satisfied, then the program is ill-formed.</p>
    <p>The result of the <em>dot-reloc</em> expression is:</p>
    <ul>
     <li data-md>
@@ -3603,15 +3818,9 @@ virtual base on the inheritance path from <code class="highlight"><c- n>T</c-></
     <li data-md>
      <p>a prvalue of the type of its right operand otherwise.</p>
    </ul>
-   <p>The effect of the <em>dot-reloc</em> operator is twofold:</p>
-   <ol>
-    <li data-md>
-     <p>If not already decomposed, then <code class="highlight"><c- n>src</c-></code> (along with base classes up to the base
-class which holds the subobject to relocate) <a href="#decomposed-state">transitions into its decomposed state</a> ;</p>
-    <li data-md>
-     <p>Triggers the relocation of the said subobject, as if done by the <code class="highlight"><c- n>reloc</c-></code> operator on any complete object.</p>
-   </ol>
-   <h5 class="heading settled" data-level="5.2.1.1" id="dot-reloc-star"><span class="secno">5.2.1.1. </span><span class="content">Pointer to members with dot-reloc</span><a class="self-link" href="#dot-reloc-star"></a></h5>
+   <p>The <em>dot-reloc</em> operator can trigger the relocation of the said subobject,
+as if done by the <code class="highlight"><c- n>reloc</c-></code> operator on any complete object.</p>
+   <h5 class="heading settled" data-level="5.3.1.1" id="dot-reloc-star"><span class="secno">5.3.1.1. </span><span class="content">Pointer to members with dot-reloc</span><a class="self-link" href="#dot-reloc-star"></a></h5>
    <p><em>dot-reloc</em> expressions can be used with pointer-to-members:</p>
    <ul>
     <li data-md>
@@ -3628,7 +3837,7 @@ a member function ;</p>
 the <em>dot-reloc-star</em> expression has the exact same effects as the <em>dot-reloc</em> expression.</p>
    </ul>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- k>auto</c-> <c- n>Member</c-><c- p>,</c-> <c- n>class</c-> <c- n>Pair</c-><c- o>></c->
-<c- k>auto</c-> <c- n>GetMember</c-><c- p>(</c-><c- n>Pair</c-> <c- n>pair</c-><c- p>)</c->
+<c- k>auto</c-> <c- n>GetMember</c-><c- p>(</c-><c- n>Pair</c-> <c- n>reloc</c-> <c- n>pair</c-><c- p>)</c->
 <c- p>{</c->
     <c- k>return</c-> <c- n>pair</c-><c- p>.</c-><c- n>reloc</c-> <c- o>*</c-><c- n>Member</c-><c- p>;</c->
 <c- p>}</c->
@@ -3636,14 +3845,14 @@ the <em>dot-reloc-star</em> expression has the exact same effects as the <em>dot
 <c- b>void</c-> <c- n>foo</c-><c- p>()</c->
 <c- p>{</c->
     <c- n>using</c-> <c- n>pair_t</c-> <c- o>=</c-> <c- n>pair</c-><c- o>&lt;</c-><c- n>string</c-> <c- k>const</c-><c- p>,</c-> <c- n>non_null</c-><c- o>&lt;</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>>></c-><c- p>;</c->
-    <c- n>pair_t</c-> <c- k>const</c-> <c- n>p</c-> <c- o>=</c-> <c- c1>// ...</c->
+    <c- n>pair_t</c-> <c- k>const</c-> <c- n>reloc</c-> <c- n>p</c-> <c- o>=</c-> <c- c1>// ...</c->
     <c- k>auto</c-> <c- k>const</c-> <c- n>p_second</c-> <c- o>=</c-> <c- n>GetMember</c-><c- o>&lt;&amp;</c-><c- n>pair_t</c-><c- o>::</c-><c- n>second</c-><c- o>></c-><c- p>(</c-><c- n>reloc</c-> <c- n>p</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
    <p class="note" role="note"><span class="marker">NOTE:</span> As the <em>dot-reloc-star</em> operator can be expressed at compile-time
 in term of a <em>dot-reloc</em> operator, the remainder of this proposal will only
 address the <em>dot-reloc</em> operator (which encompasses the <em>dot-reloc-star</em> operator).</p>
-   <h4 class="heading settled" data-level="5.2.2" id="decomposed-state"><span class="secno">5.2.2. </span><span class="content">Decomposed state transition</span><a class="self-link" href="#decomposed-state"></a></h4>
+   <h4 class="heading settled" data-level="5.3.2" id="decomposed-state①"><span class="secno">5.3.2. </span><span class="content">Decomposed state transition</span><a class="self-link" href="#decomposed-state①"></a></h4>
    <p>When a complete object enters its decomposed state:</p>
    <ul>
     <li data-md>
@@ -3677,11 +3886,11 @@ unless they have been relocated before.</p>
    </ul>
    <p class="note" role="note"><span class="marker">Note:</span> If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.</p>
-   <h5 class="heading settled" data-level="5.2.2.1" id="incurred-decomposition"><span class="secno">5.2.2.1. </span><span class="content">Incurred decompositions</span><a class="self-link" href="#incurred-decomposition"></a></h5>
+   <h5 class="heading settled" data-level="5.3.2.1" id="incurred-decomposition"><span class="secno">5.3.2.1. </span><span class="content">Incurred decompositions</span><a class="self-link" href="#incurred-decomposition"></a></h5>
    <p>The source object is decomposed using the <a href="#decomposed-state">steps described above</a>.
 However extra decompositions may occur, depending on the subobject that is
 being relocated.</p>
-   <h6 class="heading settled" data-level="5.2.2.1.1" id="incurred-decomposition-base-class"><span class="secno">5.2.2.1.1. </span><span class="content">Base class relocation case</span><a class="self-link" href="#incurred-decomposition-base-class"></a></h6>
+   <h6 class="heading settled" data-level="5.3.2.1.1" id="incurred-decomposition-base-class"><span class="secno">5.3.2.1.1. </span><span class="content">Base class relocation case</span><a class="self-link" href="#incurred-decomposition-base-class"></a></h6>
    <p>If <code class="highlight"><c- n>X</c-></code> is not a direct base of <code class="highlight"><c- n>T</c-></code>, then let <code class="highlight"><c- n>U</c-></code> be the direct base of <code class="highlight"><c- n>T</c-></code> which is on the inheritance path from <code class="highlight"><c- n>T</c-></code> to <code class="highlight"><c- n>X</c-></code>.</p>
    <p><code class="highlight"><c- n>U</c-></code> is decomposed as well (it is considered as the source object
 being decomposed in the <a href="#decomposed-state">steps described above</a>). This step occurs recursively and stops
@@ -3692,9 +3901,9 @@ thanks to their move constructor. The reason behind this is that, because of the
 decomposition, we may have some source subobjects that still point to virtual
 bases, and we still want them to point to valid data
 (albeit potentially in a moved-from state).</p>
-   <h6 class="heading settled" data-level="5.2.2.1.2" id="incurred-decomposition-data-member"><span class="secno">5.2.2.1.2. </span><span class="content">Data member relocation case</span><a class="self-link" href="#incurred-decomposition-data-member"></a></h6>
+   <h6 class="heading settled" data-level="5.3.2.1.2" id="incurred-decomposition-data-member"><span class="secno">5.3.2.1.2. </span><span class="content">Data member relocation case</span><a class="self-link" href="#incurred-decomposition-data-member"></a></h6>
    <p>If <code class="highlight"><c- n>X</c-></code> is not <code class="highlight"><c- n>T</c-></code> then all classes on the inheritance path from <code class="highlight"><c- n>T</c-></code> to <code class="highlight"><c- n>X</c-></code> are decomposed, including <code class="highlight"><c- n>X</c-></code> itself, starting with the most derived classes.</p>
-   <h4 class="heading settled" data-level="5.2.3" id="ill-formed-dot-reloc"><span class="secno">5.2.3. </span><span class="content">Illegal uses of dot-reloc</span><a class="self-link" href="#ill-formed-dot-reloc"></a></h4>
+   <h4 class="heading settled" data-level="5.3.3" id="ill-formed-dot-reloc"><span class="secno">5.3.3. </span><span class="content">Illegal uses of dot-reloc</span><a class="self-link" href="#ill-formed-dot-reloc"></a></h4>
    <p>An expression using the <em>dot-reloc</em> operator is ill-formed
 if any of the following conditions is met:</p>
    <ul>
@@ -3707,7 +3916,7 @@ See <a href="#ill-formed-decomposition">below</a> ;</p>
      <p>the relocation operation on the subobject is ill-formed.
 See <a href="#ill-formed-dot-reloc-relocation">below</a>.</p>
    </ul>
-   <h5 class="heading settled" data-level="5.2.3.1" id="ill-formed-decomposition"><span class="secno">5.2.3.1. </span><span class="content">Illegal decomposition</span><a class="self-link" href="#ill-formed-decomposition"></a></h5>
+   <h5 class="heading settled" data-level="5.3.3.1" id="ill-formed-decomposition①"><span class="secno">5.3.3.1. </span><span class="content">Illegal decomposition</span><a class="self-link" href="#ill-formed-decomposition①"></a></h5>
    <p>A decomposition is ill-formed if any of the following conditions
 is not satisfied:</p>
    <ul>
@@ -3717,16 +3926,16 @@ destructor will be called if not relocated ;</p>
     <li data-md>
      <p>the source object type has no user-defined special member function, <strong>or</strong> the call-site has private access privilege to the source object type</p>
    </ul>
-   <p>These requirements ensure that we can only relocate (a) compound types,
+   <p>These requirements ensure that we can only decompose (a) compound types,
 where subobjects have no dependencies with one another (like an <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>),
 or (b) types that we are in control of (because of the private access).</p>
-   <h5 class="heading settled" data-level="5.2.3.2" id="ill-formed-dot-reloc-relocation"><span class="secno">5.2.3.2. </span><span class="content">Illegal relocation</span><a class="self-link" href="#ill-formed-dot-reloc-relocation"></a></h5>
+   <h5 class="heading settled" data-level="5.3.3.2" id="ill-formed-dot-reloc-relocation"><span class="secno">5.3.3.2. </span><span class="content">Illegal relocation</span><a class="self-link" href="#ill-formed-dot-reloc-relocation"></a></h5>
    <p>The <em>dot-reloc</em> expression in the <em>base class relocation case</em> is ill-formed
 if <code class="highlight"><c- n>X</c-></code> does not have an eligible relocation, move or copy constructor.</p>
    <p>The <em>dot-reloc</em> expression in the <em>data member relocation case</em> is ill-formed
 if the data member type is not ref-qualified and does not have an eligible
 relocation, move or copy constructor.</p>
-   <h4 class="heading settled" data-level="5.2.4" id="ill-formed-decomposed-object-uses"><span class="secno">5.2.4. </span><span class="content">Illegal uses of a decomposed object</span><a class="self-link" href="#ill-formed-decomposed-object-uses"></a></h4>
+   <h4 class="heading settled" data-level="5.3.4" id="ill-formed-decomposed-object-uses"><span class="secno">5.3.4. </span><span class="content">Illegal uses of a decomposed object</span><a class="self-link" href="#ill-formed-decomposed-object-uses"></a></h4>
    <p>When an object transitions into its decomposed state, it reaches its
 end of scope. The object itself cannot be reused,
 and its member functions can no longer be called.
@@ -3738,7 +3947,7 @@ the expressions in which a decomposed object can be used.
 The <em>id-expression</em> which designates the decomposed
 object is <strong>ill-formed</strong>, unless it is used with the following expressions
 (and only those):</p>
-   <h5 class="heading settled" data-level="5.2.4.1" id="ill-formed-decomposed-object-dm"><span class="secno">5.2.4.1. </span><span class="content">Data member access</span><a class="self-link" href="#ill-formed-decomposed-object-dm"></a></h5>
+   <h5 class="heading settled" data-level="5.3.4.1" id="ill-formed-decomposed-object-dm①"><span class="secno">5.3.4.1. </span><span class="content">Data member access</span><a class="self-link" href="#ill-formed-decomposed-object-dm①"></a></h5>
    <p>All the expressions listed under <a href="https://eel.is/c++draft/expr.ref">class member access</a> (but <a href="https://eel.is/c++draft/expr.ref#7.3.2">7.3.2</a>)
 where the decomposed object is the <a href="https://eel.is/c++draft/expr.ref#4.sentence-1">object expression</a>,
 remain well-formed.</p>
@@ -3759,7 +3968,7 @@ not enforced by the rules of this section. <a href="#ill-formed-reuse">Read more
 <c- c1>// - `(B&amp;)obj`, `obj.b_func`, `obj._b` and `obj._d` are still</c->
 <c- c1>//      well-formed expressions</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.4.2" id="ill-formed-decomposed-object-pm"><span class="secno">5.2.4.2. </span><span class="content">Pointer to members</span><a class="self-link" href="#ill-formed-decomposed-object-pm"></a></h5>
+   <h5 class="heading settled" data-level="5.3.4.2" id="ill-formed-decomposed-object-pm①"><span class="secno">5.3.4.2. </span><span class="content">Pointer to members</span><a class="self-link" href="#ill-formed-decomposed-object-pm①"></a></h5>
    <p>All the expressions listed under <a href="https://eel.is/c++draft/expr.mptr.oper">pointer-to-member operators</a> where the decomposed object is the <a href="https://eel.is/c++draft/expr.mptr.oper#4.sentence-1">object expression</a>,
 remain well-formed under conditions.</p>
    <p>The right operand of the <code class="highlight"><c- p>.</c-><c- o>*</c-></code> operator must be constant-evaluated. In addition:</p>
@@ -3774,7 +3983,7 @@ the expression is ill-formed. If <code class="highlight"><c- n>X</c-></code> is 
    <p class="note" role="note"><span class="marker">NOTE:</span> Again, accesses to relocated subobjects are ill-formed. The main reason
 why the right operand must be constant-evaluated is to allow for better tracking
 of data members and their relocation state. <a href="#ill-formed-reuse">Read more</a>.</p>
-   <h5 class="heading settled" data-level="5.2.4.3" id="ill-formed-decomposed-object-bc"><span class="secno">5.2.4.3. </span><span class="content">Explicit cast to base classes</span><a class="self-link" href="#ill-formed-decomposed-object-bc"></a></h5>
+   <h5 class="heading settled" data-level="5.3.4.3" id="ill-formed-decomposed-object-bc①"><span class="secno">5.3.4.3. </span><span class="content">Explicit cast to base classes</span><a class="self-link" href="#ill-formed-decomposed-object-bc①"></a></h5>
    <p><code class="highlight"><c- k>static_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code>, <code class="highlight"><c- k>const_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code>, <code class="highlight"><c- k>dynamic_cast</c-><c- o>&lt;</c-><c- n>D</c-><c- o>></c-><c- p>(</c-><c- n>v</c-><c- p>)</c-></code> and explicit type
 conversion <code class="highlight"><c- p>(</c-><c- n>D</c-><c- p>)</c-> <c- n>v</c-></code> expressions, where <code class="highlight"><c- n>v</c-></code> is the <em>id-expression</em> which
 designates the decomposed object, remain well-formed under the following
@@ -3799,10 +4008,10 @@ conditions:</p>
 <c- c1>//      are still well-formed expressions</c->
 <c- c1>// - `(C&amp;)obj2`, `(B&amp;)obj2` are ill-formed because of the relocation</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.4.4" id="ill-formed-decomposed-object-dr"><span class="secno">5.2.4.4. </span><span class="content">Further dot-reloc expressions</span><a class="self-link" href="#ill-formed-decomposed-object-dr"></a></h5>
+   <h5 class="heading settled" data-level="5.3.4.4" id="ill-formed-decomposed-object-dr①"><span class="secno">5.3.4.4. </span><span class="content">Further dot-reloc expressions</span><a class="self-link" href="#ill-formed-decomposed-object-dr①"></a></h5>
    <p>Further <em>dot-reloc</em> expressions, with the decomposed object as left operand,
 remain well-formed given that the right operand has not been relocated yet.</p>
-   <h4 class="heading settled" data-level="5.2.5" id="decompose-lambda"><span class="secno">5.2.5. </span><span class="content">Decomposition of a lambda closure type</span><a class="self-link" href="#decompose-lambda"></a></h4>
+   <h4 class="heading settled" data-level="5.3.5" id="decompose-lambda"><span class="secno">5.3.5. </span><span class="content">Decomposition of a lambda closure type</span><a class="self-link" href="#decompose-lambda"></a></h4>
    <p>Lambda objects can be decomposed with the rules defined above. The subobjects
 of the closure type are all the lambda captures which are captured by copy.
 The decomposition can only happen from the lambda body and not from outside
@@ -3823,7 +4032,7 @@ the lambda, as if its captures had private access.</p>
 <c- p>};</c->
 <c- k>auto</c-> <c- n>ptr2</c-> <c- o>=</c-> <c- n>getPtr</c-><c- p>.</c-><c- n>reloc</c-> <c- n>p</c-><c- p>;</c-> <c- c1>// ill-formed, no access privilege to the captures</c->
 </pre>
-   <h4 class="heading settled" data-level="5.2.6" id="decompose-tmp"><span class="secno">5.2.6. </span><span class="content">Implicit decomposition of temporaries</span><a class="self-link" href="#decompose-tmp"></a></h4>
+   <h4 class="heading settled" data-level="5.3.6" id="decompose-tmp"><span class="secno">5.3.6. </span><span class="content">Implicit decomposition of temporaries</span><a class="self-link" href="#decompose-tmp"></a></h4>
    <p>Temporary objects can be implicitly decomposed to allow relocations in the following
 scenarios (but non exclusively):</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-> <c- p>{};</c->
@@ -3878,7 +4087,7 @@ illegal. In particular, if any virtual base is used as right operand of <em>dot-
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>().</c-><c- n>second</c-><c- p>;</c-> <c- d>/* implicit-decomposition is well-formed</c->
 <c- d>    std::string’s relocation constructor is used */</c->
 </pre>
-   <h4 class="heading settled" data-level="5.2.7" id="decompose-value-param"><span class="secno">5.2.7. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
+   <h4 class="heading settled" data-level="5.3.7" id="decompose-value-param"><span class="secno">5.3.7. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
    <p>As we have seen, decomposition ends the lifetime of the source object.
 The reader may be concerned that this may break existing ABIs, should the source
 object be a function parameter passed by value.
@@ -3963,11 +4172,11 @@ workaround and is not part of the proposal.</em></p>
 <c- k>catch</c-> <c- p>(...)</c-> <c- p>{}</c->
 </pre>
    </table>
-   <h4 class="heading settled" data-level="5.2.8" id="dot-reloc-constexpr"><span class="secno">5.2.8. </span><span class="content">dot-reloc in constexpr</span><a class="self-link" href="#dot-reloc-constexpr"></a></h4>
+   <h4 class="heading settled" data-level="5.3.8" id="dot-reloc-constexpr"><span class="secno">5.3.8. </span><span class="content">dot-reloc in constexpr</span><a class="self-link" href="#dot-reloc-constexpr"></a></h4>
    <p>As with <code class="highlight"><c- n>reloc</c-></code>, <em>dot-reloc</em> can be used in constexpr functions and
 constant-evaluated expressions.</p>
-   <h4 class="heading settled" data-level="5.2.9" id="decomposed-object-examples"><span class="secno">5.2.9. </span><span class="content">Examples</span><a class="self-link" href="#decomposed-object-examples"></a></h4>
-   <h5 class="heading settled" data-level="5.2.9.1" id="decomposed-object-ex-nominal"><span class="secno">5.2.9.1. </span><span class="content">Nominal case</span><a class="self-link" href="#decomposed-object-ex-nominal"></a></h5>
+   <h4 class="heading settled" data-level="5.3.9" id="decomposed-object-examples"><span class="secno">5.3.9. </span><span class="content">Examples</span><a class="self-link" href="#decomposed-object-examples"></a></h4>
+   <h5 class="heading settled" data-level="5.3.9.1" id="decomposed-object-ex-nominal"><span class="secno">5.3.9.1. </span><span class="content">Nominal case</span><a class="self-link" href="#decomposed-object-ex-nominal"></a></h5>
    <p>One of the main uses of <em>dot-reloc</em> is to decompose compound types, such as <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>. Note that this code would not be feasible without relocation and
 without decomposition.</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>string</c-><c- p>,</c-> <c- n>non_null</c-><c- o>&lt;</c-><c- n>unique_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-><c- p>);</c->
@@ -3977,7 +4186,7 @@ without decomposition.</p>
     <c- n>bar</c-><c- p>(</c-><c- n>p</c-><c- p>.</c-><c- n>reloc</c-> <c- n>first</c-><c- p>,</c-> <c- n>p</c-><c- p>.</c-><c- n>reloc</c-> <c- n>second</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.9.2" id="decomposed-object-ex-extractor"><span class="secno">5.2.9.2. </span><span class="content">Custom extractor</span><a class="self-link" href="#decomposed-object-ex-extractor"></a></h5>
+   <h5 class="heading settled" data-level="5.3.9.2" id="decomposed-object-ex-extractor"><span class="secno">5.3.9.2. </span><span class="content">Custom extractor</span><a class="self-link" href="#decomposed-object-ex-extractor"></a></h5>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c->
 <c- p>{</c->
 <c- n>private</c-><c- o>:</c->
@@ -4002,7 +4211,7 @@ without decomposition.</p>
 <c- k>auto</c-> <c- n>val1</c-> <c- o>=</c-> <c- n>getT</c-><c- p>().</c-><c- n>getVal</c-><c- p>();</c->
 <c- k>auto</c-> <c- n>val2</c-> <c- o>=</c-> <c- p>(</c-><c- n>reloc</c-> <c- n>src</c-><c- p>).</c-><c- n>getVal</c-><c- p>();</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.9.3" id="decomposed-object-putative-release"><span class="secno">5.2.9.3. </span><span class="content">Putative std::unique_ptr::release</span><a class="self-link" href="#decomposed-object-putative-release"></a></h5>
+   <h5 class="heading settled" data-level="5.3.9.3" id="decomposed-object-putative-release"><span class="secno">5.3.9.3. </span><span class="content">Putative std::unique_ptr::release</span><a class="self-link" href="#decomposed-object-putative-release"></a></h5>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- p>,</c-> <c- n>class</c-> <c- n>Deleter</c-><c- o>></c->
 <c- n>class</c-> <c- n>unique_ptr</c->
 <c- p>{</c->
@@ -4017,7 +4226,7 @@ without decomposition.</p>
    <p>Because of the decomposition, the destructor of <code class="highlight"><c- n>self</c-></code> is not called. This code
 safely releases the guarded pointer. Note that this function <code class="highlight"><c- n>release</c-></code> function
 is not part of the proposal.</p>
-   <h5 class="heading settled" data-level="5.2.9.4" id="decomposed-object-ex-ill-formed"><span class="secno">5.2.9.4. </span><span class="content">Ill-formedness showcase</span><a class="self-link" href="#decomposed-object-ex-ill-formed"></a></h5>
+   <h5 class="heading settled" data-level="5.3.9.4" id="decomposed-object-ex-ill-formed"><span class="secno">5.3.9.4. </span><span class="content">Ill-formedness showcase</span><a class="self-link" href="#decomposed-object-ex-ill-formed"></a></h5>
    <p>Let’s consider the following classes:</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>VB</c->
 <c- p>{</c->
@@ -4121,8 +4330,8 @@ is not part of the proposal.</p>
 <c- c1>// Although B2 was relocated, we can still access its virtual base class:</c->
 <c- n>vb</c-> <c- o>=</c-> <c- n>src</c-><c- p>.</c-><c- n>_vb</c-><c- p>;</c-> <c- c1>// OK</c->
 </pre>
-   <h3 class="heading settled" data-level="5.3" id="ill-formed-reuse"><span class="secno">5.3. </span><span class="content">Ill-formed reuse of relocated or decomposed objects</span><a class="self-link" href="#ill-formed-reuse"></a></h3>
-   <h4 class="heading settled" data-level="5.3.1" id="variable-state-tracking"><span class="secno">5.3.1. </span><span class="content">Variable state tracking</span><a class="self-link" href="#variable-state-tracking"></a></h4>
+   <h3 class="heading settled" data-level="5.4" id="ill-formed-reuse"><span class="secno">5.4. </span><span class="content">Ill-formed reuse of relocated or decomposed objects</span><a class="self-link" href="#ill-formed-reuse"></a></h3>
+   <h4 class="heading settled" data-level="5.4.1" id="variable-state-tracking"><span class="secno">5.4.1. </span><span class="content">Variable state tracking</span><a class="self-link" href="#variable-state-tracking"></a></h4>
    <p>The <code class="highlight"><c- n>reloc</c-></code> and <em>dot-reloc</em> operators change the state of their operand, imposing
 restrictions of how the variable can be used in the next expressions.</p>
    <p>Let us formally introduce the new states a local variable can have:</p>
@@ -4243,7 +4452,7 @@ variable.</p>
    <p class="note" role="note"><span class="marker">NOTE:</span> We don’t expect this analysis to be costly. It is only necessary in functions
 for the variables that are relocated or decomposed. If none of the two are used,
 then this analysis is not needed.</p>
-   <h4 class="heading settled" data-level="5.3.2" id="unevaluated-operands"><span class="secno">5.3.2. </span><span class="content">reloc and dot-reloc in unevaluated operands</span><a class="self-link" href="#unevaluated-operands"></a></h4>
+   <h4 class="heading settled" data-level="5.4.2" id="unevaluated-operands"><span class="secno">5.4.2. </span><span class="content">reloc and dot-reloc in unevaluated operands</span><a class="self-link" href="#unevaluated-operands"></a></h4>
    <p><code class="highlight"><c- n>reloc</c-></code> or <em>dot-reloc</em> operators can be used in <a href="https://eel.is/c++draft/expr.context#1">unevaluated operands</a>.
 Such expressions are ignored by the code analysis described <a href="#variable-state-tracking">above</a>.
 If <code class="highlight"><c- n>reloc</c-></code> or <em>dot-reloc</em> are used in an unevaluated operands,
@@ -4256,7 +4465,7 @@ and (b) the state of their operands do not change.</p>
     <c- n>decltype</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>,</c-> <c- n>x</c-><c- p>.</c-><c- n>reloc</c-> <c- n>m</c-><c- p>)</c-> <c- n>z</c-> <c- o>=</c-> <c- n>y</c-><c- p>.</c-><c- n>m</c-><c- p>;</c-> <c- c1>// well-formed</c->
 <c- p>}</c->
 </pre>
-   <h4 class="heading settled" data-level="5.3.3" id="reloc-dot-reloc-ill-formed"><span class="secno">5.3.3. </span><span class="content">Ill-formed expressions</span><a class="self-link" href="#reloc-dot-reloc-ill-formed"></a></h4>
+   <h4 class="heading settled" data-level="5.4.3" id="reloc-dot-reloc-ill-formed"><span class="secno">5.4.3. </span><span class="content">Ill-formed expressions</span><a class="self-link" href="#reloc-dot-reloc-ill-formed"></a></h4>
    <p>Thanks to this compile-time state analysis, new ill-formed conditions arise:</p>
    <ul>
     <li data-md>
@@ -4267,7 +4476,7 @@ expressions using the variable is ill-formed.</p>
 conditions described <a href="#ill-formed-decomposed-object-uses">here</a> apply in any
 potentially-evaluated expressions using the variable.</p>
    </ul>
-   <h4 class="heading settled" data-level="5.3.4" id="reloc-dot-reloc-ill-formed-showcase"><span class="secno">5.3.4. </span><span class="content">Examples</span><a class="self-link" href="#reloc-dot-reloc-ill-formed-showcase"></a></h4>
+   <h4 class="heading settled" data-level="5.4.4" id="reloc-dot-reloc-ill-formed-showcase"><span class="secno">5.4.4. </span><span class="content">Examples</span><a class="self-link" href="#reloc-dot-reloc-ill-formed-showcase"></a></h4>
    <p>Consider the following examples:</p>
 <pre class="language-cpp highlight"><c- b>void</c-> <c- nf>reloc_showcase_01</c-><c- p>()</c->
 <c- p>{</c->
@@ -4641,7 +4850,7 @@ examine the rest.</p>
   <c- p>}</c->
 <c- p>}</c->
 </pre>
-   <h4 class="heading settled" data-level="5.3.5" id="conditional-reloc"><span class="secno">5.3.5. </span><span class="content">Conditional destruction</span><a class="self-link" href="#conditional-reloc"></a></h4>
+   <h4 class="heading settled" data-level="5.4.5" id="conditional-reloc"><span class="secno">5.4.5. </span><span class="content">Conditional destruction</span><a class="self-link" href="#conditional-reloc"></a></h4>
    <p class="note" role="note"><span class="marker">NOTE:</span> This section only applies to variables that are not ref-qualified.</p>
    <p>The variable state analysis described <a href="#variable-state-tracking">here</a> may be used to know what kind of cleanup is necessary at scope exit
 (i.e. if the end of scope is reached or an exception is emitted).</p>
@@ -4685,7 +4894,7 @@ user is getting at least something out of this. Alternatives would be for the so
 object to be destroyed implicitly at the opening or closing brace of the <code class="highlight"><c- k>else</c-></code>,
 for the code to be ill-formed unless the source object is relocated within the <code class="highlight"><c- k>else</c-></code>, or for the code to be ill-formed unconditionally. Note that in each of these
 cases, the user can recover our preferred behavior in library, using <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>optional</c-></code> to add the tracking flags that in our proposal would be provided by the language.</p>
-   <h3 class="heading settled" data-level="5.4" id="reloc-ctor"><span class="secno">5.4. </span><span class="content">Relocation constructor</span><a class="self-link" href="#reloc-ctor"></a></h3>
+   <h3 class="heading settled" data-level="5.5" id="reloc-ctor"><span class="secno">5.5. </span><span class="content">Relocation constructor</span><a class="self-link" href="#reloc-ctor"></a></h3>
    <p>Now that we have introduced the <code class="highlight"><c- n>reloc</c-></code> and <em>dot-reloc</em> operators, we
 introduce the relocation constructor, which is built upon those new concepts.
 As relocation happens from prvalues,
@@ -4715,7 +4924,7 @@ location as a previously existing glvalue.</p>
    <p class="note" role="note"><span class="marker">Note:</span> it does not matter that the ABI for the relocation constructor parameter
 differs from that for a prvalue parameter in normal functions, since it is not
 possible to take the address of a constructor.</p>
-   <h4 class="heading settled" data-level="5.4.1" id="reloc-ctor-is-2nd-dtor"><span class="secno">5.4.1. </span><span class="content">The relocation constructor is a second destructor</span><a class="self-link" href="#reloc-ctor-is-2nd-dtor"></a></h4>
+   <h4 class="heading settled" data-level="5.5.1" id="reloc-ctor-is-2nd-dtor"><span class="secno">5.5.1. </span><span class="content">The relocation constructor is a second destructor</span><a class="self-link" href="#reloc-ctor-is-2nd-dtor"></a></h4>
    <p>The role of the relocation constructor is to construct a new instance by <em>destructively
 stealing</em> the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
@@ -4726,7 +4935,7 @@ was ended immediately prior to entering the relocation constructor, and thus
 the source object is considered as destructed thereafter.</p>
    <p>In particular, the original destructor of the class-type must not be called
 on the source object if it has been already passed to the relocation constructor.</p>
-   <h4 class="heading settled" data-level="5.4.2" id="reloc-ctor-declaration"><span class="secno">5.4.2. </span><span class="content">Declaration</span><a class="self-link" href="#reloc-ctor-declaration"></a></h4>
+   <h4 class="heading settled" data-level="5.5.2" id="reloc-ctor-declaration"><span class="secno">5.5.2. </span><span class="content">Declaration</span><a class="self-link" href="#reloc-ctor-declaration"></a></h4>
    <p>The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.</p>
    <p>The relocation constructor of a class-type <code class="highlight"><c- n>T</c-></code> implicitly gets a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->true<c- p>)</c-></code> exception specification unless:</p>
@@ -4742,7 +4951,7 @@ a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->false<c- p>)</c-></code
    <p>These rules are similar to that of the destructor’s implicit exception specification.</p>
    <p>A class-type that provides a relocation constructor has some impact on the program
 ABI. See the <a href="#abi">ABI section</a>.</p>
-   <h5 class="heading settled" data-level="5.4.2.1" id="reloc-ctor-declaration-implicit"><span class="secno">5.4.2.1. </span><span class="content">Implicit declaration</span><a class="self-link" href="#reloc-ctor-declaration-implicit"></a></h5>
+   <h5 class="heading settled" data-level="5.5.2.1" id="reloc-ctor-declaration-implicit"><span class="secno">5.5.2.1. </span><span class="content">Implicit declaration</span><a class="self-link" href="#reloc-ctor-declaration-implicit"></a></h5>
    <p>If a class-type follows the Rule of Zero (updated to account for the relocation
 constructor and relocation assignment operator), then the compiler will declare
 a non-explicit inline public relocation constructor,
@@ -4761,7 +4970,7 @@ i.e. if none of the following are user-declared:</p>
     <li data-md>
      <p>relocation assignment operator</p>
    </ul>
-   <h5 class="heading settled" data-level="5.4.2.2" id="reloc-ctor-declaration-deleted"><span class="secno">5.4.2.2. </span><span class="content">Deleted implicitly-declared or defaulted relocation constructor</span><a class="self-link" href="#reloc-ctor-declaration-deleted"></a></h5>
+   <h5 class="heading settled" data-level="5.5.2.2" id="reloc-ctor-declaration-deleted"><span class="secno">5.5.2.2. </span><span class="content">Deleted implicitly-declared or defaulted relocation constructor</span><a class="self-link" href="#reloc-ctor-declaration-deleted"></a></h5>
    <p>The implicitly-declared or defaulted relocation constructor for class <code class="highlight"><c- n>T</c-></code> is defined as deleted:</p>
    <ul>
     <li data-md>
@@ -4777,7 +4986,7 @@ ignored by overload resolution.</p>
    <p class="note" role="note"><span class="marker">Note:</span> this means that a class with an explictly deleted relocation constructor
 will still be relocated if necessary, but through the move (or copy) constructor
 and destructor.</p>
-   <h5 class="heading settled" data-level="5.4.2.3" id="trivial-relocation"><span class="secno">5.4.2.3. </span><span class="content">Trivial relocation</span><a class="self-link" href="#trivial-relocation"></a></h5>
+   <h5 class="heading settled" data-level="5.5.2.3" id="trivial-relocation"><span class="secno">5.5.2.3. </span><span class="content">Trivial relocation</span><a class="self-link" href="#trivial-relocation"></a></h5>
    <p>A relocation constructor of a class type <code class="highlight"><c- n>X</c-></code> is <em>trivial</em> if it is not user-provided and
 if:</p>
    <ul>
@@ -4804,8 +5013,8 @@ thereof are <em>trivially relocatable</em>.</p>
 require that the class in question be trivially relocatable as well as trivially
 copyable. This is to ensure that if the user wants code to be called on relocation,
 the library does not bypass said code by, say, using <code class="highlight"><c- n>memmove</c-></code>.</strong></p>
-   <h4 class="heading settled" data-level="5.4.3" id="reloc-ctor-definition"><span class="secno">5.4.3. </span><span class="content">Definition</span><a class="self-link" href="#reloc-ctor-definition"></a></h4>
-   <h5 class="heading settled" data-level="5.4.3.1" id="reloc-ctor-dtor-def"><span class="secno">5.4.3.1. </span><span class="content">Destruction of the source object</span><a class="self-link" href="#reloc-ctor-dtor-def"></a></h5>
+   <h4 class="heading settled" data-level="5.5.3" id="reloc-ctor-definition"><span class="secno">5.5.3. </span><span class="content">Definition</span><a class="self-link" href="#reloc-ctor-definition"></a></h4>
+   <h5 class="heading settled" data-level="5.5.3.1" id="reloc-ctor-dtor-def"><span class="secno">5.5.3.1. </span><span class="content">Destruction of the source object</span><a class="self-link" href="#reloc-ctor-dtor-def"></a></h5>
    <p>As mentioned above, the relocation constructor <strong>is a second destructor</strong> of
 the class-type. It shares similarities with the destructor with regards
 to the source object:</p>
@@ -4818,7 +5027,7 @@ declaration order.</p>
      <p>If the constructor exits because of an exception, this destruction sequence
 is triggered by stack unwinding.</p>
    </ul>
-   <h6 class="heading settled" data-level="5.4.3.1.1" id="reloc-dtor-virtual-bases"><span class="secno">5.4.3.1.1. </span><span class="content">Destruction of virtual bases</span><a class="self-link" href="#reloc-dtor-virtual-bases"></a></h6>
+   <h6 class="heading settled" data-level="5.5.3.1.1" id="reloc-dtor-virtual-bases"><span class="secno">5.5.3.1.1. </span><span class="content">Destruction of virtual bases</span><a class="self-link" href="#reloc-dtor-virtual-bases"></a></h6>
    <p>Virtual bases have a special treatment in constructors and destructors:
 they are only contructed and destructed by the class-type of the complete object,
 and not by its base classes.
@@ -4868,7 +5077,7 @@ only if the extra information <em>(a)</em> (respectively <em>(b)</em>) states so
     <li data-md>
      <p><code class="highlight"><c- n>foo</c-></code> gets a <code class="highlight"><c- n>C</c-></code> object owning its virtual base.</p>
    </ul>
-   <h5 class="heading settled" data-level="5.4.3.2" id="reloc-ctor-default-definition"><span class="secno">5.4.3.2. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-ctor-default-definition"></a></h5>
+   <h5 class="heading settled" data-level="5.5.3.2" id="reloc-ctor-default-definition"><span class="secno">5.5.3.2. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-ctor-default-definition"></a></h5>
    <p>The default relocation constructor implementation for a class-type <code class="highlight"><c- n>T</c-></code> depends
 on <code class="highlight"><c- n>T</c-></code>’s type traits.</p>
    <p>If <code class="highlight"><c- n>T</c-></code> is trivially relocatable then the relocation constructor
@@ -4884,7 +5093,7 @@ for each subobject <code class="highlight"><c- n>s</c-></code> (of type <code cl
      <p>otherwise we construct <code class="highlight"><c- n>s</c-></code> (or <code class="highlight"><c- n>S</c-></code>) by calling its own relocation, move or copy
 constructor, as if by: <code class="highlight"><c- n>s</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>reloc</c-> <c- n>s</c-><c- p>}</c-></code> (or <code class="highlight"><c- n>S</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>reloc</c-> <c- n>S</c-><c- p>}</c-></code>);</p>
    </ul>
-   <h5 class="heading settled" data-level="5.4.3.3" id="reloc-ctor-user-definition"><span class="secno">5.4.3.3. </span><span class="content">User-provided definition</span><a class="self-link" href="#reloc-ctor-user-definition"></a></h5>
+   <h5 class="heading settled" data-level="5.5.3.3" id="reloc-ctor-user-definition"><span class="secno">5.5.3.3. </span><span class="content">User-provided definition</span><a class="self-link" href="#reloc-ctor-user-definition"></a></h5>
    <p>Although the default definition should cover almost all cases, users can provide
 their own definition of the relocation constructor. Doing so is relatively
 straightforward thanks to the <em>dot-reloc</em> operator.</p>
@@ -4937,7 +5146,7 @@ self-referencing pointers.</p>
     <c- n>Node</c-> <c- n>_sentinel</c-><c- p>;</c->
 <c- p>};</c->
 </pre>
-   <h5 class="heading settled" data-level="5.4.3.4" id="reloc-ctor-delegate"><span class="secno">5.4.3.4. </span><span class="content">Delegating relocation constructor</span><a class="self-link" href="#reloc-ctor-delegate"></a></h5>
+   <h5 class="heading settled" data-level="5.5.3.4" id="reloc-ctor-delegate"><span class="secno">5.5.3.4. </span><span class="content">Delegating relocation constructor</span><a class="self-link" href="#reloc-ctor-delegate"></a></h5>
    <p>We do not support writing a delegating relocation constructor. Doing would raise
 several problems that are difficult to solve:</p>
    <ul>
@@ -4969,7 +5178,7 @@ may still delegate to another non-relocating constructor:</p>
     <c- c1>// [...]</c->
 <c- p>};</c->
 </pre>
-   <h5 class="heading settled" data-level="5.4.3.5" id="reloc-ctor-additional-params"><span class="secno">5.4.3.5. </span><span class="content">Additional parameters</span><a class="self-link" href="#reloc-ctor-additional-params"></a></h5>
+   <h5 class="heading settled" data-level="5.5.3.5" id="reloc-ctor-additional-params"><span class="secno">5.5.3.5. </span><span class="content">Additional parameters</span><a class="self-link" href="#reloc-ctor-additional-params"></a></h5>
    <p>As with copy and move constructors, it is permissible to add additional parameters
 to a relocation constructor, on condition they have a default initializer.</p>
    <p>One case where this can be of use is if the user needs space to store information
@@ -5008,7 +5217,7 @@ for the duration of the relocation constructor, for a contrived example:</p>
    <p>In the above, <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>_p</c-></code> does not manage its own lifetime,
 but the presence of <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>_r</c-></code> means that <code class="highlight"><c- n>T</c-><c- o>::</c-><c- n>T</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code> is not noexcept so we need to
 release its resources if an exception is thrown during relocation.</p>
-   <h4 class="heading settled" data-level="5.4.4" id="reloc-ctor-invoke"><span class="secno">5.4.4. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-ctor-invoke"></a></h4>
+   <h4 class="heading settled" data-level="5.5.4" id="reloc-ctor-invoke"><span class="secno">5.5.4. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-ctor-invoke"></a></h4>
    <p>The relocation constructor is invoked <em>as necessary</em> to relocate a prvalue
 from one storage location to another. Use of the <code class="highlight"><c- n>reloc</c-></code> operator does not
 guarantee that a relocation constructor (if present) will be called,
@@ -5056,7 +5265,7 @@ the likelihood annotation encourages the compiler to construct <code class="high
 return slot, such that both <code class="highlight"><c- cp>#1</c-></code> and <code class="highlight"><c- cp>#2</c-></code> are a no-op. It is only <code class="highlight"><c- cp>#3</c-></code> that is
 likely to invoke the relocation constructor.</p>
    <p>The relocation constructor may also be invoked by library functions, for example <a href="#std-reloc_and_uninitialize">§ 6.1.2 std::reloc_and_uninitialize and std::reloc_and_reclaim</a>.</p>
-   <h4 class="heading settled" data-level="5.4.5" id="virtual-reloc-ctor"><span class="secno">5.4.5. </span><span class="content">Virtual relocation constructor</span><a class="self-link" href="#virtual-reloc-ctor"></a></h4>
+   <h4 class="heading settled" data-level="5.5.5" id="virtual-reloc-ctor"><span class="secno">5.5.5. </span><span class="content">Virtual relocation constructor</span><a class="self-link" href="#virtual-reloc-ctor"></a></h4>
    <p>As the relocation constructor is a second destructor, it can be declared as <code class="highlight"><c- k>virtual</c-></code>.
 The virtual relocation constructor is useful when relocating from dynamic
 storage, to prevent leaky object-slicing. Consider the following scenario:</p>
@@ -5074,7 +5283,7 @@ be relocated, leaking the rest.</p>
 functions can (like <a href="#std-reloc_and_uninitialize">std::reloc_and_uninitialize and std::reloc_and_reclaim</a>).
 In other words, how to make a virtual function call to the relocation constructor
 is implementation-defined.</p>
-   <h5 class="heading settled" data-level="5.4.5.1" id="virtual-reloc-ctor-decl"><span class="secno">5.4.5.1. </span><span class="content">Declaration</span><a class="self-link" href="#virtual-reloc-ctor-decl"></a></h5>
+   <h5 class="heading settled" data-level="5.5.5.1" id="virtual-reloc-ctor-decl"><span class="secno">5.5.5.1. </span><span class="content">Declaration</span><a class="self-link" href="#virtual-reloc-ctor-decl"></a></h5>
    <p>A relocation constructor can be declared as virtual by adding the <code class="highlight"><c- k>virtual</c-></code> keyword before the declaration. In derived classes, the relocation constructor
 signature must not change: the parameter type must still match the class-type:</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>B</c->
@@ -5091,7 +5300,7 @@ signature must not change: the parameter type must still match the class-type:</
 constructor, and that the class-type <code class="highlight"><c- n>T</c-></code> has no user-declared relocation constructor,
 then the class-type <code class="highlight"><c- n>T</c-></code> gets a public, defaulted implicitly-declared relocation
 constructor.</p>
-   <h5 class="heading settled" data-level="5.4.5.2" id="virtual-reloc-ctor-def"><span class="secno">5.4.5.2. </span><span class="content">Definition</span><a class="self-link" href="#virtual-reloc-ctor-def"></a></h5>
+   <h5 class="heading settled" data-level="5.5.5.2" id="virtual-reloc-ctor-def"><span class="secno">5.5.5.2. </span><span class="content">Definition</span><a class="self-link" href="#virtual-reloc-ctor-def"></a></h5>
    <p>Let <code class="highlight"><c- n>T</c-></code> be a class-type with a virtual relocation constructor.
 If <code class="highlight"><c- n>T</c-></code> relocation constructor has been called normally (not through a
 virtual function call), then it proceeds normally as if non-virtual.</p>
@@ -5141,7 +5350,7 @@ subobject is relocated at the desired location.</p>
 implementations may emit two relocation constructor definitions, one virtual
 and one non-virtual. User code can only call the non-virtual version, which
 ensures the virtual one is only called through virtual function calls.</p>
-   <h5 class="heading settled" data-level="5.4.5.3" id="virtual-reloc-ctor-def-ill-formed"><span class="secno">5.4.5.3. </span><span class="content">Ill-fomed definition</span><a class="self-link" href="#virtual-reloc-ctor-def-ill-formed"></a></h5>
+   <h5 class="heading settled" data-level="5.5.5.3" id="virtual-reloc-ctor-def-ill-formed"><span class="secno">5.5.5.3. </span><span class="content">Ill-fomed definition</span><a class="self-link" href="#virtual-reloc-ctor-def-ill-formed"></a></h5>
    <p>A virtual relocation constructor definition of a class-type <code class="highlight"><c- n>T</c-></code> is ill-formed if:</p>
    <ul>
     <li data-md>
@@ -5150,21 +5359,21 @@ relocation constructor, has a non-accessible relocation constructor ;</p>
     <li data-md>
      <p>or if any of the subobject of <code class="highlight"><c- n>T</c-></code> have an inaccessible destructor.</p>
    </ul>
-   <h3 class="heading settled" data-level="5.5" id="reloc-assign-operator"><span class="secno">5.5. </span><span class="content">Relocation assignment operator</span><a class="self-link" href="#reloc-assign-operator"></a></h3>
+   <h3 class="heading settled" data-level="5.6" id="reloc-assign-operator"><span class="secno">5.6. </span><span class="content">Relocation assignment operator</span><a class="self-link" href="#reloc-assign-operator"></a></h3>
    <p>We further introduce the relocation assignment operator. Its signature shall be: <code class="highlight"><c- n>T</c-><c- o>&amp;</c-> <c- n>T</c-><c- o>::</c-><c- k>operator</c-><c- o>=</c-><c- p>(</c-><c- n>T</c-><c- p>)</c-></code>. Such operators may already be defined in existing codebases,
 but the proposed changes will not interfere with them.</p>
    <p>Sometimes we also make mentions to the <em>prvalue-assignment operator</em>.
 It refers to the same function,
 but further indicates that this function existed prior to the proposal.</p>
-   <h4 class="heading settled" data-level="5.5.1" id="reloc-assign-declaration"><span class="secno">5.5.1. </span><span class="content">Declaration</span><a class="self-link" href="#reloc-assign-declaration"></a></h4>
+   <h4 class="heading settled" data-level="5.6.1" id="reloc-assign-declaration"><span class="secno">5.6.1. </span><span class="content">Declaration</span><a class="self-link" href="#reloc-assign-declaration"></a></h4>
    <p>The relocation assignment operator becomes a special member function. As such,
 declaring one breaks the Rule of Zero, which was not the case previously.</p>
    <p>The relocation assignment operator may be implicitly declared, and may be
 defaulted or deleted.</p>
-   <h5 class="heading settled" data-level="5.5.1.1" id="reloc-assign-operator-implicit"><span class="secno">5.5.1.1. </span><span class="content">Implicit declaration</span><a class="self-link" href="#reloc-assign-operator-implicit"></a></h5>
+   <h5 class="heading settled" data-level="5.6.1.1" id="reloc-assign-operator-implicit"><span class="secno">5.6.1.1. </span><span class="content">Implicit declaration</span><a class="self-link" href="#reloc-assign-operator-implicit"></a></h5>
    <p>If a class-type follows the Rule of Zero, then the compiler will declare
 an inline public relocation assignment operator.</p>
-   <h5 class="heading settled" data-level="5.5.1.2" id="reloc-assign-declaration-deleted"><span class="secno">5.5.1.2. </span><span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span><a class="self-link" href="#reloc-assign-declaration-deleted"></a></h5>
+   <h5 class="heading settled" data-level="5.6.1.2" id="reloc-assign-declaration-deleted"><span class="secno">5.6.1.2. </span><span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span><a class="self-link" href="#reloc-assign-declaration-deleted"></a></h5>
    <p>The implicitly-declared or defaulted relocation assignment operator for class <code class="highlight"><c- n>T</c-></code> is defined as deleted:</p>
    <ul>
     <li data-md>
@@ -5178,7 +5387,7 @@ an inline public relocation assignment operator.</p>
    </ul>
    <p>A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.</p>
-   <h4 class="heading settled" data-level="5.5.2" id="aliased-reloc-assign"><span class="secno">5.5.2. </span><span class="content">Relocation assignment operator parameter relocation elision</span><a class="self-link" href="#aliased-reloc-assign"></a></h4>
+   <h4 class="heading settled" data-level="5.6.2" id="aliased-reloc-assign"><span class="secno">5.6.2. </span><span class="content">Relocation assignment operator parameter relocation elision</span><a class="self-link" href="#aliased-reloc-assign"></a></h4>
    <p>As with the relocation constructor, it is desirable that the parameter should be
 the source object <em>converted to</em> a prvalue, and not a temporary prvalue relocated <em>from</em> the source object. This is particularly critical for
 the default definition of the operator, which
@@ -5205,7 +5414,7 @@ defaulted, then elision is mandated at definition level ;</p>
    </ul>
    <p>Elision is performed in such a way as to avoid ABI break (more on that on the <a href="#prvalue-assign-op-abi">ABI
 section</a>).</p>
-   <h5 class="heading settled" data-level="5.5.2.1" id="aliased-reloc-assign-declaration"><span class="secno">5.5.2.1. </span><span class="content">Elision at declaration level</span><a class="self-link" href="#aliased-reloc-assign-declaration"></a></h5>
+   <h5 class="heading settled" data-level="5.6.2.1" id="aliased-reloc-assign-declaration"><span class="secno">5.6.2.1. </span><span class="content">Elision at declaration level</span><a class="self-link" href="#aliased-reloc-assign-declaration"></a></h5>
    <p>If elision is mandated at declaration level, then the assignment operator
 declaration actually declares two member functions:</p>
    <ul>
@@ -5250,7 +5459,7 @@ then the operator:</p>
    <p>If the address of the assignment operator is queried, then the address of the
 non-eliding version is returned. If the assignment operator is virtual, then only
 the non-eliding version is considered to be <code class="highlight"><c- k>virtual</c-></code> and is added to the vtable entry.</p>
-   <h5 class="heading settled" data-level="5.5.2.2" id="aliased-reloc-assign-definition"><span class="secno">5.5.2.2. </span><span class="content">Elision at definition level</span><a class="self-link" href="#aliased-reloc-assign-definition"></a></h5>
+   <h5 class="heading settled" data-level="5.6.2.2" id="aliased-reloc-assign-definition"><span class="secno">5.6.2.2. </span><span class="content">Elision at definition level</span><a class="self-link" href="#aliased-reloc-assign-definition"></a></h5>
    <p>If elision is mandated at definition level, then the two versions of the operator
 are generated (eliding and non-eliding) in the translation unit where the operator
 is defined. The visibility of the eliding operator symbol to other translation
@@ -5262,8 +5471,8 @@ declaration level.</p>
    <p>Typically, we expect code in the same translation unit to befenit from the
 elided-version. Code outside the translation unit may also benefit from it
 through link time optimizations.</p>
-   <h4 class="heading settled" data-level="5.5.3" id="reloc-assign-definition"><span class="secno">5.5.3. </span><span class="content">Definition</span><a class="self-link" href="#reloc-assign-definition"></a></h4>
-   <h5 class="heading settled" data-level="5.5.3.1" id="reloc-assign-default-definition"><span class="secno">5.5.3.1. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-assign-default-definition"></a></h5>
+   <h4 class="heading settled" data-level="5.6.3" id="reloc-assign-definition"><span class="secno">5.6.3. </span><span class="content">Definition</span><a class="self-link" href="#reloc-assign-definition"></a></h4>
+   <h5 class="heading settled" data-level="5.6.3.1" id="reloc-assign-default-definition"><span class="secno">5.6.3.1. </span><span class="content">Default definition</span><a class="self-link" href="#reloc-assign-default-definition"></a></h5>
    <p>As you would expect, the default definition merely delegates to the relocation
 assignment operator of all its subobjects.</p>
    <p>In <code class="highlight"><c- n>T</c-></code>’s default assignment operator, for all subobjects <code class="highlight"><c- n>s</c-></code> of type <code class="highlight"><c- n>S</c-></code> of the
@@ -5277,7 +5486,7 @@ assignment operator, as if by: <code class="highlight"><c- n>s</c-> <c- o>=</c->
    </ul>
    <p>Thanks to the relocation-assignment operator special eliding,
 no copies or relocations of the source subobjects are performed.</p>
-   <h5 class="heading settled" data-level="5.5.3.2" id="reloc-assign-user-definition"><span class="secno">5.5.3.2. </span><span class="content">Possible user definitions</span><a class="self-link" href="#reloc-assign-user-definition"></a></h5>
+   <h5 class="heading settled" data-level="5.6.3.2" id="reloc-assign-user-definition"><span class="secno">5.6.3.2. </span><span class="content">Possible user definitions</span><a class="self-link" href="#reloc-assign-user-definition"></a></h5>
    <p>User-provided operators can still perform memberwise relocation as it is
 done with the defaulted version.</p>
    <p>Other definitions are possible, notably the famous <em>copy-and-swap</em> (now <em>relocate-and-swap</em>) and the <em>destroy-and-construct</em> idioms.</p>
@@ -5367,7 +5576,7 @@ on the source object, it is still possible to perform the "union trick":</p>
     <c- k>return</c-> <c- o>*</c-><c- n>this</c-><c- p>;</c->
 <c- p>}</c->
 </pre>
-   <h4 class="heading settled" data-level="5.5.4" id="reloc-assign-invoke"><span class="secno">5.5.4. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-assign-invoke"></a></h4>
+   <h4 class="heading settled" data-level="5.6.4" id="reloc-assign-invoke"><span class="secno">5.6.4. </span><span class="content">Invocation</span><a class="self-link" href="#reloc-assign-invoke"></a></h4>
 <pre class="language-c++ highlight"><c- n>T</c-> <c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>;</c->
 <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>y</c-><c- p>;</c->
 </pre>
@@ -5381,7 +5590,7 @@ is called is implementation-defined.</p>
    <p>The nominal case is to call the non-eliding version. The implementation is allowed
 to call the eliding version instead, as long as it can elide the call to the
 destructor on the source object.</p>
-   <h3 class="heading settled" data-level="5.6" id="overload-resolution"><span class="secno">5.6. </span><span class="content">Overload resolution</span><a class="self-link" href="#overload-resolution"></a></h3>
+   <h3 class="heading settled" data-level="5.7" id="overload-resolution"><span class="secno">5.7. </span><span class="content">Overload resolution</span><a class="self-link" href="#overload-resolution"></a></h3>
    <p>The current overload resolution rules are not suitable for relocation by prvalue.</p>
    <p>Indeed, consider the following scenario:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-><c- o>&amp;&amp;</c-><c- p>);</c->
@@ -5423,7 +5632,7 @@ non-static member function declared without a ref-qualifier, and either:</p>
        <p>- end example]</p>
      </ul>
    </ul>
-   <h4 class="heading settled" data-level="5.6.1" id="overload-against-P2665R0"><span class="secno">5.6.1. </span><span class="content">Comparison against P2665R0</span><a class="self-link" href="#overload-against-P2665R0"></a></h4>
+   <h4 class="heading settled" data-level="5.7.1" id="overload-against-P2665R0"><span class="secno">5.7.1. </span><span class="content">Comparison against P2665R0</span><a class="self-link" href="#overload-against-P2665R0"></a></h4>
    <p><a data-link-type="biblio" href="#biblio-p2665r0" title="Allow calling overload sets containing T, const T&amp;">[P2665R0]</a> "Allow calling overload sets containing T, const T&amp;" also proposes
 to modify the overload resolution rules. It allows overload sets containing
 both <code class="highlight"><c- n>T</c-></code> and <code class="highlight"><c- n>T</c-> <c- k>const</c-><c- o>&amp;</c-></code> to exist, and which overload is selected is
@@ -5458,8 +5667,8 @@ evicted.</p>
 resolution rules that we propose, compilers may still be allowed to pick the
 prvalue overload if they analyse it may bring a performance boost, as P2665R0
 suggests.</p>
-   <h3 class="heading settled" data-level="5.7" id="structured-reloc"><span class="secno">5.7. </span><span class="content">Structured relocation</span><a class="self-link" href="#structured-reloc"></a></h3>
-   <h4 class="heading settled" data-level="5.7.1" id="structured-reloc-discussion"><span class="secno">5.7.1. </span><span class="content">Discussion</span><a class="self-link" href="#structured-reloc-discussion"></a></h4>
+   <h3 class="heading settled" data-level="5.8" id="structured-reloc"><span class="secno">5.8. </span><span class="content">Structured relocation</span><a class="self-link" href="#structured-reloc"></a></h3>
+   <h4 class="heading settled" data-level="5.8.1" id="structured-reloc-discussion"><span class="secno">5.8.1. </span><span class="content">Discussion</span><a class="self-link" href="#structured-reloc-discussion"></a></h4>
    <p><code class="highlight"><c- k>auto</c-> <c- p>[</c-><c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>]</c-> <c- o>=</c-> <c- n>foo</c-><c- p>();</c-> <c- n>sink</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-></code> is ill-formed given the rules we
 established for <code class="highlight"><c- n>reloc</c-></code>. <code class="highlight"><c- n>x</c-></code> and <code class="highlight"><c- n>y</c-></code> are not complete objects but aliases to some anonymous
 object which the language creates behind the scene.</p>
@@ -5469,7 +5678,7 @@ relocation from a structured binding.</p>
    <p>In our experience, most C++ developers believe that a structured binding is
 a complete, separate object, and not a name alias to some subobject. As such
 it would feel unnatural for them if they cannot relocate from a structured binding.</p>
-   <h4 class="heading settled" data-level="5.7.2" id="structured-reloc-declaration"><span class="secno">5.7.2. </span><span class="content">Structured relocation declaration</span><a class="self-link" href="#structured-reloc-declaration"></a></h4>
+   <h4 class="heading settled" data-level="5.8.2" id="structured-reloc-declaration"><span class="secno">5.8.2. </span><span class="content">Structured relocation declaration</span><a class="self-link" href="#structured-reloc-declaration"></a></h4>
    <p>A structured relocation declaration is syntactically identical to a structured
 binding, with the exception that no ref-qualifiers are allowed after the <code class="highlight"><c- k>auto</c-></code> type specifier.</p>
 <pre class="language-c++ highlight"><c- n>T</c-> <c- nf>foo</c-><c- p>();</c->
@@ -5491,7 +5700,7 @@ follow structured bindings rules.</p>
 declared in the brackets <code class="highlight"><c- p>[]</c-></code>. In other words, the new identifiers are not
 aliases like in structured bindings, but actual complete objects. As such, they
 can be relocated like any other.</p>
-   <h4 class="heading settled" data-level="5.7.3" id="structured-reloc-obj-decomposition"><span class="secno">5.7.3. </span><span class="content">Structured relocation protocols</span><a class="self-link" href="#structured-reloc-obj-decomposition"></a></h4>
+   <h4 class="heading settled" data-level="5.8.3" id="structured-reloc-obj-decomposition"><span class="secno">5.8.3. </span><span class="content">Structured relocation protocols</span><a class="self-link" href="#structured-reloc-obj-decomposition"></a></h4>
    <p>As there are three binding protocols for structured bindings, there are likewise
 three "structured relocation" protocols. If none
 of those protocols match, then the declaration is not a
@@ -5518,7 +5727,7 @@ This anonymous object will be considered as source object ;</p>
      <p>Otherwise (<code class="highlight"><c- n>E</c-></code> is a prvalue), then let <code class="highlight"><c- n>S</c-></code> be the same as <code class="highlight"><c- n>E</c-></code>. The initializer
 expression will be used as source object.</p>
    </ul>
-   <h5 class="heading settled" data-level="5.7.3.1" id="structured-reloc-array"><span class="secno">5.7.3.1. </span><span class="content">array protocol</span><a class="self-link" href="#structured-reloc-array"></a></h5>
+   <h5 class="heading settled" data-level="5.8.3.1" id="structured-reloc-array"><span class="secno">5.8.3.1. </span><span class="content">array protocol</span><a class="self-link" href="#structured-reloc-array"></a></h5>
    <p>The <em>array</em> protocol is quite similar to that of structured bindings.
 For this protocol to apply, all the following conditions must be satisfied:</p>
    <ul>
@@ -5537,7 +5746,7 @@ relocation, move or copy constructor using the <em>i</em>-th array element as so
     <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>str2</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
-   <h5 class="heading settled" data-level="5.7.3.2" id="structured-reloc-get_all"><span class="secno">5.7.3.2. </span><span class="content">get_all protocol</span><a class="self-link" href="#structured-reloc-get_all"></a></h5>
+   <h5 class="heading settled" data-level="5.8.3.2" id="structured-reloc-get_all"><span class="secno">5.8.3.2. </span><span class="content">get_all protocol</span><a class="self-link" href="#structured-reloc-get_all"></a></h5>
    <p>The function <code class="highlight"><c- n>get_all</c-><c- p>(</c-><c- n>S</c-><c- p>)</c-></code> is looked-up using ADL-lookup. If there is
 no match, then this protocol does not apply.</p>
    <p>If there is a match, then this function is called. The returned type is
@@ -5555,7 +5764,7 @@ returned type, then it is applied ;</p>
 We recursively call <code class="highlight"><c- n>get_all</c-></code> as long as the <em>get_all</em> protocol applies.
 When the recursion ends, we end up with a type which
 matches the <em>data member</em> protocol, or else the program is ill-formed.</p>
-   <h5 class="heading settled" data-level="5.7.3.3" id="structured-reloc-dm"><span class="secno">5.7.3.3. </span><span class="content">data members protocol</span><a class="self-link" href="#structured-reloc-dm"></a></h5>
+   <h5 class="heading settled" data-level="5.8.3.3" id="structured-reloc-dm"><span class="secno">5.8.3.3. </span><span class="content">data members protocol</span><a class="self-link" href="#structured-reloc-dm"></a></h5>
    <p>The <em>data members</em> protocol is also similar to that of structured bindings.
 For this protocol to apply, all the following conditions must be satisfied:</p>
    <ul>
@@ -5571,7 +5780,7 @@ base class of <code class="highlight"><c- n>S</c-></code> ;</p>
 class the data members are found in, its decomposition is <a href="#ill-formed-decomposition">well-formed</a>.</p>
    </ul>
    <p>If this protocol applies, then the <em>i</em>-th identifier is constructed as if by <code class="highlight"><c- n>s</c-><c- p>.</c-><c- n>reloc</c-> <c- n>i</c-></code>, <code class="highlight"><c- n>s</c-></code> being the base class holding all the data members and <code class="highlight"><c- n>i</c-></code> the <em>i</em>-th identifier.</p>
-   <h5 class="heading settled" data-level="5.7.3.4" id="structured-reloc-tuple"><span class="secno">5.7.3.4. </span><span class="content">Implementation-defined library support</span><a class="self-link" href="#structured-reloc-tuple"></a></h5>
+   <h5 class="heading settled" data-level="5.8.3.4" id="structured-reloc-tuple"><span class="secno">5.8.3.4. </span><span class="content">Implementation-defined library support</span><a class="self-link" href="#structured-reloc-tuple"></a></h5>
    <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>array</c-></code> shall provide their own implementation
 of <code class="highlight"><c- n>get_all</c-></code>. The return type is implementation-defined (may rely on compiler magic).</p>
    <p>This allows us to write things like:</p>
@@ -5587,7 +5796,7 @@ of <code class="highlight"><c- n>get_all</c-></code>. The return type is impleme
 <c- p>}</c->
 </pre>
    <p>This code works even if <code class="highlight"><c- n>T</c-></code> is relocate-only.</p>
-   <h5 class="heading settled" data-level="5.7.3.5" id="structured-reloc-implem"><span class="secno">5.7.3.5. </span><span class="content">Possible get_all implementations</span><a class="self-link" href="#structured-reloc-implem"></a></h5>
+   <h5 class="heading settled" data-level="5.8.3.5" id="structured-reloc-implem"><span class="secno">5.8.3.5. </span><span class="content">Possible get_all implementations</span><a class="self-link" href="#structured-reloc-implem"></a></h5>
    <p>Thanks to <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>’s <code class="highlight"><c- n>get_all</c-></code> we can easily write
 a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom class:</p>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>MyType</c->

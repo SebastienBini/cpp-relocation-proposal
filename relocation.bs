@@ -58,7 +58,7 @@ to relocate subobjects. This enables to relocate data members of compound types
 (such as `std::pair`) and to easily write used-defined relocation constructor.
 
 ```c++
-pair<std::string const, int> const keyValue = extractKV();
+pair<std::string const, int> const reloc keyValue = extractKV();
 storeKey(keyValue.reloc first);
 ```
 ```c++
@@ -70,9 +70,12 @@ public:
     Second second;
 
     // user-defined relocation constructor (could have been defaulted)
-    MyPair(MyPair rhs) : first{rhs.reloc first}, second{rhs.reloc second} {}
+    MyPair(MyPair reloc rhs) : first{rhs.reloc first}, second{rhs.reloc second} {}
 };
 ```
+
+The `reloc` specifier in the object declaration indicates that the object
+is *decomposed*, which allows the relocation of its subobjects with *dot-reloc*
 
 This proposal introduces:
 
@@ -1351,11 +1354,267 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
 }
 ```
 
-## Decomposing operator (dot reloc) ## {#dot-reloc-operator}
+## Decomposed object ## {#decomposed-object}
+
+This proposal introduces the concept of object decomposition.
+Only complete objects can be *decomposed*. An object is *decomposed*
+if the `reloc` keyword appears in its definition.
+If an object is *decomposed*, then the complete object ceases to exist, but all
+its subobjects are considered as complete objects.
+
+### Declaration and definition ### {#decomposed-object-decl}
+
+The `reloc` keyword is allowed to appear alongside the cv-qualifiers
+in an object definition expression.
+Note that `reloc` is not a cv-qualifier, but can merely be specified among
+them in some circumstances. `reloc` is not part of the C++ type system.
+
+`reloc` cannot be used in an object declaration or else the program is ill-formed.
+
+An object of type `T` may be defined with `reloc` if all the
+following conditions are verified:
+
+- the object is a complete object with automatic storage ;
+- the object is a function parameter or a function-local object ;
+- `T` is a class-type ;
+- `T` is not ref-qualified ;
+- `T` is not a pointer type ;
+- `T` is not an array type ;
+- `T` is not a union type ;
+
+If any of the above conditions is not verified, then the definition is ill-formed.
+For instance:
+
+```c++
+struct X
+{
+    std::pair<int, std::string> reloc m; // ill-formed
+};
+
+static std::pair<int, std::string> reloc g; // ill-formed
+
+void foo(T const reloc& a) {} // ill-formed
+void foo(T const reloc* a) {} // ill-formed
+void foo(T const* reloc* a) {} // ill-formed
+void foo(T const reloc** a) {} // ill-formed
+void foo(T const* reloc a) {} // ill-formed
+void foo()
+{
+    T const reloc a[] = { }; // ill-formed
+}
+
+// But
+void foo(T const reloc obj) // well-formed
+{
+    reloc T obj2; // well-formed
+}
+```
+
+In particular, functions must be declared without `reloc` on their parameters,
+while the function definition does. In other words, `reloc` is not
+part of the function signature, and is only effective in the function
+definition. For instance:
+
+```c++
+struct X
+{
+    void foo(T obj);
+};
+
+void X::foo(T reloc obj) // well-formed
+{
+    // ...
+}
+
+static_assert(std::is_same_v<decltype(&X::foo), void (X::*)(T)>); // ok
+```
+
+If several variables are defined in the same expression, and that `reloc` is
+specified in the definition type, then all variables are defined as decomposed.
+
+```c++
+void foo()
+{
+    T const reloc a, b; // a and b are decomposed
+    T const reloc c, *d; // ill-formed, d is not a class-type
+}
+```
+
+### Decomposed state ### {#decomposed-state}
+
+When a complete object is defined as *decomposed*, then:
+
+- The object is *initialized* using the existing rules ;
+- All its direct bases and non-static data members are now considered as
+    distinct complete objects:
+    - the decomposition does not odr-use any of the copy, move or relocation
+        constructor of the subobjects. In particular, their address remains unchanged ;
+    - the introduced objects (i.e. the subobjects of the *decomposed* object)
+        have the same lifetime as the *decomposed* object,
+        had it not been *decomposed* ;
+    - the introduced objects still inherit from the cv-qualifiers,
+        if any, of the *decomposed* object ;
+    - for all of the virtual and direct bases which have a runtime type information, they
+        now point to that of the base class, and no longer point to the type
+        of the *decomposed* object. This step is identical to what happens with
+        the runtime type information of base classes once the destructor body
+        is executed ;
+    - all virtual bases, if any, keep the same address ; all pointers to such
+        virtual bases remain unchanged.
+- *The lifetime of the* decomposed *object ends*: its destructor is never invoked implicitly.
+    All its non-static subobjects, now considered as complete objects, are still
+    alive and will
+    follow normal destruction rules: they will be destructed at the end of their
+    scope (which is the *decomposed* object scope)
+    unless they have been relocated before.
+
+Note: If not for changing the runtime type of the direct bases that have one,
+the decomposition operation would be a no-op.
+
+### Illegal decomposition ### {#ill-formed-decomposition}
+
+The decomposition of an object `src` of type `T` is ill-formed if any of
+the following conditions is not satisfied:
+
+- all subobjects of `src` are accessible. They all need to be
+    since their destructor will be called if not relocated ;
+- all declared special member functions of `T` are declared either as
+    defaulted or deleted,
+    **or** the call-site has private access privilege to `T`.
+
+These requirements ensure that we can only decompose (a) compound types,
+where subobjects have no dependencies with one another (like an `std::pair`),
+or (b) types that we are in control of (because of the private access).
+
+### Allowed expressions on a decomposed object ### {#allowed-expr-decomposed-obj}
+
+A *decomposed* object does not exist on its own (its lifetime
+has ended).
+The object itself cannot be used, and its member functions can no longer be called.
+However all its non-relocated subobjects,
+now considered as individual complete objects, are alive and they can be accessed
+normally.
+
+We do not propose any special syntax to access such objects. Instead we restrict
+the expressions in which a *decomposed* object can be used.
+**Any id-expression** (except in
+[unevaluated operands](#decomposed-unevaluated))
+which designates the *decomposed*
+object is **ill-formed**, unless it is used with the following expressions
+(and only those):
+
+#### Data member access #### {#ill-formed-decomposed-object-dm}
+
+All the expressions listed under [class member access](https://eel.is/c++draft/expr.ref) (but [7.3.2](https://eel.is/c++draft/expr.ref#7.3.2))
+where the [object expression](https://eel.is/c++draft/expr.ref#4.sentence-1) is the decomposed object or one of its bases,
+remain well-formed.
+
+Non-static member function expressions [[7.3.2](https://eel.is/c++draft/expr.ref#7.3.2)]
+(once overload resolution has been applied),
+where the function is declared in the class-type of the decomposed object
+(i.e. not in a base class) are ill-formed.
+
+NOTE: Accesses to relocated subobjects are ill-formed as well, although this is
+not enforced by the rules of this section.
+See the [dot-reloc operator](#dot-reloc-operator) for more information.
+
+```c++
+struct B { int _b; void b_func(); };
+struct C : B { int _c; void c_func(); };
+struct D : C { int _d; void d_func(); };
+
+D reloc obj;
+// `obj`, and `obj.d_func` are now
+// ill-formed expressions because of the decomposition.
+// `obj.b_func`, `obj._b`, `obj._c`, `obj.c_func` and `obj._d` are still
+// well-formed expressions.
+foo(obj._c); // well-formed
+
+D regular;
+(regular, obj)._d; // ill-formed, cannot use `obj` id-expression in that context
+(obj, regular)._d; // ill-formed, cannot use `obj` id-expression in that context
+```
+
+#### Pointer to members #### {#ill-formed-decomposed-object-pm}
+
+All the expressions listed under [pointer-to-member operators](https://eel.is/c++draft/expr.mptr.oper)
+where the decomposed object is the [object expression](https://eel.is/c++draft/expr.mptr.oper#4.sentence-1),
+remain well-formed under the condition that the right operand of the `.*`
+operator is constant-evaluated.
+
+Because of this constant-evaluation constraint, we
+consider such expressions to be equivalent to their regular data member access
+expression counterparts.
+Refer to the [section above](#ill-formed-decomposed-object-dm)
+to determine whether the expression remains well-formed.
+
+NOTE: The constant-evaluation is needed as the subobject pointed to may have
+been relocated with *dot-reloc*, and this needs to be verified at compile-time.
+
+#### Explicit cast to base classes #### {#ill-formed-decomposed-object-bc}
+
+`static_cast<D>(v)`, `const_cast<D>(v)`, `dynamic_cast<D>(v)` and explicit type
+conversion `(D) v` expressions, where
+`D` is a possibly ref-qualified, possibly cv-qualified base of `T` (the type of `v`)
+and `v` is the *id-expression* which
+designates the decomposed object, remain well-formed.
+The result and the value category of the cast expression do not change.
+
+`reinterpret_cast<D>(v)` expressions remain well-formed even if `v` is decomposed.
+
+```c++
+struct B { int _b; void b_func(); };
+struct C : B { int _c; void c_func(); };
+struct D : C { int _d; void d_func(); };
+
+D reloc obj;
+// - `obj`, `(D&)obj` are now ill-formed expressions because of the
+//      decomposition
+// - `(C)obj`, `static_cast<C const&>(obj)`, `const_cast<C&>(obj)`
+//      are still well-formed expressions
+// - `(B)obj`, `static_cast<B const&>(obj)`, `const_cast<B&>(obj)`
+//      are also well-formed expressions
+// - `reinterpret_cast<D&>(obj)` is well-formed.
+
+D regular;
+static_cast<C const&>((regular, obj)); // ill-formed
+```
+
+#### dot-reloc expressions #### {#ill-formed-decomposed-object-dr}
+
+[dot-reloc expressions](#dot-reloc-operator), with the decomposed object as left operand,
+remain well-formed given that the right operand has not been relocated yet.
+
+### Decomposed objects in unevaluated operands ### {#decomposed-unevaluated}
+
+If a decomposed object appears in an expression which is an
+unevaluated operand, then as a general rule, the rules detailed above
+still apply.
+
+The exceptions are for the `decltype` and `sizeof` operators.
+For those two operators only, decomposed objects
+are considered as if they were not decomposed if they are part of their
+operand expression.
+
+If an expression is ill-formed because of the rules described above, and that
+expression is part of a require-clause, then it does not cause the program
+to be ill-formed, but only the require expression to be false.
+
+```c++
+T reloc obj;
+static_assert(std::is_same_v<decltype(obj), T>); // ok
+decltype(obj) obj2; // ok
+decltype(obj) reloc obj3; // ok
+sizeof obj; // ok
+typeid(obj); // ill-formed even if unevaluated
+typeid(decltype(obj)); // well-formed
+```
+
+## Relocating subobjects (dot-reloc operator) ## {#dot-reloc-operator}
 
 In addition to the `reloc` operator, this paper introduces the *dot-reloc* (`.reloc`)
-operator, which can be used to **decompose** a source object and **relocate its
-subobjects**. The *dot-reloc* is necessary to allow user-defined relocation
+operator, which can be used to **relocate a subobject** out of a
+**decomposed** object. The *dot-reloc* is necessary to allow user-defined relocation
 constructors and relocation assignment operators that look similar to their copy
 and move counterparts.
 
@@ -1363,52 +1622,31 @@ and move counterparts.
 
 The *dot-reloc* operator is a binary operator.
 Both operands must be id-expressions separated by `.` and `reloc`.
-Its left operand is the source
-object to decompose, and its right operand is the subobject to relocate.
+The left operand **must** designate a *decomposed* object.
+The right operand is the subobject to relocate.
 
-Let `T` be the type of the left operand.
-The left operand must verify all the following:
-
-- the id-expression must designate a function-local variable
-    (can be a function parameter passed by value) ;
-- it must be a complete object ;
-- it must not be a lambda
-    capture, a structured binding, or a subobject promoted to a complete object
-    because of a previous decomposition ([see below](#decomposed-state)) ;
-- `T` must be a non-union class-type ;
-- `T` must not be ref-qualified ;
-- `T` must not be not an array-type.
-- `T` may be cv-qualified ;
-
+Let `T` be the type of the *decomposed* object.
 The right operand is an id-expression which must designate either:
-- *data member relocation case*: a non-static data member of a class `X`,
-    with `X` being `T` or a non-virtual base of `T`. In particular, the
-    expression may designate a data member of an anonymous union of `X` ;
-- *base class relocation case*: a class-type `X` which is a non-virtual base of `T` ;
-- In both cases, if `X` is not a direct base of `T`, then there must not be any
-    virtual base on the inheritance path from `T` to `X`.
+- *data member relocation case*: a non-static data member of `T`,
+    In particular, the
+    expression may designate a data member of an anonymous union of `T` ;
+- *base class relocation case*: a class-type `X` which is a non-virtual, direct base of `T`.
 
 For instance:
 ```c++
-void foo(pair<string const, non_null<unique_ptr<int>>> p)
+void foo(pair<string const, non_null<unique_ptr<int>>> reloc p)
 {
     bar(p.reloc first, p.reloc second);
 }
 ```
-
-If any of the requirements on any operand is not satisfied, then the program is ill-formed.
 
 The result of the *dot-reloc* expression is:
 - an lvalue of the type of its right operand in the *data member relocation case*
     and if said data member is ref-qualified ;
 - a prvalue of the type of its right operand otherwise.
 
-The effect of the *dot-reloc* operator is twofold:
-
-1. If not already decomposed, then `src` (along with base classes up to the base
-    class which holds the subobject to relocate) [transitions into its decomposed state](#decomposed-state) ;
-2. Triggers the relocation of the said subobject, as if done by the `reloc`
-    operator on any complete object.
+The *dot-reloc* operator can trigger the relocation of the said subobject,
+as if done by the `reloc` operator on any complete object.
 
 #### Pointer to members with dot-reloc #### {#dot-reloc-star}
 
@@ -1424,7 +1662,7 @@ The effect of the *dot-reloc* operator is twofold:
 
 ```c++
 template <auto Member, class Pair>
-auto GetMember(Pair pair)
+auto GetMember(Pair reloc pair)
 {
     return pair.reloc *Member;
 }
@@ -1432,7 +1670,7 @@ auto GetMember(Pair pair)
 void foo()
 {
     using pair_t = pair<string const, non_null<unique_ptr<int>>>;
-    pair_t const p = // ...
+    pair_t const reloc p = // ...
     auto const p_second = GetMember<&pair_t::second>(reloc p);
 }
 ```
@@ -1517,7 +1755,7 @@ is not satisfied:
 - the source object type has no user-defined special member function,
     **or** the call-site has private access privilege to the source object type
 
-These requirements ensure that we can only relocate (a) compound types,
+These requirements ensure that we can only decompose (a) compound types,
 where subobjects have no dependencies with one another (like an `std::pair`),
 or (b) types that we are in control of (because of the private access).
 
