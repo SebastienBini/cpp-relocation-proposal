@@ -711,7 +711,8 @@ if:
 - the object is a local variable of `f`, not ref-qualified, and with automatic
     storage ;
 - or the object is a parameter of `f`, passed by value, and that `f`
-    has control over its lifetime.
+    has control over its lifetime ;
+- or the object's destructor is a no-op.
 
 We denote two main parameter passing conventions:
 
@@ -900,6 +901,9 @@ it from caller to callee, but believe that in practice such gains would be minim
 and liable to be eliminated via optimization, while our model offers the possibility
 of improved locality, since the relocated object will reside directly in the leafmost
 function's stack as opposed to being accessible only via indirection.
+Alternatively, this concern can be regarded as an implementation choice.
+Implementations where only the address of the object is
+passed down from caller to callee are [still possible with our model](#0-copy).
 
 Otherwise, the paper has some minor differences in naming (e.g. `std::force_relocate`
 for what we call `std::reloc_and_uninitialize`) that could easily be reconciled in either
@@ -1247,22 +1251,6 @@ public:
 };
 ```
 
-### Relocation elision ### {#reloc-elision}
-
-Whether performed by relocation, move or copy constructor, relocation
-may be elided if the compiler can ensure that the source object is created at
-the address to be occupied by the target object.
-This is intended to work in much the same way as the named return value optimization;
-for example:
-
-```c+
-void f(std::string s);
-void g() {
-    std::string s;  // may be created in f's argument slot
-    f(reloc s);  // relocation may be elided
-}
-```
-
 ### Discarded reloc expressions ### {#discarded-reloc-expr}
 
 `reloc` expressions can be discarded: `reloc obj;` (note the semi-colon).
@@ -1366,6 +1354,186 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
     bar();
 }
 ```
+
+### Relocation elision ### {#reloc-elision}
+
+Relocation may be elided. This is intended to work in much the same way as the
+named return value optimization; for example:
+
+```c+
+void f(std::string s);
+void g() {
+    std::string s;  // may be created in f's argument slot
+    f(reloc s);  // relocation may be elided
+}
+```
+
+More formally, whether performed by relocation, move or copy constructor,
+the temporary created by the `reloc` expression may not be materialized if:
+
+1. the implementation can ensure that the source object is created at
+    the address to be occupied by the temporary object ;
+2. and the source object is *early destructible*.
+
+For instance,
+given the following function `void sink(T)`, let us observe the effects of the
+`sink(reloc obj)` expression (`obj` being not ref-qualified) across different
+ABIs and object lifetime ownerships:
+
+<table>
+<tr><th>`sink` ABI and object lifetime ownership</th><th>Effect</th></tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is callee-destroy and `obj` is *early destructible*
+</td>
+<td valign="top">
+Elision may happen, in which case `sink` will end the lifetime of `obj`.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is callee-destroy and `obj` is **not** *early destructible*
+</td>
+<td valign="top">
+Elision cannot happen as `obj` cannot be destructed. A new instance is
+move-or-copy-constructed from `obj`, passed to `sink`.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is caller-destroy and `obj` is *early destructible*
+</td>
+<td valign="top">
+Elision may happen, in which case the destructor of `obj` is implicitly invoked
+at the end of the full-expression evaluation.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is caller-destroy and `obj` is **not** *early destructible*
+</td>
+<td valign="top">
+Elision cannot happen, a new instance is move-or-copy-constructed from `obj`, passed to `sink`.
+</td>
+</tr>
+
+</table>
+
+<!--
+
+Let us consider a final example with the following function `void xvsink(T&&)`,
+invoked through the `xvsink(reloc obj)` expression:
+
+<table>
+<tr><th>Object lifetime ownership</th><th>Effect</th></tr>
+
+<tr>
+<td valign="top">
+`obj` is *early destructible*
+</td>
+<td valign="top">
+Elision is very likely to happen, in which case an rvalue reference of `obj` is sent to `xvsink`
+and the destructor of `obj` is implicitly invoked
+at the end of the full-expression evaluation.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`obj` is **not** *early destructible*
+</td>
+<td valign="top">
+Elision cannot happen, a new instance is move-or-copy-constructed from `obj`,
+whose rvalue reference is passed to `xvsink`.
+</td>
+</tr>
+
+</table>
+
+-->
+
+#### Achieving 0-copy with relocation elision and cooperative ABI #### {#0-copy}
+
+Let `f` be a function which takes an object of non-trivial type `T` as value parameter:
+`void f(T);`. To call `f`, the Itanium ABI
+chooses to pass the parameter by address. The following happens in the caller:
+
+1. a temporary object is created, initialized from the expression passed in the
+    matching parameter slot of the function call expression.
+1. `f` is called, passing the address of the temporary object instead
+    of the whole object bytefield.
+1. when the function returns (normally or through an exception), the temporary
+    object is destroyed.
+
+Now, let us say that `T` has migrated to relocation semantics: it has a
+relocation constructor, but no move constructor. This alone makes any object of
+type `T` *early destructible*, and hence all eligible to relocation elision.
+Hence, with the updated Itanium ABI and with relocation elision,
+the expression `f(reloc obj)` translates
+into a call to `f`, merely forwarding the address of `obj`. No temporaries are
+created.
+
+For instance, in the following snippet:
+```c++
+vector<T>::push_back(T x) // putative std::vector push_back
+{
+  ensures_space();
+  new (_end++) T{reloc x};
+}
+
+void bar(T x)
+{
+  get_vector().push_back(reloc x);
+}
+
+void foo(T x)
+{
+  if (test()) bar(reloc x);
+}
+
+// in some function:
+T x;
+foo(reloc x);
+```
+
+Translates into:
+```c++
+vector<T>::push_back(T* x)
+{
+  ensures_space();
+  memcpy(_end++, x, sizeof(T)); // given that relocation is trivial
+}
+
+void bar(T* x)
+{
+  get_vector().push_back(x);
+}
+
+void foo(T* x)
+{
+  if (test()) bar(x);
+}
+
+// in some function:
+T x;
+foo(&x);
+```
+
+This allows the object to be created once, and forwarded by address until it
+is relocated inside a vector. No useless copies are created.
+Yet no new value categories were introduced, all happened with value-semantics,
+and the code is safe as static analysis ensures the object is not reused after
+`reloc`. This can be achieved only because of relocation elision and the fact
+that value parameters are passed by address in Itanium ABI.
+
+This proposal does not mandate this implementation, we only highlight that such
+an implementation is possible. Also, if this proposal is approved, it will create
+an opportunity to other ABIs to migrate to something similar,
+should they wish to benefit from this optimization.
 
 ## Object decomposition ## {#decomposed-object}
 
