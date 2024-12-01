@@ -1247,22 +1247,6 @@ public:
 };
 ```
 
-### Relocation elision ### {#reloc-elision}
-
-Whether performed by relocation, move or copy constructor, relocation
-may be elided if the compiler can ensure that the source object is created at
-the address to be occupied by the target object.
-This is intended to work in much the same way as the named return value optimization;
-for example:
-
-```c+
-void f(std::string s);
-void g() {
-    std::string s;  // may be created in f's argument slot
-    f(reloc s);  // relocation may be elided
-}
-```
-
 ### Discarded reloc expressions ### {#discarded-reloc-expr}
 
 `reloc` expressions can be discarded: `reloc obj;` (note the semi-colon).
@@ -1366,6 +1350,101 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
     bar();
 }
 ```
+
+### Relocation elision ### {#reloc-elision}
+
+Whether performed by relocation, move or copy constructor, relocation
+may be elided if the compiler can ensure that the source object is created at
+the address to be occupied by the target object.
+
+This is intended to work in much the same way as the named return value optimization;
+for example:
+
+```c+
+void f(std::string s);
+void g() {
+    std::string s;  // may be created in f's argument slot
+    f(reloc s);  // relocation may be elided
+}
+```
+
+If elision happens, then the lifetime of the `reloc` operand is still impacted:
+the operand must be in the same state as if the reloc expression had been discarded
+(see the [discarded reloc expressions section](#discarded-reloc-expr)).
+For instance,
+given the following function `void sink(T)`, let us observe the effects of the
+`sink(reloc obj)` expression (`obj` being not ref-qualified):
+
+<table>
+<tr><th>`sink` ABI and object lifetime ownership</th><th>Effect</th></tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is callee-destroy and `obj` **is not** an *unowned parameter*
+</td>
+<td valign="top">
+Elision may happen, in which case `sink` will end the lifetime of `obj`.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is callee-destroy and `obj` is an *unowned parameter*
+</td>
+<td valign="top">
+Elision cannot happen, a new instance is move-or-copy-constructed from `obj`, passed to `sink`.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is caller-destroy and `obj` **is not** an *unowned parameter*
+</td>
+<td valign="top">
+Elision may happen, in which case the destructor of `obj` is implicitly invoked
+at the end of the full-expression evaluation.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`sink` ABI is caller-destroy and `obj` is an *unowned parameter*
+</td>
+<td valign="top">
+Elision cannot happen, a new instance is move-or-copy-constructed from `obj`, passed to `sink`.
+</td>
+</tr>
+
+</table>
+
+Let us consider a final example with the following function `void xvsink(T&&)`,
+invoked through the `xvsink(reloc obj)` expression:
+
+<table>
+<tr><th>Object lifetime ownership</th><th>Effect</th></tr>
+
+<tr>
+<td valign="top">
+`obj` **is not** an *unowned parameter*
+</td>
+<td valign="top">
+Elision is very likely to happen, in which case (a) an rvalue reference of `obj` is sent to `xvsink`
+and (b) the destructor of `obj` is implicitly invoked
+at the end of the full-expression evaluation.
+</td>
+</tr>
+
+<tr>
+<td valign="top">
+`obj` is an *unowned parameter*
+</td>
+<td valign="top">
+Elision cannot happen, a new instance is move-or-copy-constructed from `obj`,
+whose rvalue reference is passed to `xvsink`.
+</td>
+</tr>
+
+</table>
 
 ## Object decomposition ## {#decomposed-object}
 
