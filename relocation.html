@@ -1561,10 +1561,11 @@ Possible extra rowspan handling
     blockquote c-[vi] { color: inherit; } /* Name.Variable.Instance */
     blockquote c-[il] { color: inherit; } /* Literal.Number.Integer.Long */
   </style>
-  <meta content="Bikeshed version 82ce88815, updated Thu Sep 7 16:33:55 2023 -0700" name="generator">
+  <meta content="Bikeshed version 742f3d674, updated Mon Nov 4 14:56:54 2024 -0800" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="74513f9b96c809c63ece641f2e272472e705b0bb" name="document-revision">
+  <meta content="494c0f0f54ae0c6391c06bc61d746500a6a68a3d" name="revision">
+  <meta content="dark light" name="color-scheme">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
     color: var(--a-normal-text);
@@ -1636,7 +1637,6 @@ pre .property::before, pre .property::after {
 }
 </style>
 <style>/* Boilerplate: style-colors */
-
 /* Any --*-text not paired with a --*-bg is assumed to have a transparent bg */
 :root {
     color-scheme: light dark;
@@ -1906,7 +1906,6 @@ a[href].issue-return {
 }
 </style>
 <style>/* Boilerplate: style-selflinks */
-
 :root {
     --selflink-text: white;
     --selflink-bg: gray;
@@ -1966,7 +1965,6 @@ a.self-link::before            { content: "¶"; }
 dfn > a.self-link::before      { content: "#"; }
 </style>
 <style>/* Boilerplate: style-syntax-highlighting */
-
 code.highlight { padding: .1em; border-radius: .3em; }
 pre.highlight, pre > code.highlight { display: block; padding: 1em; margin: .5em 0; overflow: auto; border-radius: 0; }
 
@@ -2023,7 +2021,6 @@ c-[vc] { color: #0077aa } /* Name.Variable.Class */
 c-[vg] { color: #0077aa } /* Name.Variable.Global */
 c-[vi] { color: #0077aa } /* Name.Variable.Instance */
 c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
-
 
 @media (prefers-color-scheme: dark) {
     .highlight:not(.idl) { background: rgba(255, 255, 255, .05); }
@@ -2113,9 +2110,8 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
   <div class="p-summary" data-fill-with="abstract">
    <h2 class="no-num no-toc no-ref heading settled" id="abstract"><span class="content">Abstract</span></h2>
    <p>This paper proposes several mechanisms to enable real relocation in C++.
-
-  We cover several topics, such as trivial relocatibility, container optimizations,
-  supports for relocate-only types, library changes and the impact of the existing code base.</p>
+We cover several topics, such as trivial relocatibility, container optimizations,
+supports for relocate-only types, library changes and the impact of the existing code base.</p>
   </div>
   <nav data-fill-with="table-of-contents" id="toc">
    <h2 class="no-num no-toc no-ref" id="contents">Table of Contents</h2>
@@ -2163,7 +2159,7 @@ c-[il] { color: #000000 } /* Literal.Number.Integer.Long */
      <ol class="toc">
       <li><a href="#src-and-target"><span class="secno">3.1</span> <span class="content">Source and target objects</span></a>
       <li><a href="#dtor-state"><span class="secno">3.2</span> <span class="content">Destructed state</span></a>
-      <li><a href="#parameter-ownership"><span class="secno">3.3</span> <span class="content">Parameter ownership</span></a>
+      <li><a href="#early-destructible"><span class="secno">3.3</span> <span class="content">Early destructible</span></a>
      </ol>
     <li>
      <a href="#compare"><span class="secno">4</span> <span class="content">Comparison with existing proposals</span></a>
@@ -2470,7 +2466,7 @@ silently falls back to calling their copy constructor, or is simply ill-formed..
 <pre class="language-c++ highlight"><c- c1>// with: void bar(A);</c->
 
 <c- n>A</c-> <c- k>const</c-> <c- n>a</c-> <c- o>=</c-> <c- n>someFunc</c-><c- p>();</c->
-<c- n>bar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>a</c-><c- p>));</c-> <c- c1>// silently calls A’s copy ctor, performing a deep copy...</c->
+<c- n>bar</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>a</c-><c- p>));</c-> <c- c1>// silently calls A's copy ctor, performing a deep copy...</c->
 </pre>
    <p>Declaring an object with <code class="highlight"><c- k>const</c-></code> may have unwanted side-effects. As a consequence:</p>
    <ul>
@@ -2936,24 +2932,35 @@ programming error to call the destructor of an object if it is already in a <em>
 As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
 this has undefined behavior unless the object type is trivial, in which case its destructor
 or pseudo-destructor is a no-op.</p>
-   <h3 class="heading settled" data-level="3.3" id="parameter-ownership"><span class="secno">3.3. </span><span class="content">Parameter ownership</span><a class="self-link" href="#parameter-ownership"></a></h3>
+   <h3 class="heading settled" data-level="3.3" id="early-destructible"><span class="secno">3.3. </span><span class="content">Early destructible</span><a class="self-link" href="#early-destructible"></a></h3>
    <p>The lifetime of function parameters is implementation-defined in C++, but it
 is of most importance with relocation. Depending on the function call convention
 or ABI, the function may or may not be in charge of the lifetime of its parameters.</p>
-   <p>An object is said to be an <em>owned parameter</em> (respectively, an <em>unowned parameter</em>) with regards to a function <code class="highlight"><c- n>f</c-></code> if the object is a parameter of <code class="highlight"><c- n>f</c-></code>, passed by value, and that <code class="highlight"><c- n>f</c-></code> has control (respectively, does not have control) over its lifetime.</p>
+   <p>An object is said to be <em>early destructible</em> with regards to a function <code class="highlight"><c- n>f</c-></code> if:</p>
+   <ul>
+    <li data-md>
+     <p>the object is a local variable of <code class="highlight"><c- n>f</c-></code>, not ref-qualified, and with automatic
+storage ;</p>
+    <li data-md>
+     <p>or the object is a parameter of <code class="highlight"><c- n>f</c-></code>, passed by value, and that <code class="highlight"><c- n>f</c-></code> has control over its lifetime.</p>
+   </ul>
    <p>We denote two main parameter passing conventions:</p>
    <ul>
     <li data-md>
-     <p><em>caller-destroy</em>: the call site is in charge of the lifetime of the value parameter passed in the function call ;</p>
+     <p><em>caller-destroy</em>: the call site is in charge of the lifetime of the
+value parameter passed in the function call ;</p>
     <li data-md>
-     <p><em>callee-destroy</em>: the function itself is in charge of the lifetime of its value parameters ;</p>
+     <p><em>callee-destroy</em>: the function itself is in charge of the lifetime of its
+value parameters ;</p>
    </ul>
    <p>Depending on the ABI choice, the convention can be per parameter, or apply
 to all the function parameters. Other conventions may exist, and they are
 still compatible with this proposal.</p>
-   <p>For instance, in a function with caller-destroy convention, all its value
-parameters are <em>unowned parameters</em>.
-Likewise, with callee-destroy, all of its parameters are <em>owned parameters</em>.</p>
+   <p>For instance, in a function with caller-destroy convention, none of its value
+parameters are <em>early destructible</em>.
+Likewise, with callee-destroy, all of its value parameters are <em>early destructible</em>.
+And last, regardless of the convention, all not ref-qualified, local variables
+with automatic storage are <em>early destructible</em>.</p>
    <h2 class="heading settled" data-level="4" id="compare"><span class="secno">4. </span><span class="content">Comparison with existing proposals</span><a class="self-link" href="#compare"></a></h2>
    <p>This proposal introduces the <code class="highlight"><c- n>reloc</c-></code> keyword, which allows users to explicitly
 and safely relocate local variables in their code base.</p>
@@ -3007,8 +3014,8 @@ when relocation cannot happen.</p>
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>x</c-><c- p>)</c-> <c- p>{</c-> <c- n>sink</c-><c- p>(</c-><c- n>x</c-><c- p>);</c-> <c- p>}</c->
 </pre>
    <p>Here, under the terms of <a data-link-type="biblio" href="#biblio-p0023r0" title="Relocator: Efficiently moving objects">[P0023R0]</a>, relocation may not happen because of ABI
-constraints (if <code class="highlight"><c- n>x</c-></code> is an unowned parameter).
-This will cause <code class="highlight"><c- n>foo</c-></code> to fallback to a move+deferred detroy paradigm.</p>
+constraints (if <code class="highlight"><c- n>x</c-></code> is not <em>early destructible</em>).
+This will cause <code class="highlight"><c- n>foo</c-></code> to fallback to a move+deferred destroy paradigm.</p>
    <p>This proposal has another take on this issue: if <code class="highlight"><c- n>T</c-></code> has a relocation constructor
 but no move constructor, then any function
 that takes a <code class="highlight"><c- n>T</c-></code> parameter by value is required to have an ABI that allows it to
@@ -3215,7 +3222,7 @@ to avoid pitfalls.</p>
    <p>Thus in an attempt to make a compromise between ABI compatibility and acceptable
 support for relocation, we take a slightly less conservative approach.
 We would like function parameters passed by value, whose type declares
-a relocation constructor but no move constructor, to be <em>owned parameters</em>.
+a relocation constructor but no move constructor, to be <em>early destructible</em>.
 As the C++ standard leaves this area implementation-defined, we are going to force
 this another way, although the effect will likely be the same:</p>
    <p><strong>Rule:</strong> If the source object is a function parameter passed by value, and its type
@@ -3226,17 +3233,15 @@ is discarded is <em>implementation-defined</em>.</p>
    <p>As consequences of that rule, we get the following:</p>
    <ul>
     <li data-md>
-     <p>source objects which are not function parameters are always guaranteed that
+     <p><em>early destructible</em> source objects are always guaranteed that
 their relocation constructor (if eligible) is called ;</p>
     <li data-md>
-     <p>source objects which are <em>owned parameters</em> have the same guarantee as above ;</p>
-    <li data-md>
-     <p>source objects which are <em>unowned parameters</em>, and have both an eligible move
+     <p>source objects which are not <em>early destructible</em>, and have both an eligible move
 and relocation constructor, will not be relocated. Instead the move constructor
-will be used by <code class="highlight"><c- n>reloc</c-></code>.</p>
+will be invoked by <code class="highlight"><c- n>reloc</c-></code>.</p>
     <li data-md>
      <p>source objects which are function parameters, and have an eligible relocation
-constructor but no move constructor, are forcibly <em>owned parameters</em>.</p>
+constructor but no move constructor, are forcibly <em>early destructible</em>.</p>
    </ul>
    <p class="note" role="note"><span class="marker">NOTE:</span> Types which have a relocation constructor but no move constructor
 still don’t exist today, so the likelihood of breaking existing ABIs is still
@@ -3282,10 +3287,8 @@ copy and move constructor ;</p>
     <li data-md>
      <p>the source object cannot be reused anyway, why defer its destruction?</p>
    </ul>
-   <p>Unfortunately, this cannot be done without breaking some ABIs. If the source
-object is an <em>unowned parameter</em>, then the function cannot destroy it early.
-The problem does not happen if the source object is a function-local variable
-or an <em>owned parameter</em>.
+   <p>Unfortunately this cannot be done without breaking some ABIs, especially because
+the source object may not be <em>early destructible</em>.
 Let us see what happens if we allow the early destruction of function parameters
 to be <em>implementation-defined</em>:</p>
    <ul>
@@ -3428,7 +3431,7 @@ This is intended to work in much the same way as the named return value optimiza
 for example:</p>
 <pre class="language-c+ highlight"><c- b>void</c-> <c- nf>f</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>g</c-><c- p>()</c-> <c- p>{</c->
-    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>;</c->  <c- c1>// may be created in f’s argument slot</c->
+    <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>s</c-><c- p>;</c->  <c- c1>// may be created in f's argument slot</c->
     <c- n>f</c-><c- p>(</c-><c- n>reloc</c-> <c- n>s</c-><c- p>);</c->  <c- c1>// relocation may be elided</c->
 <c- p>}</c->
 </pre>
@@ -3472,7 +3475,7 @@ destroyed). But whether this statement indeed calls a destructor early
    <p>To summarize, it means that <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> has the following behavior:</p>
    <ul>
     <li data-md>
-     <p>If <code class="highlight"><c- n>obj</c-></code> is an <em>owned parameter</em> or a function-local variable then:</p>
+     <p>If <code class="highlight"><c- n>obj</c-></code> is <em>early destructible</em> then:</p>
      <ul>
       <li data-md>
        <p>The temporary is likely elided, effectively only calling the
@@ -3482,7 +3485,7 @@ destructor of <code class="highlight"><c- n>obj</c-></code>.</p>
 source object, and then destructed.</p>
      </ul>
     <li data-md>
-     <p>Otherwise (<code class="highlight"><c- n>obj</c-></code> is an <em>unowned parameter</em>):</p>
+     <p>Otherwise:</p>
      <ul>
       <li data-md>
        <p>A temporary is move-or-copy-constructed and then destructed.</p>
@@ -3520,12 +3523,12 @@ source object, and then destructed.</p>
     <c- k>if</c-> <c- p>(</c-><c- o>!</c-><c- n>some_test</c-><c- p>())</c->
     <c- p>{</c->
         <c- n>reloc</c-> <c- n>guard</c-><c- p>;</c-> <c- d>/* well-formed: temporary is likely elided regardless of</c->
-<c- d>            do_something_03’s ABI, only calling the destructor of guard. */</c->
+<c- d>            do_something_03's ABI, only calling the destructor of guard. */</c->
         <c- n>log</c-><c- p>(</c-><c- s>"thread "</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>this_thread</c-><c- o>::</c-><c- n>get_id</c-><c- p>(),</c-> <c- s>" failed"</c-><c- p>);</c->
         <c- k>return</c-><c- p>;</c->
     <c- p>}</c->
     <c- n>bar</c-><c- p>();</c->
-    <c- d>/* guard destructor is called only if it wasn’t passed to reloc. */</c->
+    <c- d>/* guard destructor is called only if it wasn't passed to reloc. */</c->
 <c- p>}</c->
 <c- c1>// assuming non_null does not have a relocation constructor</c->
 <c- b>void</c-> <c- nf>do_something_04</c-><c- p>(</c-><c- n>non_null</c-><c- o>&lt;</c-><c- n>shared_ptr</c-><c- o>&lt;</c-><c- b>int</c-><c- o>>></c-> <c- n>copyOnlyObj</c-><c- p>)</c->
@@ -3857,7 +3860,7 @@ then the <em>implicit decomposition</em> is illegal.</p>
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getU</c-><c- p>().</c-><c- n>_pub</c-><c- p>[</c-><c- mi>2</c-><c- p>];</c-> <c- d>/* implicit-decomposition is ill-formed</c->
 <c- d>    as reloc cannot be used on array elements, move constructor is used */</c->
 <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>().</c-><c- n>second</c-><c- p>;</c-> <c- d>/* implicit-decomposition is well-formed;</c->
-<c- d>    std::string’s relocation constructor is used */</c->
+<c- d>    std::string's relocation constructor is used */</c->
 </pre>
    <h4 class="heading settled" data-level="5.2.6" id="decompose-value-param"><span class="secno">5.2.6. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
    <p>As we have seen, decomposition ends the lifetime of the source object.
@@ -3865,7 +3868,7 @@ The reader may be concerned that this may break existing ABIs, should the source
 object be a function parameter passed by value.
 However we do not foresee any extra breakage other than what the support for
 the <code class="highlight"><c- n>reloc</c-></code> operator does.</p>
-   <p>Indeed if the decomposed object is an <em>unowned parameter</em>, then the function
+   <p>Indeed if the decomposed object is not <em>early destructible</em>, then the function
 may silently relocate its argument to some local storage before the function
 body is entered. <em>This is a putative
 workaround and is not part of the proposal.</em></p>
@@ -3877,7 +3880,8 @@ workaround and is not part of the proposal.</em></p>
       <th>Putative equivalent generated code
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<pre class="highlight" lang="cpp">
+<c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
 <c- p>{</c->
     <c- c1>// ...</c->
     <c- k>if</c-> <c- p>(</c-><c- n>test</c-><c- p>())</c->
@@ -3888,7 +3892,8 @@ workaround and is not part of the proposal.</em></p>
 <c- p>}</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
+<pre class="highlight" lang="cpp">
+<c- b>void</c-> <c- nf>foo01</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c->
 <c- p>{</c->
     <c- k>auto</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>{</c-><c- n>reloc</c-> <c- n>__obj</c-><c- p>};</c->
     <c- c1>// ...</c->
@@ -3901,7 +3906,8 @@ workaround and is not part of the proposal.</em></p>
 </pre>
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c-> <c- k>try</c->
+<pre class="highlight" lang="cpp">
+<c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c-> <c- k>try</c->
 <c- p>{</c->
     <c- c1>// ...</c->
     <c- k>if</c-> <c- p>(</c-><c- n>test</c-><c- p>())</c->
@@ -3913,7 +3919,8 @@ workaround and is not part of the proposal.</em></p>
 <c- k>catch</c-> <c- p>(...)</c-> <c- p>{}</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c-> <c- k>try</c->
+<pre class="highlight" lang="cpp">
+<c- b>void</c-> <c- nf>foo02</c-><c- p>(</c-><c- n>T</c-> <c- n>__obj</c-><c- p>)</c-> <c- k>try</c->
 <c- p>{</c->
     <c- k>auto</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>{</c-><c- n>reloc</c-> <c- n>__obj</c-><c- p>};</c->
     <c- c1>// ...</c->
@@ -4360,8 +4367,8 @@ Then the expressions #2, #3 and #4 are ill-formed because <code class="highlight
   <c- c1>// sequenced evaluation order</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>,</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
-  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-> <c- n>or</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
-  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-> <c- n>or</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
+  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>x</c-> <c- k>or</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// well-formed</c->
+  <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- k>auto</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-> <c- k>or</c-> <c- n>x</c-><c- p>;</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
 
   <c- c1>// unspecified evaluation order with ternary</c->
   <c- p>{</c-> <c- n>T</c-> <c- n>x</c-><c- p>;</c-> <c- n>foo</c-><c- p>(</c-><c- n>x</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>);</c-> <c- p>}</c-> <c- c1>// ill-formed</c->
@@ -4670,7 +4677,7 @@ self-referencing pointers, otherwise the default implementation should suffice.<
         <c- n>_a</c-><c- p>{</c-><c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>src</c-><c- o>::</c-><c- n>_a</c-><c- p>)},</c-> <c- n>_c</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- o>::</c-><c- n>_c</c-><c- p>}</c-> <c- p>{}</c-> <c- d>/*</c->
 <c- d>        1. T::_a is constructed using the move constructor.</c->
 <c- d>        2. T::_b is default constructed.</c->
-<c- d>        3. T::_c is constructed using std::string’s relocation</c->
+<c- d>        3. T::_c is constructed using std::string's relocation</c->
 <c- d>           constructor, from src._c.</c->
 <c- d>        4. src._b and src._a are destructed (in that order)</c->
 <c- d>           when the constructor body exits.</c->
@@ -4807,7 +4814,8 @@ immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href
       <th>After
      <tr>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c->
+<pre class="highlight" lang="cpp">
+<c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>invoke</c-><c- p>([</c-><c- o>&amp;</c-><c- p>]</c->
 <c- p>{</c->
     <c- n>T</c-> <c- n>x</c-><c- p>;</c->
     <c- n>x</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
@@ -4815,7 +4823,8 @@ immediately-invoked function expressions (IIFEs, <a data-link-type="biblio" href
 <c- p>});</c->
 </pre>
       <td valign="top">
-<pre class="highlight" lang="cpp"><c- n>T</c-> <c- n>x_mut</c-><c- p>;</c->
+<pre class="highlight" lang="cpp">
+<c- n>T</c-> <c- n>x_mut</c-><c- p>;</c->
 <c- n>x_mut</c-><c- p>.</c-><c- n>modify</c-><c- p>(</c-><c- n>y</c-><c- p>,</c-> <c- n>z</c-><c- p>);</c->
 <c- n>T</c-> <c- k>const</c-> <c- n>x</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x_mut</c-><c- p>;</c->
 </pre>
@@ -5009,7 +5018,7 @@ defaulted) will serve as the definition of the eliding operator.</p>
 the call to the eliding one:</p>
    <ul>
     <li data-md>
-     <p>If the source object passed to the non-eliding operator is an <em>owned parameter</em>,
+     <p>If the source object passed to the non-eliding operator is <em>early destructible</em>,
 then the operator:</p>
      <ol>
       <li data-md>
@@ -5018,7 +5027,7 @@ then the operator:</p>
        <p>It forwards as return value whatever the eliding operator returns.</p>
      </ol>
     <li data-md>
-     <p>Otherwise (the source object is an <em>unowned parameter</em>), then the operator:</p>
+     <p>Otherwise then the operator:</p>
      <ol>
       <li data-md>
        <p>Creates a local copy of the source object, using move or copy constructor.</p>
@@ -5150,7 +5159,7 @@ destructor on the source object.</p>
 
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>val</c-><c- p>)</c->
 <c- p>{</c->
-    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* ambiguous call using today’s rules */</c->
+    <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* ambiguous call using today's rules */</c->
 <c- p>}</c->
 </pre>
    <p>Hence we propose a change in the overload resolution rules to prefer passing by
@@ -5192,7 +5201,7 @@ implementation-defined. The main motivation is for performance: "small" trivial
 types, such as built-in integral types, are best passed by value than by
 reference.</p>
    <p>In what we propose, overload sets with <code class="highlight"><c- n>T</c-></code>, <code class="highlight"><c- n>T</c-> <c- k>const</c-><c- o>&amp;</c-></code> and <code class="highlight"><c- n>T</c-><c- o>&amp;&amp;</c-></code> can also exist.
-However, which is picked is (almost always, unowned parameters left aside)
+However, which is picked is (not <em>early destructible</em> objects left aside)
 specified clearly by the standard
 (depending on the value category of the parameter) and
 not <em>implementation-defined</em>.</p>
@@ -5209,7 +5218,7 @@ implementation-defined, as it depends on the ABI capabilities. Consider:</p>
 <c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-> <c- n>value</c-><c- p>)</c->
 <c- p>{</c->
     <c- n>foo</c-><c- p>(</c-><c- n>reloc</c-> <c- n>value</c-><c- p>);</c-> <c- d>/* always calls foo(T),</c->
-<c- d>        but how foo’s parameter is constructed</c->
+<c- d>        but how foo's parameter is constructed</c->
 <c- d>        is implementation-defined (reloc, move or copy ctor) */</c->
 <c- p>}</c->
 </pre>
@@ -5524,7 +5533,7 @@ are also proposed. For instance we propose to introduce:</p>
 </pre>
    <h2 class="heading settled" data-level="7" id="discuss"><span class="secno">7. </span><span class="content">Discussions</span><a class="self-link" href="#discuss"></a></h2>
    <h3 class="heading settled" data-level="7.1" id="abi"><span class="secno">7.1. </span><span class="content">Potential ABI changes</span><a class="self-link" href="#abi"></a></h3>
-   <p>As noted above (<a href="#parameter-ownership">§ 3.3 Parameter ownership</a>), some platforms have a <em>caller-destroy</em> ABI
+   <p>As noted above (<a href="#early-destructible">§ 3.3 Early destructible</a>), some platforms have a <em>caller-destroy</em> ABI
 where the <em>calling</em> function expects to destroy nontrivial parameters passed by
 value. This poses a problem for functions that wish to relocate from such
 parameters, and a potential ABI break.</p>
@@ -5898,20 +5907,20 @@ value category prvalue, lvalue or xvalue, and forward by relocation.</p>
 translate to a call to the destructor of <code class="highlight"><c- n>obj</c-></code>, while ensuring that the
 destructor won’t be called again at the end of its scope.</p>
    <p>However this is hardly possible at the moment because of all the different ABIs
-that exist. If <code class="highlight"><c- n>obj</c-></code> is an <em>unowned parameter</em>, then the function cannot elide
+that exist. If <code class="highlight"><c- n>obj</c-></code> is not <em>early destructible</em>, then the function cannot elide
 the destructor call of <code class="highlight"><c- n>obj</c-></code> that will happen on the caller-side.</p>
    <p>We wanted the well-formedness of the code above all else (i.e. <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> could
 not be well-formed on some implementations and not in others). As such,
 in this proposal, <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> is only well-formed if <code class="highlight"><c- n>obj</c-></code> is
 relocatable, movable or copyable.</p>
-   <p>Hence, the best we can do if <code class="highlight"><c- n>obj</c-></code> is an <em>unowned parameter</em>,
+   <p>Hence, the best we can do if <code class="highlight"><c- n>obj</c-></code> is not <em>early destructible</em>,
 is to move-construct a temporary, and destruct
 it right after, which will trigger the desired side-effects of the destructor
 (e.g. release a lock if <code class="highlight"><c- n>obj</c-></code> is a <code class="highlight"><c- n>unique_lock</c-></code>).
 The destructor of <code class="highlight"><c- n>obj</c-></code> will still be called when the function
 returns, but will likely do nothing as the object will be in a moved-from state.</p>
    <p>A future proposal could make <code class="highlight"><c- n>reloc</c-> <c- n>obj</c-><c- p>;</c-></code> to just call the destructor,
-regardless of whether <code class="highlight"><c- n>obj</c-></code> is an <em>unowned parameter</em> and of its constructors,
+regardless of whether <code class="highlight"><c- n>obj</c-></code> is <em>early destructible</em> and of its constructors,
 solving those ABI issues.</p>
    <h3 class="heading settled" data-level="7.5" id="easier-cpp"><span class="secno">7.5. </span><span class="content">Will it make C++ easier?</span><a class="self-link" href="#easier-cpp"></a></h3>
    <p>This proposal introduces a new keyword, and a bunch of new concepts
@@ -5953,7 +5962,7 @@ code readability and performance.</p>
       on = !document.body.classList.contains('toc-sidebar');
     }
 
-    /* Don’t scroll to compensate for the ToC if we’re above it already. */
+    /* Don't scroll to compensate for the ToC if we're above it already. */
     var headY = 0;
     var head = document.querySelector('.head');
     if (head) {
@@ -5984,16 +5993,16 @@ code readability and performance.</p>
       }
       if (toggle.matches(':hover')) {
         /* Unfocus button when not using keyboard navigation,
-           because I don’t know where else to send the focus. */
+           because I don't know where else to send the focus. */
         toggle.blur();
       }
     }
   }
 
   function createSidebarToggle() {
-    /* Create the sidebar toggle in JS; it shouldn’t exist when JS is off. */
+    /* Create the sidebar toggle in JS; it shouldn't exist when JS is off. */
     var toggle = document.createElement('a');
-      /* This should probably be a button, but appearance isn’t standards-track.*/
+      /* This should probably be a button, but appearance isn't standards-track.*/
     toggle.id = 'toc-toggle';
     toggle.class = 'toc-toggle';
     toggle.href = '#toc';
@@ -6009,7 +6018,7 @@ code readability and performance.</p>
     toggle.addEventListener('click', toggler, false);
 
 
-    /* Get <nav id=toc-nav>, or make it if we don’t have one. */
+    /* Get <nav id=toc-nav>, or make it if we don't have one. */
     var tocNav = document.getElementById('toc-nav');
     if (!tocNav) {
       tocNav = document.createElement('p');
@@ -6017,7 +6026,7 @@ code readability and performance.</p>
       /* Prepend for better keyboard navigation */
       document.body.insertBefore(tocNav, document.body.firstChild);
     }
-    /* While we’re at it, make sure we have a Jump to Toc link. */
+    /* While we're at it, make sure we have a Jump to Toc link. */
     var tocJump = document.getElementById('toc-jump');
     if (!tocJump) {
       tocJump = document.createElement('a');
@@ -6045,7 +6054,7 @@ code readability and performance.</p>
     }, false);
   }
   else {
-    console.warn("Can’t find Table of Contents. Please use <nav id='toc'> around the ToC.");
+    console.warn("Can't find Table of Contents. Please use <nav id='toc'> around the ToC.");
   }
 
   /* Wrap tables in case they overflow */

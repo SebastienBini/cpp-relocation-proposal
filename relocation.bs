@@ -699,29 +699,37 @@ As described in <a href="https://eel.is/c++draft/basic.life#9">[basic.life]</a>,
 this has undefined behavior unless the object type is trivial, in which case its destructor
 or pseudo-destructor is a no-op.
 
-## Parameter ownership ## {#parameter-ownership}
+## Early destructible ## {#early-destructible}
 
 The lifetime of function parameters is implementation-defined in C++, but it
 is of most importance with relocation. Depending on the function call convention
 or ABI, the function may or may not be in charge of the lifetime of its parameters.
 
-An object is said to be an *owned parameter* (respectively, an
-*unowned parameter*) with regards to a function `f`
-if the object is a parameter of `f`, passed by value, and that `f`
-has control (respectively, does not have control) over its lifetime.
+An object is said to be *early destructible* with regards to a function `f`
+if:
+
+- the object is a local variable of `f`, not ref-qualified, and with automatic
+    storage ;
+- or the object is a parameter of `f`, passed by value, and that `f`
+    has control over its lifetime.
 
 We denote two main parameter passing conventions:
 
-- *caller-destroy*: the call site is in charge of the lifetime of the value parameter passed in the function call ;
-- *callee-destroy*: the function itself is in charge of the lifetime of its value parameters ;
+- *caller-destroy*: the call site is in charge of the lifetime of the
+    value parameter passed in the function call ;
+- *callee-destroy*: the function itself is in charge of the lifetime of its
+    value parameters ;
 
 Depending on the ABI choice, the convention can be per parameter, or apply
 to all the function parameters. Other conventions may exist, and they are
 still compatible with this proposal.
 
-For instance, in a function with caller-destroy convention, all its value
-parameters are *unowned parameters*.
-Likewise, with callee-destroy, all of its parameters are *owned parameters*.
+For instance, in a function with caller-destroy convention, none of its value
+parameters are *early destructible*.
+Likewise, with callee-destroy, all of its value parameters are
+*early destructible*.
+And last, regardless of the convention, all not ref-qualified, local variables
+with automatic storage are *early destructible*.
 
 # Comparison with existing proposals # {#compare}
 
@@ -790,8 +798,8 @@ void foo(T x) { sink(x); }
 ```
 
 Here, under the terms of [[P0023R0]], relocation may not happen because of ABI
-constraints (if `x` is an unowned parameter).
-This will cause `foo` to fallback to a move+deferred detroy paradigm.
+constraints (if `x` is not *early destructible*).
+This will cause `foo` to fallback to a move+deferred destroy paradigm.
 
 This proposal has another take on this issue: if `T` has a relocation constructor
 but no move constructor, then any function
@@ -1032,7 +1040,7 @@ to avoid pitfalls.
 Thus in an attempt to make a compromise between ABI compatibility and acceptable
 support for relocation, we take a slightly less conservative approach.
 We would like function parameters passed by value, whose type declares
-a relocation constructor but no move constructor, to be *owned parameters*.
+a relocation constructor but no move constructor, to be *early destructible*.
 As the C++ standard leaves this area implementation-defined, we are going to force
 this another way, although the effect will likely be the same:
 
@@ -1046,14 +1054,13 @@ Note: *eligible* is defined in
 
 As consequences of that rule, we get the following:
 
-- source objects which are not function parameters are always guaranteed that
+- *early destructible* source objects are always guaranteed that
     their relocation constructor (if eligible) is called ;
-- source objects which are *owned parameters* have the same guarantee as above ;
-- source objects which are *unowned parameters*, and have both an eligible move
+- source objects which are not *early destructible*, and have both an eligible move
     and relocation constructor, will not be relocated. Instead the move constructor
-    will be used by `reloc`.
+    will be invoked by `reloc`.
 - source objects which are function parameters, and have an eligible relocation
-    constructor but no move constructor, are forcibly *owned parameters*.
+    constructor but no move constructor, are forcibly *early destructible*.
 
 NOTE: Types which have a relocation constructor but no move constructor
 still don't exist today, so the likelihood of breaking existing ABIs is still
@@ -1109,10 +1116,8 @@ destroyed. It would be the natural thing to do:
     copy and move constructor ;
 - the source object cannot be reused anyway, why defer its destruction?
 
-Unfortunately, this cannot be done without breaking some ABIs. If the source
-object is an *unowned parameter*, then the function cannot destroy it early.
-The problem does not happen if the source object is a function-local variable
-or an *owned parameter*.
+Unfortunately this cannot be done without breaking some ABIs, especially because
+the source object may not be *early destructible*.
 Let us see what happens if we allow the early destruction of function parameters
 to be *implementation-defined*:
 
@@ -1302,12 +1307,12 @@ destroyed). But whether this statement indeed calls a destructor early
 
 To summarize, it means that `reloc obj;` has the following behavior:
 
-- If `obj` is an *owned parameter* or a function-local variable then:
+- If `obj` is *early destructible* then:
     - The temporary is likely elided, effectively only calling the
         destructor of `obj`.
     - Otherwise a temporary is initialized from the
         source object, and then destructed.
-- Otherwise (`obj` is an *unowned parameter*):
+- Otherwise:
     - A temporary is move-or-copy-constructed and then destructed.
     - The source object destruction is deferred until the function returns.
 
@@ -1702,7 +1707,7 @@ object be a function parameter passed by value.
 However we do not foresee any extra breakage other than what the support for
 the `reloc` operator does.
 
-Indeed if the decomposed object is an *unowned parameter*, then the function
+Indeed if the decomposed object is not *early destructible*, then the function
 may silently relocate its argument to some local storage before the function
 body is entered. *This is a putative
 workaround and is not part of the proposal.*
@@ -2951,11 +2956,11 @@ defaulted) will serve as the definition of the eliding operator.
 The non-eliding operator definition is generated by the compiler, and merely wraps
 the call to the eliding one:
 
-- If the source object passed to the non-eliding operator is an *owned parameter*,
+- If the source object passed to the non-eliding operator is *early destructible*,
     then the operator:
     1.  Calls the eliding operator, passing the source object as if by reference.
     2.  It forwards as return value whatever the eliding operator returns.
-- Otherwise (the source object is an *unowned parameter*), then the operator:
+- Otherwise then the operator:
     1.  Creates a local copy of the source object, using move or copy constructor.
     2.  Calls the eliding operator, passing that copy by reference.
     3.  It forwards as return value whatever the eliding operator returns.
@@ -3169,7 +3174,7 @@ types, such as built-in integral types, are best passed by value than by
 reference.
 
 In what we propose, overload sets with `T`, `T const&` and `T&&` can also exist.
-However, which is picked is (almost always, unowned parameters left aside)
+However, which is picked is (not *early destructible* objects left aside)
 specified clearly by the standard
 (depending on the value category of the parameter) and
 not *implementation-defined*.
@@ -3575,7 +3580,7 @@ inline constexpr bool is_relocation_constructible_v = is_relocation_constructibl
 
 ## Potential ABI changes ## {#abi}
 
-As noted above ([[#parameter-ownership]]), some platforms have a *caller-destroy* ABI
+As noted above ([[#early-destructible]]), some platforms have a *caller-destroy* ABI
 where the *calling* function expects to destroy nontrivial parameters passed by
 value. This poses a problem for functions that wish to relocate from such
 parameters, and a potential ABI break.
@@ -3955,7 +3960,7 @@ translate to a call to the destructor of `obj`, while ensuring that the
 destructor won't be called again at the end of its scope.
 
 However this is hardly possible at the moment because of all the different ABIs
-that exist. If `obj` is an *unowned parameter*, then the function cannot elide
+that exist. If `obj` is not *early destructible*, then the function cannot elide
 the destructor call of `obj` that will happen on the caller-side.
 
 We wanted the well-formedness of the code above all else (i.e. `reloc obj;` could
@@ -3963,7 +3968,7 @@ not be well-formed on some implementations and not in others). As such,
 in this proposal, `reloc obj;` is only well-formed if `obj` is
 relocatable, movable or copyable.
 
-Hence, the best we can do if `obj` is an *unowned parameter*,
+Hence, the best we can do if `obj` is not *early destructible*,
 is to move-construct a temporary, and destruct
 it right after, which will trigger the desired side-effects of the destructor
 (e.g. release a lock if `obj` is a `unique_lock`).
@@ -3971,7 +3976,7 @@ The destructor of `obj` will still be called when the function
 returns, but will likely do nothing as the object will be in a moved-from state.
 
 A future proposal could make `reloc obj;` to just call the destructor,
-regardless of whether `obj` is an *unowned parameter* and of its constructors,
+regardless of whether `obj` is *early destructible* and of its constructors,
 solving those ABI issues.
 
 ## Will it make C++ easier? ## {#easier-cpp}
