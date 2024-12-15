@@ -1353,12 +1353,8 @@ void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
 
 ### Relocation elision ### {#reloc-elision}
 
-Whether performed by relocation, move or copy constructor, relocation
-may be elided if the compiler can ensure that the source object is created at
-the address to be occupied by the target object.
-
-This is intended to work in much the same way as the named return value optimization;
-for example:
+Relocation may be elided. This is intended to work in much the same way as the
+named return value optimization; for example:
 
 ```c+
 void f(std::string s);
@@ -1368,12 +1364,21 @@ void g() {
 }
 ```
 
-If elision happens, then the lifetime of the `reloc` operand is still impacted:
-the operand must be in the same state as if the reloc expression had been discarded
-(see the [discarded reloc expressions section](#discarded-reloc-expr)).
+More formally, whether performed by relocation, move or copy constructor,
+the temporary created by the `reloc` expression may not be materialized if:
+
+1. the implementation can ensure that the source object is created at
+    the address to be occupied by the temporary object ;
+2. and:
+    - either the source object destructor is a no-op ;
+    - either the implementation has control
+        over the lifetime of the source object at the moment of the
+        `reloc` expression evaluation.
+
 For instance,
 given the following function `void sink(T)`, let us observe the effects of the
-`sink(reloc obj)` expression (`obj` being not ref-qualified):
+`sink(reloc obj)` expression (`obj` being not ref-qualified) across different
+ABIs and object lifetime ownerships:
 
 <table>
 <tr><th>`sink` ABI and object lifetime ownership</th><th>Effect</th></tr>
@@ -1392,7 +1397,8 @@ Elision may happen, in which case `sink` will end the lifetime of `obj`.
 `sink` ABI is callee-destroy and `obj` is an *unowned parameter*
 </td>
 <td valign="top">
-Elision cannot happen, a new instance is move-or-copy-constructed from `obj`, passed to `sink`.
+Elision cannot happen as `obj` cannot be destructed. A new instance is
+move-or-copy-constructed from `obj`, passed to `sink`.
 </td>
 </tr>
 
