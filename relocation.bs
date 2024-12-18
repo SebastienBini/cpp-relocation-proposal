@@ -2905,7 +2905,7 @@ The implicitly-declared or defaulted relocation assignment operator for class `T
 A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.
 
-### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
+### Relocation assignment operator parameter's relocation elision ### {#aliased-reloc-assign}
 
 As with the relocation constructor, it is desirable that the parameter should be
 the source object *converted to* a prvalue, and not a temporary prvalue relocated
@@ -3545,6 +3545,59 @@ on each element.
 If an exception is thrown by `std::reloc_and_uninitialize`, then the destructor of all
 remaining elements in the source range is called, as well as the destructor of
 all constructed objects in the output iterator.
+
+## Utility ## {#std-utility}
+
+### std::swap ### {#std-swap}
+
+We propose new a `std::swap` overload that can take full-advantage of relocation.
+`std::swap` is used in many STL algorithms, and they could all benefit from a
+boosted `std::swap` implementation.
+
+We propose a new overload to `std::swap` that only participates
+in overload resolution if the type of the objects to swap is noexcept
+relocation constructible, and not a constant object.
+
+The implementation simply relocates the first object into a temporary, the second
+object into the first, and the temporary into the second object.
+If the type is trivially relocatable, then this `std::swap` overload is equivalent
+of simply swapping the bytes occupied by both objects.
+
+Here is a possible implementation:
+```c++
+template <class T> requires is_nothrow_relocation_constructible_v<T> && !std::is_const_v<T>
+void swap(T& a, T& b) noexcept
+{
+    T const tmp{std::reloc_and_uninitialize(std::addressof(a))};
+    new (std::addressof(a)) T{std::reloc_and_uninitialize(std::addressof(b))};
+    new (std::addressof(b)) T{reloc tmp};
+}
+```
+
+Note that the API explicitly excludes constant references.
+Even though placement new and `std::construct_at` forbids reconstructing over
+constant storage, this is an implementation details (the first version of
+`std::construct_at` did not forbid it). The API clearly states
+that constant references are ineligible.
+
+### std::exchange ### {#std-exchange}
+
+In the same spirit as `std::swap`, we also propose new a `std::exchange` overload.
+
+We propose a new overload to `std::exchange` that only participates
+in overload resolution if the type of the objects to swap is noexcept
+relocation constructible.
+
+Here is a possible implementation:
+```c++
+template <class T> requires is_nothrow_relocation_constructible_v<T> && !std::is_const_v<T>
+T exchange(T& a, T b) noexcept
+{
+    T const tmp{std::reloc_and_uninitialize(std::addressof(a))};
+    new (std::addressof(a)) T{reloc b};
+    return tmp;
+}
+```
 
 ## Type traits header ## {#std-type_traits-header}
 
