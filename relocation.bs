@@ -1215,39 +1215,39 @@ std::string gStr = "static string";
 
 void bar(void)
 {
-	std::string str = "test string";
-	foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
-	foo(reloc gStr); // ill-formed: gStr does not have local storage
+    std::string str = "test string";
+    foo(reloc str); // OK: relocation will happen given that std::string has a reloc ctor
+    foo(reloc gStr); // ill-formed: gStr does not have local storage
 
-	std::pair p{std::string{}, std::string{}};
-	foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
+    std::pair p{std::string{}, std::string{}};
+    foo(reloc p.first); // ill-formed: p.first is not a complete object, and not the name of variable
 
-	foo(reloc get_string()); // ill-formed: not the name of variable
-	foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
+    foo(reloc get_string()); // ill-formed: not the name of variable
+    foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
 }
 
 void foobar(const std::string& str)
 {
-	foo(reloc str); // OK: str is passed by reference.
-	// Note that the lifetime of the referent of str is unaffected.
+    foo(reloc str); // OK: str is passed by reference.
+    // Note that the lifetime of the referent of str is unaffected.
 }
 void foobar(std::string* str)
 {
-	foo(reloc *str); // ill-formed: *str is not the name of variable
+    foo(reloc *str); // ill-formed: *str is not the name of variable
 }
 void foobar2(std::string* str)
 {
-	foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
+    foobar(reloc str); // OK, the pointer itself is relocated (not the pointed value)
 }
 
 class A
 {
-	std::string _str;
+    std::string _str;
 public:
-	void bar()
-	{
-		foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
-	}
+    void bar()
+    {
+        foo(reloc _str); // ill-formed: _str is not a complete object and does not have local storage
+    }
 };
 ```
 
@@ -2113,28 +2113,28 @@ Consider the following examples:
 ```cpp
 void reloc_showcase_01()
 {
-	const T var = getT();
-	bar(reloc var);
-	if (sometest(var)) // ill-formed: state of 'var' is relocated
-		do_smth(var); // ill-formed: state of 'var' is relocated
+    const T var = getT();
+    bar(reloc var);
+    if (sometest(var)) // ill-formed: state of 'var' is relocated
+        do_smth(var); // ill-formed: state of 'var' is relocated
 }
 ```
 `var` cannot be reused after the `reloc` call.
 ```cpp
 void reloc_showcase_02()
 {
-	const T var;
-	{
-		const T var;
-		bar(reloc var);
-		do_smth(var); // #1 ill-formed: state of 'var' is relocated
-		{
-			const T var;
-			do_smth(var); // OK
-		}
-		do_smth(var); // #2 ill-formed: state of 'var' is relocated
-	}
-	do_smth(var); // OK
+    const T var;
+    {
+        const T var;
+        bar(reloc var);
+        do_smth(var); // #1 ill-formed: state of 'var' is relocated
+        {
+            const T var;
+            do_smth(var); // OK
+        }
+        do_smth(var); // #2 ill-formed: state of 'var' is relocated
+    }
+    do_smth(var); // OK
 }
 ```
 At #1 and #2, the calls to `do_smth(var)` are allowed because the name `var`
@@ -2142,12 +2142,12 @@ does not resolve to the relocated object.
 ```cpp
 void reloc_showcase_03()
 {
-	const T var = getT();
-	if (sometest(var))
-		bar(reloc var); // #1, var state is relocated
-	else
-		do_smth(var); // #2, var state is alive
-	// var state is alive-or-relocated
+    const T var = getT();
+    if (sometest(var))
+        bar(reloc var); // #1, var state is relocated
+    else
+        do_smth(var); // #2, var state is alive
+    // var state is alive-or-relocated
 }
 ```
 At #2 `do_smth(var)` is allowed because `var` state is not affected by the
@@ -2155,13 +2155,13 @@ At #2 `do_smth(var)` is allowed because `var` state is not affected by the
 ```cpp
 void reloc_showcase_04()
 {
-	const T var = getT();
-	if (sometest(var))
-		bar(reloc var); // #1
-	else
-		do_smth(var); // OK
-	// [...]
-	do_smth_else(var); // #2, ill-formed: state of 'var' is A-R
+    const T var = getT();
+    if (sometest(var))
+        bar(reloc var); // #1
+    else
+        do_smth(var); // OK
+    // [...]
+    do_smth_else(var); // #2, ill-formed: state of 'var' is A-R
 }
 ```
 At #2, `do_smth_else(var)` is an error because `var` is mentioned after the
@@ -2169,11 +2169,11 @@ At #2, `do_smth_else(var)` is an error because `var` is mentioned after the
 ```cpp
 void reloc_showcase_05()
 {
-	const T var = getT();
-	if (sometest(var))
-		bar(reloc var);
-	else
-		do_smth(reloc var); // OK
+    const T var = getT();
+    if (sometest(var))
+        bar(reloc var);
+    else
+        do_smth(reloc var); // OK
     // var state is relocated
 }
 ```
@@ -2181,18 +2181,18 @@ Both `reloc` are okay as they happen on different code paths.
 ```cpp
 void reloc_showcase_06()
 {
-	const T var = getT();
-	bool relocated = false;
-	if (sometest(var))
-	{
-		bar(reloc var);
-		relocated = true;
-	}
-	else
-		do_smth(var); // OK
-	// [...]
-	if (!relocated)
-		do_smth_else(var); // ill-formed: state of 'var' is A-R
+    const T var = getT();
+    bool relocated = false;
+    if (sometest(var))
+    {
+        bar(reloc var);
+        relocated = true;
+    }
+    else
+        do_smth(var); // OK
+    // [...]
+    if (!relocated)
+        do_smth_else(var); // ill-formed: state of 'var' is A-R
 }
 ```
 It does not matter that the developer tried to do the safe thing with the
@@ -2201,31 +2201,31 @@ explores all branches of an `if` statement.
 ```cpp
 void reloc_showcase_07()
 {
-	constexpr bool relocated_v = my_can_relocate<T>{}();
-	const T var = getT();
-	if constexpr(relocated_v)
-	{
-		bar(reloc var);
-	}
-	else
-		do_smth(var); // OK
-	// [...]
-	// var state is R if relocated_v is true, A otherwise
-	if constexpr(!relocated_v)
-		do_smth_else(var); // OK
+    constexpr bool relocated_v = my_can_relocate<T>{}();
+    const T var = getT();
+    if constexpr(relocated_v)
+    {
+        bar(reloc var);
+    }
+    else
+        do_smth(var); // OK
+    // [...]
+    // var state is R if relocated_v is true, A otherwise
+    if constexpr(!relocated_v)
+        do_smth_else(var); // OK
 }
 ```
 The above example is safe because of the use of `if constexpr`.
 ```cpp
 void reloc_showcase_08()
 {
-	const T var = getT();
-	if (sometest(var))
-	{
-		bar(reloc var);
-		return;
-	}
-	do_smth(var); // OK
+    const T var = getT();
+    if (sometest(var))
+    {
+        bar(reloc var);
+        return;
+    }
+    do_smth(var); // OK
 }
 ```
 This example is also safe thanks to the `return` statement right after the
@@ -2233,9 +2233,9 @@ This example is also safe thanks to the `return` statement right after the
 ```cpp
 void reloc_showcase_09()
 {
-	const T var = getT();
-	for (int i = 0; i != 10; ++i)
-		do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
+    const T var = getT();
+    for (int i = 0; i != 10; ++i)
+        do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
 }
 ```
 This is ill-formed as each iteration reuses `var` which is declared before
@@ -2255,31 +2255,31 @@ In the code path analysis:
 ```cpp
 void reloc_showcase_10()
 {
-	const T var = getT();
-	for (int i = 0; i != 10; ++i)
-	{
-		if (i == 9)
-			do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
-		else
-			do_smth(var); // ill-formed: state of 'var' is A-R (on second iteration)
-	}
+    const T var = getT();
+    for (int i = 0; i != 10; ++i)
+    {
+        if (i == 9)
+            do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
+        else
+            do_smth(var); // ill-formed: state of 'var' is A-R (on second iteration)
+    }
 }
 ```
 This is ill-formed for the same reason as above.
 ```cpp
 void reloc_showcase_11()
 {
-	const T var = getT();
-	for (int i = 0; i != 10; ++i)
-	{
-		if (i == 9) {
-			do_smth(reloc var); // OK, var state is relocated
-			break;
-		}
-		else
-			do_smth(var); // OK, var state is alive
-	}
-	// var state is A-R
+    const T var = getT();
+    for (int i = 0; i != 10; ++i)
+    {
+        if (i == 9) {
+            do_smth(reloc var); // OK, var state is relocated
+            break;
+        }
+        else
+            do_smth(var); // OK, var state is alive
+    }
+    // var state is A-R
 }
 ```
 Adding the break statement right after the `reloc` call makes the code snippet well-formed.
@@ -2289,11 +2289,11 @@ longer part of the code path that follows the `reloc` instruction.
 ```cpp
 void reloc_showcase_12()
 {
-	for (int i = 0; i != 10; ++i)
-	{
-		const T var = getT();
-		do_smth(reloc var); // OK
-	}
+    for (int i = 0; i != 10; ++i)
+    {
+        const T var = getT();
+        do_smth(reloc var); // OK
+    }
 }
 ```
 `var` is local to the for-loop body, so `reloc` is well-formed here.
@@ -2304,19 +2304,19 @@ is evaluated.
 ```cpp
 void reloc_showcase_13()
 {
-	const T var = getT();
+    const T var = getT();
 from: // #1
-	if (sometest(var)) // #2, ill-formed: var state is A-R after the jump
-	{
-		do_smth(var); // #3, ill-formed: var state is A-R after the jump
-		return;
-	}
-	else
-	{
-		do_smth(reloc var); // #4, ill-formed: var state is A-R after the jump
-	}
-	// #5
-	goto from;
+    if (sometest(var)) // #2, ill-formed: var state is A-R after the jump
+    {
+        do_smth(var); // #3, ill-formed: var state is A-R after the jump
+        return;
+    }
+    else
+    {
+        do_smth(reloc var); // #4, ill-formed: var state is A-R after the jump
+    }
+    // #5
+    goto from;
 }
 ```
 Because of #4, the state of `var` at #5 is **R**. The goto statement is executed
@@ -2327,92 +2327,92 @@ Then the expressions #2, #3 and #4 are ill-formed because `var` is not in the
 ```cpp
 void reloc_showcase_14()
 {
-	const T var = getT();
+    const T var = getT();
 from:
-	if (sometest(var)) // var state is alive
-	{
-		do_smth(var); // var state is alive
-		goto from;
-	}
-	else
-	{
-		do_smth(reloc var);
-	}
+    if (sometest(var)) // var state is alive
+    {
+        do_smth(var); // var state is alive
+        goto from;
+    }
+    else
+    {
+        do_smth(reloc var);
+    }
 }
 ```
 In this scenario `goto` is placed in a way that does not trigger the reuse of relocated `var`.
 ```cpp
 void reloc_showcase_15()
 {
-	union { T x; U y; };
-	x = getT();
-	if (sometest(x))
-	{
-		do_smth(reloc x);
-		x = getT(); // well-formed
-	}
-	else
-	{
-		reloc x; // destroy x
-		y = getU();
-		do_smth_else(reloc y); // well-formed
-		x = getT(); // well-formed
-	}
-	do_smth_else(reloc y); // well-formed
+    union { T x; U y; };
+    x = getT();
+    if (sometest(x))
+    {
+        do_smth(reloc x);
+        x = getT(); // well-formed
+    }
+    else
+    {
+        reloc x; // destroy x
+        y = getU();
+        do_smth_else(reloc y); // well-formed
+        x = getT(); // well-formed
+    }
+    do_smth_else(reloc y); // well-formed
 }
 ```
 `reloc` does not prevent from reusing the names of anonymous union members.
 ```cpp
 void reloc_showcase_16()
 {
-	T x;
-	if (sometest(x))
-	{
-		do_smth(reloc x);
-	}
-	else
-	{
-		auto const y reloc = reloc x;
-		do_smth_else(reloc y::m); // well-formed
-		// equivalent to: do_smth_else((reloc x).m);
-	}
-	do_another_thing(x); // ill-formed: state is now R
+    T x;
+    if (sometest(x))
+    {
+        do_smth(reloc x);
+    }
+    else
+    {
+        auto const y reloc = reloc x;
+        do_smth_else(reloc y::m); // well-formed
+        // equivalent to: do_smth_else((reloc x).m);
+    }
+    do_another_thing(x); // ill-formed: state is now R
 }
 ```
 `do_another_thing(x)` is ill-formed as `x` is relocated.
 ```cpp
 void reloc_showcase_17()
 {
-	T x;
-	if (sometest(x) || sometest(reloc x)) // well-formed: x state is A-R
-	{
-		do_smth(x); // ill-formed: x state is A-R
-	}
-	else if (othertest(x)) // ill-formed: x state is A-R
-	{
-		foo();
-	}
+    T x;
+    if (sometest(x) || sometest(reloc x)) // well-formed: x state is A-R
+    {
+        do_smth(x); // ill-formed: x state is A-R
+    }
+    else if (othertest(x)) // ill-formed: x state is A-R
+    {
+        foo();
+    }
 }
 ```
 ```cpp
 void reloc_showcase_18()
 {
-	// unspecified evaluation order
-	{ T x; auto y = reloc x + reloc x; } // ill-formed
-	{ T x; auto y = x + reloc x; } // ill-formed
-	{ T x; auto y = reloc x + x; } // ill-formed
-	{ T x; auto y = x[reloc x]; } // ill-formed
+    // unspecified evaluation order
+    { T x; auto y = reloc x + reloc x; } // ill-formed
+    { T x; auto y = x + reloc x; } // ill-formed
+    { T x; auto y = reloc x + x; } // ill-formed
+    { T x; auto y = x[reloc x]; } // ill-formed
 
-	// sequenced evaluation order
-	{ T x; auto y = x, reloc x; } // well-formed
-	{ T x; auto y = reloc x, x; } // ill-formed
-	{ T x; auto y = x or reloc x; } // well-formed
-	{ T x; auto y = reloc x or x; } // ill-formed
+    // sequenced evaluation order
+    { T x; auto y = x, reloc x; } // well-formed
+    { T x; auto y = reloc x, x; } // ill-formed
+    { T x; auto y = x or reloc x; } // well-formed
+    { T x; auto y = reloc x or x; } // ill-formed
 
-	// unspecified evaluation order with ternary
-	{ T x; foo(x, reloc x); } // ill-formed
-	{ T x; foo(x, test() ? reloc x : x); } // ill-formed
-	{ T x; foo(test() ? reloc x : x); } // well-formed
+    // unspecified evaluation order with ternary
+    { T x; foo(x, reloc x); } // ill-formed
+    { T x; foo(x, test() ? reloc x : x); } // ill-formed
+    { T x; foo(test() ? reloc x : x); } // well-formed
 }
 ```
 
@@ -2424,17 +2424,17 @@ examine the rest after (in any order).
 ```cpp
 void reloc_showcase_19()
 {
-	T x = getT();
-	try
-	{
-		foo();
-		bar(reloc x);
-	}
-	catch (std::exception const& excp)
-	{
-		std::cerr << excp.what() << " for " << x << std::endl;
-		// ill-formed: x state is alive or relocated
-	}
+    T x = getT();
+    try
+    {
+        foo();
+        bar(reloc x);
+    }
+    catch (std::exception const& excp)
+    {
+        std::cerr << excp.what() << " for " << x << std::endl;
+        // ill-formed: x state is alive or relocated
+    }
 }
 ```
 
@@ -3680,15 +3680,15 @@ ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first)
 
 template<class ExecutionPolicy, class InputIt, class ForwardIt>
 ForwardIt uninitialized_relocate(ExecutionPolicy&& policy, InputIt first, InputIt last,
-	ForwardIt d_first) ;
+    ForwardIt d_first) ;
 
 template<class InputIt, class Size, class ForwardIt>
 pair<InputIt, ForwardIt> uninitialized_relocate_n(InputIt first, Size count,
-	ForwardIt d_first) ;
+    ForwardIt d_first) ;
 
 template<class ExecutionPolicy, class InputIt, class Size, class ForwardIt>
 pair<InputIt, ForwardIt> uninitialized_relocate_n(
-	ExecutionPolicy&& policy, InputIt first, Size count, ForwardIt d_first);
+    ExecutionPolicy&& policy, InputIt first, Size count, ForwardIt d_first);
 ```
 
 Those relocate elements from the range `[first, last)` (or the first `count`
