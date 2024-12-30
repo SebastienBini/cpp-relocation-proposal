@@ -60,7 +60,7 @@ and relocation assignment operators.
 
 ```c++
 pair<std::string const, int> const keyValue reloc = extractKV();
-storeKey(reloc keyValue::first);
+storeKey(reloc keyValue.first);
 ```
 ```c++
 template <class First, class Second>
@@ -71,7 +71,7 @@ public:
     Second second;
 
     // user-defined relocation constructor (could have been defaulted)
-    MyPair(MyPair rhs reloc) : first{reloc rhs::first}, second{reloc rhs::second} {}
+    MyPair(MyPair rhs reloc) : first{reloc rhs.first}, second{reloc rhs.second} {}
 };
 ```
 
@@ -1632,21 +1632,12 @@ When a complete object is defined as *decomposed*, then:
         the runtime type information of base classes once the destructor body
         is executed ;
     - all virtual bases, if any, keep the same address ; all pointers to such
-        virtual bases remain unchanged.
-- All its subobjects are now introduced in a special namespace named after the
-    decomposed object:
-    - all its virtual and direct bases are introduced in that namespace with
-        an identifier identical to that of their class identifier ;
-    - all non-static data members are introduced in that namespace with
-        an identifier identical to that of their definition ;
-    - member functions are not introduced ;
+        virtual bases remain unchanged ;
     - the introduced objects (i.e. the subobjects of the *decomposed* object)
         have the same lifetime as the *decomposed* object,
         had it not been *decomposed* ;
     - the introduced objects still inherit from the cv-qualifiers,
-        if any, of the *decomposed* object ;
-    - all the virtual bases introduced in that namespace cannot be the operand
-        of the `reloc` operator, or else the expression is ill-formed.
+        if any, of the *decomposed* object.
 - *The lifetime of the* decomposed *object ends*: its destructor is never invoked implicitly.
     All its non-static subobjects, now considered as complete objects, are still
     alive and will
@@ -1662,78 +1653,19 @@ For instance:
 void foo(std::pair<std::string const, int> kv reloc)
 {
     // kv object no longer exists
-    // its subobjects are accessible in the special "kv" namespace:
-    // kv::first and kv::second
-    bar(kv::second, reloc kv::first);
-    // kv::second destructor will be invoked implicitly
+    // its subobjects are accessible through the decomposed object "kv"
+    bar(kv.second, reloc kv.first);
+    // kv.second destructor will be invoked implicitly
 }
 
-struct V { int _v; };
-struct B : public virtual V { int _b; };
+struct B { int _b; };
 struct D : B { std::string _d; };
 void foo(D const d reloc)
 {
-    // d::B designates the base of former d object
-    static_assert(std::is_same_v<decltype(d::V), V const>);
-    static_assert(std::is_same_v<decltype(d::B), B const>);
-    static_assert(std::is_same_v<decltype(d::_d), std::string const>);
-    bar(reloc d::B); // well-formed
-    bar(reloc d::V); // ill-formed, cannot relocate virtual base
-}
-```
-
-#### Namespace of the decomposed object #### {#decomposed-obj-namespace}
-
-All the subobjects of the decomposed object are introduced in a special
-namespace.
-
-- This namespace is only accessible from within the scope of the
-    decomposed object, had it not been decomposed.
-- This namespace cannot be aliased.
-- This namespace cannot be the target of a `using namespace` directive.
-- If the decomposed object is anonymous, then it remains decomposed but its
-    subobjects are not accessible through any special namespace. Their
-    destructor will be invoked implicitly at scope exit. **Note:** Alternatively,
-    its subobjects could have been introduced in an anonymous namespace,
-    but doing so would create name clashes between base class type identifiers and
-    base class subobject identifiers.
-- It is not an error if the special namespace identifier clashes with an
-    existing namespace identifier. In this case, name resolution will look-up
-    the special namespace unless explicit disambiguation is specified (`::`).
-- It is also not an error if the special namespace identifier clashes with
-    another existing special namespace identifier, introduced by an enclosing
-    scope. In this case, name resolution will look-up
-    the special namespace in the least-enclosing scope.
-    This is similar as to what happens when a variable "shadows" another.
-
-```c++
-namespace np1
-{
-
-namespace np2
-{
-
-static inline const std::string _b = "";
-static inline const std::string _d = "";
-
-}
-
-struct D { std::string _d; }
-
-void foo(D np2 reloc)
-{
-    // np2::_d refers to the subobject of the decomposed np2 object.
-    // np2::_b is an unknown identifier
-    // ::np1::np2::_d and ::np1::np2::_b refer to the static storage objects.
-    bar(reloc np2::_d);
-
-    {
-        D np2 reloc = getD();
-        // np2:: now refers to the subobjects of the line above
-        std::cout << np2::_d << std::endl;
-    }
-}
-
+    // d.B designates the base of former d object
+    static_assert(std::is_same_v<decltype(d.B), B>);
+    static_assert(std::is_same_v<decltype(d._d), std::string>);
+    bar(reloc d.B); // well-formed
 }
 ```
 
@@ -1752,6 +1684,266 @@ These requirements ensure that we can only decompose (a) compound types,
 where subobjects have no dependencies with one another (like an `std::pair`),
 or (b) types that we are in control of (because of the private access).
 
+### Decomposed objects in expressions ### {#decomposed-obj-expr}
+
+A decomposed object is not an object. You should think of the decomposed object
+as if it were a special namespace holding all its former subobjects.
+The decomposed object can be used in expressions as a proxy to access its former
+subobjects.
+
+If a decomposed object appears in an expression, then the expression is
+ill-formed unless:
+
+- the decomposed object is used to access a former
+    [data member](#decomposed-data-member) ;
+- or the decomposed object is used to access a former
+    [base](#decomposed-direct-base) ;
+- or the decomposed object is used to call a
+    [static member function](#decomposed-static-member-func) ;
+- or the decomposed object is used to access a former data member through
+    a constant-evaluated [pointer to data member](#decomposed-data-member-ptr) ;
+- or the decomposed object is used as an [unevaluated operand](#decomposed-unevaluated)
+    of `sizeof`, `typeid` or `decltype`.
+
+[Any other expression](#decomposed-expr-others) involving a decomposed object is ill-formed.
+
+#### Accessing a data member of a decomposed object #### {#decomposed-data-member}
+
+The data member of a decomposed object can be accessed through the expression:
+
+*decomposed-object* . *data-member*
+
+Such expressions are identical to the matching expression had the object not
+been decomposed:
+
+- it yields exactly the same result ;
+- the data member still needs to be accessible given the context or else the
+    expression is ill-formed ;
+- if the data member is not a direct data member of the decomposed object type,
+    then base classes are looked-up for a matching data member ;
+    - The *data-member* expression may not contain disambiguation expressions.
+
+For instance:
+```c++
+struct B
+{
+    int _b_pub;
+    int _common;
+private:
+    int _b_priv;
+};
+struct C
+{
+    int _common;
+};
+struct D : public B, public C
+{
+    int _d;
+};
+
+void foo(D d reloc)
+{
+    d._d = d._b_pub; // valid
+    d._d = d._common; // ill-formed, d._common is ambiguous
+    d._d = d.C::_common; // ill-formed, disambiguation is not possible
+    d._d = d.C._common; // valid, see next section
+    d._d = d._b_priv; // ill-formed, _b_priv is private in the context
+}
+```
+
+#### Accessing a direct base class of a decomposed object #### {#decomposed-direct-base}
+
+Any direct base class of a decomposed object can be accessed through the expression:
+
+*decomposed-object* . *base-class-name*
+
+Such expressions allow to access the base class as a data member, as if a data
+member named after the class name had been declared in the decomposed object,
+sharing the same access specifier as that of its inheritance, and
+with no *cv-qualifiers*.
+
+You might think such expressions are identical to the following expression,
+had the object not been decomposed:
+
+`static_cast<B cv &>(obj)`
+
+with `B` being the direct base to access, and *cv* the *cv-qualifiers* that
+apply to the decomposed object. One notable difference though, is that the
+type of the static_cast expression is ref-qualified, while the type
+of *decomposed-object* . *base-class-name* expression is not.
+
+The expression is ill-formed if the base class is inaccessible in the context or
+if the base class is not a direct base of the decomposed object type.
+The expression is well-formed if the class is a virtual base.
+
+For instance:
+```c++
+struct A { int _a; };
+struct B : public A { int _common; };
+struct V { int _v; };
+struct C : public virtual V { int _common; };
+struct D : public B, public C
+{
+    int _d;
+};
+
+void foo(D d reloc, D const d_const reloc)
+{
+    std::println(d.C._common); // valid
+    std::println(d.B._common); // valid
+    std::println(d.V._v); // valid
+    std::println(d.A._a); // ill-formed, but d._a is okay
+
+    static_assert(std::is_same_v<B, decltype(d.B)>);
+    static_assert(std::is_same_v<B&, decltype((d.B))>);
+
+    static_assert(std::is_same_v<B, decltype(d_const.B)>);
+    static_assert(std::is_same_v<B const&, decltype((d_const.B))>);
+}
+```
+
+#### Addressing static members from the decomposed object #### {#decomposed-static-member-func}
+
+Static data members and static member functions can be accessed
+from a decomposed object as if the object had not been decomposed, reusing
+today's syntax.
+
+```c++
+struct D
+{
+    static void func();
+    static int _data;
+};
+
+void foo(D d reloc)
+{
+    d.func(); // well-formed
+    std::invoke(d.func); // well-formed
+    auto i = d._data; // well-formed
+}
+```
+
+#### Accessing a data member of a decomposed object through pointer #### {#decomposed-data-member-ptr}
+
+A data member of a decomposed object can be accessed by a constant-evaluated
+pointer to data member through the expression:
+
+*decomposed-object* . * *pointer-to-data-member*
+
+If the pointer to the data member is not constant-evaluated, then the expression
+is ill-formed. Had the pointer been allowed not to be constant-evaluated, then
+it would have been difficult for static analysis to know if the pointed data member
+is still valid (i.e. whether it has been relocated).
+
+Again, such expressions are identical to the matching expression had the object
+not been decomposed.
+
+For instance:
+```c++
+struct B
+{
+    int _b_pub;
+    int _common;
+private:
+    int _b_priv;
+};
+struct C
+{
+    int _common;
+};
+struct D : public B, public C
+{
+    int _d;
+};
+
+void illformed(D d reloc, int D::* data)
+{
+    d.*data = d._d; // ill-formed, data is not constant-evaluated
+}
+consteval void valid1(D d reloc, int D::* data)
+{
+    d.*data = d._d; // valid
+}
+template <int D::* Ptr>
+void valid2(D d reloc)
+{
+    d.*Ptr = d._d; // valid
+}
+void valid3(D d reloc)
+{
+    constexpr int D::* a = &B::_d;
+    d.*a = d._d; // valid
+}
+```
+
+NOTE: non-static member functions cannot be called from a decomposed object.
+Such expressions are ill-formed.
+
+#### Decomposed object as an unevaluated operand #### {#decomposed-unevaluated}
+
+The *id-expression* designing a decomposed object may be used as operand
+of the operators `sizeof`, `typeid` and `decltype`.
+The three operators yield the same result as if the object had not been
+decomposed, with just a few specificities:
+
+- If `obj` is the decomposed object, then `typeid(obj)` is equivalent to
+    `typeid(decltype(obj))` (the RTTI if any is not inspected) ;
+- As `(obj)` is an ill-formed expression if `obj` is a decomposed object,
+    `decltype((obj))` is also ill-formed.
+
+#### Other expressions with a decomposed objects #### {#decomposed-expr-others}
+
+Any the expression involving a decomposed object that is not covered in the
+subsections above **is ill-formed**.
+
+In particular, with `obj` being a decomposed object, the evaluations of the
+following expressions are ill-formed:
+
+- `(obj)`: `obj` is not an object, the expression does not produce a value.
+- `foo(obj)`: same as above.
+- `(obj).m` (with `m` being a data member): same as above.
+- `(obj, a).m` (with `a` being an object of same type): `obj` expression does
+    not produce a value, it cannot be used as operand in the comma operator.
+- `(a, obj).m`: same as above.
+- `auto x = (obj, a)`: same as above.
+
+### Decomposed subobjects in reloc expressions ### {#decomposed-reloc}
+
+The subobjects of a decomposed object can be used as the operand of `reloc`
+expressions. As such objects are complete objects, the `reloc`
+expression as the same effect as described in the
+[reloc operator](#reloc-operator) section.
+
+There are just a few cases where such `reloc` expressions are ill-formed:
+
+- if the `reloc` operand is the virtual base of a decomposed object, then the
+    expression is ill-formed ;
+- if the `reloc` operand is a data member that belongs to a base class of the
+    decomposed object, then the expression is ill-formed.
+
+For instance:
+```c++
+struct A { int _a; };
+struct B, public A { int _b; };
+struct V { int _v; };
+struct C : public virtual V { int _c; };
+struct D : public B, public C
+{
+    int _d;
+};
+
+void foo(D obj reloc)
+{
+    auto d = reloc obj._d; // valid
+    // auto c = reloc obj._c; //< ill-formed, _c is not a direct data member of D
+    // auto a = reloc obj.A; //< ill-formed, A is not a direct base of D
+    auto b = reloc obj.B; // valid, but obj.V is in a moved-from state after
+    auto c = reloc obj.C; // valid
+    // auto v = reloc obj.V; //< ill-formed, V is a virtual base of D
+    auto v = std::move(obj.V); // valid
+}
+```
+
 ### Decomposition of a lambda closure type ### {#decompose-lambda}
 
 Lambda objects can be decomposed with the rules defined above. The subobjects
@@ -1765,7 +1957,7 @@ The following is well-formed:
 non_null<unique_ptr<int>> ptr;
 auto const getPtr = [p = reloc ptr](this auto self reloc)
 {
-    foo(reloc self::p);
+    foo(reloc self.p);
 };
 (reloc getPtr)();
 ```
@@ -1774,9 +1966,9 @@ But this is ill-formed:
 non_null<unique_ptr<int>> ptr;
 auto const getPtr reloc = [p = reloc ptr](this auto self reloc)
 {
-    foo(reloc self::p);
+    foo(reloc self.p);
 };
-auto ptr2 = reloc getPtr::p; // ill-formed, no access privilege to the captures
+auto ptr2 = reloc getPtr.p; // ill-formed, no access privilege to the captures
 ```
 
 ### Implicit decomposition of temporaries ### {#decompose-tmp}
@@ -1790,9 +1982,9 @@ D getD();
 std::pair<std::string, std::string> getPair();
 
 B b = getD(); /* under conditions, equivalent to:
-    auto d reloc = getD(); B b = reloc d::B; */
+    auto d reloc = getD(); B b = reloc d.B; */
 std::string s = getPair().first; /* under conditions, equivalent to:
-    auto pair reloc = getPair(); std::string s = reloc pair::first; */
+    auto pair reloc = getPair(); std::string s = reloc pair.first; */
 ```
 
 Inspired by [[class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)]
@@ -1891,7 +2083,7 @@ void foo01(T obj reloc)
     // ...
     if (test())
     {
-        sink(reloc obj::m);
+        sink(reloc obj.m);
     }
     // ...
 }
@@ -1903,7 +2095,7 @@ void foo01(T __obj)
     // ...
     if (test())
     {
-        sink(reloc obj::m);
+        sink(reloc obj.m);
     }
     // ...
 }
@@ -1916,7 +2108,7 @@ void foo02(T obj reloc) try
     // ...
     if (test())
     {
-        sink(reloc obj::m);
+        sink(reloc obj.m);
     }
     // ...
 }
@@ -1929,7 +2121,7 @@ void foo02(T __obj) try
     // ...
     if (test())
     {
-        sink(reloc obj::m);
+        sink(reloc obj.m);
     }
     // ...
 }
@@ -1956,7 +2148,7 @@ void bar(string, non_null<unique_ptr<int>>);
 
 void foo(pair<string const, non_null<unique_ptr<int>>> p reloc)
 {
-    bar(reloc p::first, reloc p::second);
+    bar(reloc p.first, reloc p.second);
 }
 ```
 
@@ -1973,7 +2165,7 @@ public:
     // [...]
     non_null<unique_ptr<int>> getVal(this T self reloc)
     {
-        return self::_val;
+        return reloc $1._val;
         // note that here the destructor of self is not called.
         // however every non relocated data member is still destructed
         // so self._key.~string() is called at function exit.
@@ -2000,7 +2192,7 @@ class unique_ptr
 public:
     T* release(this T self reloc)
     {
-        return self::_ptr;
+        return reloc $1._ptr;
     }
 };
 ```
@@ -2373,7 +2565,7 @@ void reloc_showcase_16()
     else
     {
         auto const y reloc = reloc x;
-        do_smth_else(reloc y::m); // well-formed
+        do_smth_else(reloc y.m); // well-formed
         // equivalent to: do_smth_else((reloc x).m);
     }
     do_another_thing(x); // ill-formed: state is now R
@@ -2679,7 +2871,7 @@ void foo(C);
 void bar()
 {
     D const d reloc = getD();
-    foo(reloc d::C); // #1
+    foo(reloc d.C); // #1
 }
 ```
 
@@ -2694,10 +2886,10 @@ parameter of `foo`:
 
 After #1:
 
-- `d::B` still points to valid data, albeit that it was likely moved-from
+- `d.B` still points to valid data, albeit that it was likely moved-from
     in `C(C)` ;
-- `d::B` destructor will be implicitly invoked, as it will be for all the data
-    members of `d::D` ;
+- `d.B` destructor will be implicitly invoked, as it will be for all the data
+    members of `d.D` ;
 
 #### Default definition #### {#reloc-ctor-default-definition}
 
@@ -2714,10 +2906,10 @@ memberwise relocations. In the relocation constructor `T(T src reloc)`,
 for each subobject `s` (of type `S`) of `T`, in declaration order:
 
 - if `S` is a virtual base, then `S` is move-or-copy-constructed as if by:
-    `S{std::move(src::S)}` ;
+    `S{std::move(src.S)}` ;
 - otherwise we construct `s` (or `S` for direct base classes)
     by calling its own relocation, move or copy
-    constructor, as if by: `s{reloc src::s}` (or `S{reloc src::S}`);
+    constructor, as if by: `s{reloc src.s}` (or `S{reloc src.S}`);
 
 NOTE: If the relocation constructor is defaulted, then the `reloc` keyword
 marking the decomposition of the source object does not need to be specified.
@@ -2747,7 +2939,7 @@ struct T
 
     // Dummy example to explain all the steps of the relocation constructor.
     T(T src reloc) :
-        _a{std::move(src::_a)}, _c{reloc src::_c} {} /*
+        _a{std::move(src._a)}, _c{reloc src._c} {} /*
         1. T::_a is constructed using the move constructor.
         2. T::_b is default constructed.
         3. T::_c is constructed using std::string's relocation
@@ -2778,7 +2970,7 @@ class BinaryTree
 {
 public:
     // works also if T is relocate-only
-    BinaryTree(BinaryTree src reloc) : _root{reloc src::_root}
+    BinaryTree(BinaryTree src reloc) : _root{reloc src._root}
     {
         /* fixup references */
         if (_root._left)
@@ -2858,9 +3050,9 @@ public:
     };
 
     T(T src reloc, Helper storage = {}) noexcept(false)
-        : _p(storage.p = std::exchange(src::_p, nullptr))
-        , _q{reloc src::_q}
-        , _r{reloc src::_r}
+        : _p(storage.p = std::exchange(src._p, nullptr))
+        , _q{reloc src._q}
+        , _r{reloc src._r}
     {
         storage.p = nullptr;
     }
@@ -3003,7 +3195,7 @@ The virtual relocation constructor `T(T src)` then proceeds recursively as follo
 
     1.  If `U` is a virtual base, then use move semantics to initialize `u`:
         `new (u) U{static_cast<U&&>(src)};` and return.
-    2.  Otherwise, decompose `src` and initialize `u`: `new (u) U{reloc src::U};`
+    2.  Otherwise, decompose `src` and initialize `u`: `new (u) U{reloc src.U};`
         and return.
     3.  When the constructor exits, the destructors of all non-relocated subobjects
         of `src` are implicitly invoked.
@@ -3016,7 +3208,7 @@ The virtual relocation constructor `T(T src)` then proceeds recursively as follo
         `U` and its target address `u`. Return.
     2. Otherwise, decompose `src` and call the virtual relocation constructor of `V`,
         passing the base class `V` of `src` as the source object
-        (as if by `reloc src::V`), and forwarding the target type
+        (as if by `reloc src.V`), and forwarding the target type
         `U` and its target address `u`. Return.
     3.  When the constructor exits, the destructors of all non-relocated subobjects
         of `src` are implicitly invoked.
@@ -3166,10 +3358,10 @@ In `T`'s default assignment operator, the source object `src` of type `T` is
 decomposed, and for all its subobjects `s` of type `S`:
 
 - if `S` is a virtual base, then `S` is move-or-copy-assigned as if by:
-    `static_cast<S&>(*this) = std::move(src::S);` ;
+    `static_cast<S&>(*this) = std::move(src.S);` ;
 - otherwise we construct `s` (or `S`) by calling its own relocation, move or copy
-    assignment operator, as if by: `s = reloc src::s;`
-    (or `static_cast<S&>(*this) = reloc src::S;` for base classes);
+    assignment operator, as if by: `s = reloc src.s;`
+    (or `static_cast<S&>(*this) = reloc src.S;` for base classes);
 
 Thanks to the relocation-assignment operator special eliding,
 no copies or relocations of the source subobjects are performed.
@@ -3191,8 +3383,8 @@ relocatable).
 ```c++
 T& T::operator=(T src reloc)
 {
-    static_cast<B&>(*this) = reloc src::B; // relocate base
-    this->_a = reloc src::_a;
+    static_cast<B&>(*this) = reloc src.B; // relocate base
+    this->_a = reloc src._a;
     return *this;
 }
 ```
@@ -3504,7 +3696,7 @@ For this protocol to apply, all the following conditions must be satisfied:
     class the data members are found in, its decomposition is [well-formed](#ill-formed-decomposition).
 
 If this protocol applies, then the *i*-th identifier is constructed as if by
-`reloc s::i`, `s` being the decomposed base class holding all the data members
+`reloc s.i`, `s` being the decomposed base class holding all the data members
 and `i` the *i*-th identifier.
 
 #### Implementation-defined library support #### {#structured-decomposition-tuple}
@@ -3543,8 +3735,8 @@ public:
     // Possible implementation:
     auto get_all(this MyType self reloc)
     {
-        return std::tuple{reloc self::_name, self::_flag,
-            !self::_nodes.empty()};
+        return std::tuple{reloc self._name, self._flag,
+            !self._nodes.empty()};
     }
 
 private:
@@ -3956,12 +4148,12 @@ base class whose name is passed as a template type parameter:
 template <string T::*_str>
 string GetStr(T obj reloc)
 {
-    return obj::*_str; // invalid expression
+    return obj.*_str; // invalid expression
 }
 template <class B>
 B GetBase(T obj reloc)
 {
-    return obj::B; // invalid expression
+    return obj.B; // invalid expression
 }
 ```
 
