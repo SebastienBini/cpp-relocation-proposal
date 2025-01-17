@@ -2761,17 +2761,20 @@ ABI. See the [ABI section](#abi).
 
 #### Implicit declaration #### {#reloc-ctor-declaration-implicit}
 
-If a class-type follows the Rule of Zero (updated to account for the relocation
-constructor and relocation assignment operator), then the compiler will declare
-a non-explicit inline public relocation constructor,
-i.e. if none of the following are user-declared:
+If no user-defined relocation constructors are provided for a class-type `T`,
+and all of the following is true:
 
-* copy constructor
-* copy assignment operator
-* move constructor
-* move assignment operator
-* destructor
-* relocation assignment operator
+* there are no user-declared copy constructors ;
+* there are no user-declared copy assignment operators ;
+* there are no user-declared move constructors ;
+* there are no user-declared move assignment operators ;
+* there are no user-declared relocation assignment operators ;
+* there is no user-declared destructor ;
+* there are no base class of `T` which has a virtual destructor but no
+    [virtual slicing function](#virtual-slicing).
+
+Then the compiler will declare a relocation constructor as a non-explicit inline
+public member of its class with the signature `T::T(T)`.
 
 #### Deleted implicitly-declared or defaulted relocation constructor #### {#reloc-ctor-declaration-deleted}
 
@@ -3124,14 +3127,10 @@ the likelihood annotation encourages the compiler to construct `c1` in the
 return slot, such that both `#1` and `#2` are a no-op. It is only `#3` that is
 likely to invoke the relocation constructor.
 
-The relocation constructor may also be invoked by library functions, for example
-[[#std-reloc_and_uninitialize]].
+### Virtual slicing function ### {#virtual-slicing}
 
-### Virtual relocation constructor ### {#virtual-reloc-ctor}
-
-As the relocation constructor is a second destructor, it can be declared as `virtual`.
-The virtual relocation constructor is useful when relocating from dynamic
-storage, to prevent leaky object-slicing. Consider the following scenario:
+Although relocation and polymorphism are unlikely to be mixed together, there
+are still situations where it may happen. Consider the following scenario:
 
 ```c++
 class D : public B { std::string _str; };
@@ -3143,92 +3142,168 @@ B sliced = std::reloc_and_reclaim(b);
 // its return value and deallocates the memory.
 ```
 
-If `B`'s relocation constructor is not virtual, then only the `B` part of `*b` will
-be relocated, leaking the rest.
+The proposed relocation design must ensure this will not to cause any
+object slicing. In order to address this loophole, we propose a new virtual
+slicing function. [std::reloc_and_uninitialize and std::reloc_and_reclaim](#std-reloc_and_uninitialize)
+must then use it, if present, to prevent object slicing.
 
-User code cannot make a virtual call to the relocation constructor, only STL
-functions can (like [std::reloc_and_uninitialize and std::reloc_and_reclaim](#std-reloc_and_uninitialize)).
-In other words, how to make a virtual function call to the relocation constructor
-is implementation-defined.
+#### Declaration #### {#virtual-slicing-decl}
 
-#### Declaration #### {#virtual-reloc-ctor-decl}
+A class-type that both declares a relocation constructor and has a virtual destructor,
+then implicitly declares a virtual slicing function, with the same access
+specifier as that of the destructor:
 
-A relocation constructor can be declared as virtual by adding the `virtual`
-keyword before the declaration. In derived classes, the relocation constructor
-signature must not change: the parameter type must still match the class-type:
+- The relocation constructor must be explicitly declared and not deleted.
+- The virtual destructor may be declared in the class-type, or inherited from
+    a base class.
+
+If a class-type inherits from a base type that provides a virtual slicing function,
+then it also triggers the declaration of the slicing function with the same
+access specifier as that of the destructor.
+
+The virtual slicing function cannot be user-declared and cannot be invoked
+by the user. It acts as a hidden
+virtual function that makes the link between the relocation world and the
+polymorphism world.
+
+```c++
+struct Type1 {}; //< no virtual slicing function
+
+struct Type2
+{
+    Type2(Type2 const&) = default;
+    Type2(Type2&&) = default;
+    Type2(Type2) = default;
+    ~Type2() = default;
+    // no virtual slicing function
+};
+
+struct Type3
+{
+    virtual ~Type3() = default;
+    // no virtual slicing function, relocation constructor is not implicitly declared
+    // because of the destructor declaration
+};
+
+struct Type4
+{
+    Type4(Type4) = default;
+    virtual ~Type4() = default;
+    // declares a virtual slicing function
+};
+
+struct Type5 : public Type3
+{
+    // no virtual slicing function, relocation constructor is not implicitly declared
+    // because of the virtual destructor
+};
+
+struct Type6 : public Type3
+{
+    Type6(Type6) = default;
+    // declares a virtual slicing function
+};
+
+struct Type7
+{
+    Type7(Type7) = default;
+    // no virtual slicing function because no virtual destructor
+};
+
+struct Type8 : public Type7
+{
+    virtual ~Type8() = default;
+    // no virtual slicing function because no explicit relocation constructor
+    // (relocation constructor is not implicitly declared)
+};
+
+struct Type9 : public Type8
+{
+    Type9(Type9) = default;
+    // declares a virtual slicing function
+};
+```
+
+As you can see, the ABI break introduced by the new virtual function can only
+be opt-in: if no relocation constructor is explicitly declared, then there are
+no ABI breaks. See also the discussion about the [virtual slicing function](#virtual-slicing-func-discussion).
+
+#### Definition #### {#virtual-slicing-def}
+
+Let `T` be a class-type with a virtual slicing function.
+The aim of the slicing function is to decompose `T`, destroy all the unwanted parts
+but the desired base class, and to relocate that base class to a new storage
+space.
+
+The parameters of the slicing function are *implementation-defined*. At minimum
+there must be:
+
+- the object to slice, which is the `this` parameter ;
+- the target type of the object to construct, which we will call `U`.
+    `U` is by construction, either `T` or a (maybe non-direct) base class of `T`
+    which provides a slicing function.
+    `U` may be a template parameter (in which case the slicing function is
+    a template function, possibly causing multiple vtable entries), or a
+    type information supplied at run-time.
+- the address where it is to be constructed, which we will call `u`.
+
+The slicing function handles the destruction of its `this` object. Upon exit
+(normally or through an exception), the `this` object is destroyed.
+
+A possible implementation of the virtual slicing function is:
+
+1.  If `U` is the same as `T`, then relocates `this` to `u`. This is done by
+    invoking the relocation constructor, move constructor or copy
+    constructor. If the relocation constructor was not invoked, then the
+    destructor of `this` must be invoked.
+1.  Otherwise let `V` be the direct base of `T` which is on the inheritance path
+    from `T` to `U` (`V` may be `U`):
+
+    1. Decompose `this`. Then recursively invoke the `V`'s slicing function
+        on `V` subobject, forwarding the `U` and `u` parameters.
+    1. Upon exit, the destructors of all non-relocated subobjects
+        of `src` are implicitly invoked.
+
+The slicing function is defined in the same translation units of the destructors.
+If the destructor is inline, then so is the slicing function.
+
+#### Ill-fomed definition #### {#virtual-slicing-def-ill-formed}
+
+A virtual slicing function definition of a class-type `T` is ill-formed if:
+
+- **the destructor of** `T` **is user-provided** ;
+- or any of the direct base of `T`, which declares a virtual
+    slicing function, has a non-accessible slicing function ;
+- or if any of the subobject of `T` has an inaccessible destructor.
+
+Note that if the destructor of `T` is user-provided, then because the slicing
+function proceeds by successive object decompositions and subobject destructions,
+`T`'s destructor is never called. This may result in some unwanted behavior
+such as:
 
 ```c++
 struct B
 {
-    virtual B(B);
+    B(B) = default;
+    virtual ~B() = default; //< triggers virtual slicing function declaration
 };
 struct D : public B
 {
-    D(D) override;
-    // and not D(B)!
+public:
+    D() : _ptr{new T} {}
+    ~D() override { delete _ptr; }
+private:
+    T* _ptr;
 };
 ```
 
-If a class-type `T` derives from a class-type which declares a virtual relocation
-constructor, and that the class-type `T` has no user-declared relocation constructor,
-then the class-type `T` gets a public, defaulted implicitly-declared relocation
-constructor.
+The slicing function that slices a `D` object to `B` will not call `D`'s
+destructor, causing a memory leak. This is why the slicing function definition
+is ill-formed if the destructor is user-provided.
 
-#### Definition #### {#virtual-reloc-ctor-def}
-
-Let `T` be a class-type with a virtual relocation constructor.
-If `T` relocation constructor has been called normally (not through a
-virtual function call), then it proceeds normally as if non-virtual.
-
-Otherwise, the virtual relocation constructor must know
-(they may be passed as extra parameters):
-
-- the target type of the object to construct, which we will call `U`.
-    `U` is by construction, either `T` or a (maybe non-direct) base class of `T` ;
-- the address where it is to be constructed, which we will call `u`.
-
-The virtual relocation constructor `T(T src)` then proceeds recursively as follows:
-
-1.  If `U` is the same as `T`, then proceeds with the relocation constructor
-    as if non-virtual.
-2.  If `U` is a direct base of `T`:
-
-    1.  If `U` is a virtual base, then use move semantics to initialize `u`:
-        `new (u) U{static_cast<U&&>(src)};` and return.
-    2.  Otherwise, decompose `src` and initialize `u`: `new (u) U{reloc src.U};`
-        and return.
-    3.  When the constructor exits, the destructors of all non-relocated subobjects
-        of `src` are implicitly invoked.
-
-3.  Let `V` be the direct base of `T` which is on the inheritance path from `T` to `U`:
-
-    1. If `V` is a virtual base, then move-construct a local object `v`
-        (`V v{static_cast<V&&>(src)};`). Then make a virtual relocation
-        constructor call, passing `v` as source object, and forwarding the target type
-        `U` and its target address `u`. Return.
-    2. Otherwise, decompose `src` and call the virtual relocation constructor of `V`,
-        passing the base class `V` of `src` as the source object
-        (as if by `reloc src.V`), and forwarding the target type
-        `U` and its target address `u`. Return.
-    3.  When the constructor exits, the destructors of all non-relocated subobjects
-        of `src` are implicitly invoked.
-
-As you can see when the virtual relocation constructor completes,
-all the non-relocated subobjects of `src` are destroyed normally, and the target
-subobject is relocated at the desired location.
-
-NOTE: To detect how the relocation constructor is called,
-implementations may emit two relocation constructor definitions, one virtual
-and one non-virtual. User code can only call the non-virtual version, which
-ensures the virtual one is only called through virtual function calls.
-
-#### Ill-fomed definition #### {#virtual-reloc-ctor-def-ill-formed}
-
-A virtual relocation constructor definition of a class-type `T` is ill-formed if:
-
-- any of the direct base of `T`, which declares (maybe implicitly) a virtual
-    relocation constructor, has a non-accessible relocation constructor ;
-- or if any of the subobject of `T` have an inaccessible destructor.
+A possible fixup to the above example is to wrap `_ptr` to an RAII object, such as
+`std::unique_ptr`. Then the destructor can be defaulted, and the slicing function
+will call the `unique_ptr`'s destructor.
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
@@ -3800,26 +3875,22 @@ template <class T>
 std::remove_cv_t<T> reloc_and_reclaim(T* src);
 ```
 
-Both functions construct a new object by calling either the relocation constructor,
-the move constructor or the copy constructor,
+Both functions construct a new object by calling either
+the virtual slicing function, the relocation constructor, the move constructor
+or the copy constructor (in that order),
 using `*src` as parameter while ignoring its cv-qualifiers, and return it.
 They also ensure the end-of-life of the source object: if the move or copy
 constructor is called then the destructor of `*src` is called afterwards.
 
-NOTE: If `*src` is a polymorphic type, that the relocation constructor is selected in
-the overload resolution,
-and the relocation constructor is virtual,
-then a virtual relocation constructor call is performed from the dynamic type of `*src`.
-
 `reloc_and_uninitialize` leaves the memory that was occupied by `src` in an
-uninitialized state.  If any exception is thrown,
+uninitialized state.  Even if it leaves with an exception,
 then `reloc_and_uninitialize` is guaranteed to leave the source object in a
 destructed state.
 
 `reloc_and_reclaim` reclaims the memory by calling the appropriate deallocation
-function (class-defined `delete` or global `delete`). If any exception is thrown,
-then `reloc_and_reclaim` is guaranteed to leave the source object in a destructed
-state and to have deallocated its memory.
+function (class-defined `delete` or global `delete`). If `reloc_and_reclaim`
+leaves with an exception, then it is guaranteed to leave the source object in a
+destructed state and to have deallocated its memory.
 
 `reloc_and_uninitialize` is intended to be used by library authors to enable relocation
 from a memory address. For instance, extracting a value out of an optional just
@@ -3920,10 +3991,6 @@ accordingly:
 - `std::is_relocation_assignable<T>`: same as `std::is_assignable<T, T>` ;
 - `std::is_trivially_relocation_assignable<T>`: same as `std::is_trivially_assignable<T, T>` ;
 - `std::is_nothrow_relocation_assignable<T>`: same as `std::is_nothrow_assignable<T, T>` ;
-- `std::has_virtual_relocation_constructor<T>`: derives from `std::true_type`
-    if and only if `T` declares (maybe implicitly) a virtual or overridden
-    relocation constructor.
-    Derives from `std::false_type` otherwise ;
 - `std::is_decomposable<T>`: derives from `std::true_type`
     if and only if `std::is_class_v<T>` is true, and `T` decomposition is legal ;
     Derives from `std::false_type` otherwise ;
@@ -4035,6 +4102,66 @@ This may introduce an ABI break, detectable at link-time (aliased symbols missin
 - if the aliasing now happens at definition level, but the aliased operator symbol
     remains visible nonetheless, then no ABI breaks are introduced ;
 - otherwise the ABI break happens, but remains detectable at link-time.
+
+### The virtual slicing function ### {#virtual-slicing-func-discussion}
+
+The introduction of a new virtual function is an ABI break. For this reason,
+the new virtual slicing function is entirely opt-in. It can only be triggered
+by an explicit declaration of a relocation constructor. This seems suitable,
+as a declaring a relocation constructor may already have an impact on existing
+ABIs.
+
+We identified two areas of concern about virtual slicing functions:
+
+1. the function is hidden from the developers ;
+1. developers may lose a bit of control over the vtable, as the slicing function
+    is forcibly declared as a side effect of other declarations ;
+
+Both concerns could be addressed by declaring the virtual slicing function
+differently.
+
+We could allow the relocation constructor to be declared as `virtual`,
+and doing so would generate the slicing function. Hence the declaration of the
+slicing function would no longer be hidden, and changes on the vtable are
+explicit.
+
+However this solution creates other issues:
+
+- Although the relocation constructor also acts as a destructor, declaring a
+    constructor as virtual is unusual in C++. Besides, overridden
+    relocation constructors in derived classes will have a non-matching first
+    parameter compared to the base class. (If the base class declares
+    `virtual B(B)`, then the derived class declares `D(D) override`.)
+- If the slicing function is not declared, it may cause unsafe object slicing
+    situations and resource leaks. The situation where we want to support this
+    kind of safe slicing is when dealing with a polymorphic object that can be
+    destructed from a base class pointer. If the language declares the virtual
+    slicing function automatically, then developers cannot get it wrong.
+
+
+A third solution would be to declare the virtual slicing function as any other
+function:
+
+```c++
+struct T
+{
+    virtual auto operator slice() = default;
+};
+```
+
+But this creates other issues:
+
+- The name of the function needs not to clash with any existing function ;
+- The return value and parameters are *implementation-defined*, so hardly writable
+    by the developers ;
+- This is an explicit function declaration for which no definition must be
+    supplied ;
+- And the safety point stands: developers may forget to declare it and unsafe
+    object slicing may occur silently.
+
+For all those reasons, and because we believe that safety in the language should
+come first, we proposed the virtual slicing function to be hidden and
+automatically declared if the criteria are met.
 
 ## Object decomposition alternatives ## {#object-decomposition-alt}
 
