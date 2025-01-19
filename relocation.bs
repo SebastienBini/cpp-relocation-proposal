@@ -144,6 +144,74 @@ never officially presented.
 
 # Motivation # {#motivation}
 
+## Relocation allows for safer code ## {#reloc-allows-safer-code}
+
+### Support for always-valid types ### {#always-valid-code}
+
+Tony Hoare stated that the introduction of the null reference was his
+"billion dollar mistake". Null pointers are a common source of software failures,
+often causing software crashes and interruption of services.
+
+We all know that when using a pointer, we need to ensure its validity first.
+Unfortunately, most of C++ classes suffer from the same design flaw.
+Because of move-semantics, when an object has been moved, it is in a valid
+but unknown state. If a moved-from object is to be reused, the object
+must first be reassigned to some known state before doing anything else with it.
+This approach is so error-prone, that many guidelines advice to simply drop the
+moved-from object.
+
+Because of this, in C++ it is not possible to write a class that provides a
+very basic guarantee: a pointer that is always valid.
+It is not entirely true as we do have `gsl::non_null<std::unique_ptr>`,
+but as this class provides no move constructor and no copy constructor,
+its usefulness is greatly diminished. It can only be used as a stack variable,
+or stored in a node-based container.
+
+Move-semantics requires the moved-from object to be still valid. This greatly
+complicates some class design. By design our "always valid" pointer class cannot
+have a move constructor: an efficient move constructor would set the address
+of the moved-from object to nullptr, but the class invariant forbids this value.
+
+This can be extended to any class which aims to provide always-valid access to some
+resource. None of those can be correctly implemented today in C++ with move semantics,
+unless everyone complies with the status-quo rule that a moved-from object must
+not be reused. Relocation fixes the problem completely. As relocation **moves**
+and **destroys** in the same operation, the relocated-from object ceases to
+exist and cannot be reused. No invalid state must be forced into its class design,
+which would break its class invariants.
+
+For instance, an always-valid pointer class can be:
+```c+++
+template <class T>
+class box
+{
+public:
+    template <class... Args>
+    box(Args&&... args) : _ptr{new T{std::forward<Args>(args)...}} {}
+    ~box() { delete _ptr; }
+
+    box(box const&) = delete;
+    box(box&&) = delete;
+    box(box) = default;
+
+    box& operator=(box const&) = delete;
+    box& operator=(box&&) = delete;
+    box& operator=(box) = default;
+
+    T* operator->() const { return _ptr; }
+    T& operator*() const { return *_ptr; }
+
+private:
+    T* _ptr;
+};
+```
+
+This class achieves its purpose in very few lines. It is not part of this
+proposal (an STL version would likely feature support for custom allocators and
+custom destructors). However we believe that relocation is a major prerequisite
+for such classes. Such `box` classes and the likes landing someday in C++ is a
+strong motivation for this proposal.
+
 ## More constness! ## {#const-vs-move}
 
 Automatic objects are recommended by various guidelines to be constant, since a constant object
