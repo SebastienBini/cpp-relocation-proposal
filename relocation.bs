@@ -212,6 +212,34 @@ custom destructors). However we believe that relocation is a major prerequisite
 for such classes. Such `box` classes and the likes landing someday in C++ is a
 strong motivation for this proposal.
 
+NOTE: Speak of std::indirect and std::polymorphic
+
+### Simplified class writing ### {#simple-class-writing}
+
+No moved-from state to force into the class design.
+Relocation default does the right thing in most cases, even with user-defined
+ctor and dtor.
+
+(see Move constructor breaks class invariant section)
+
+### reloc is a safer alternative to std::move ### {#reloc-vs-move}
+
+- no use after move errors
+- drop-in replacement
+- mention constness
+
+### Relocation love constant objects ### {#reloc-likes-const}
+
+Condensed version of the more constness version
+
+## Pave the way to linear type support ## {#linear-types}
+
+Speak of higher RAII and linear types. And their accidental support.
+Decomposition offers a new way to delete objects. If not for exceptions,
+Linear types could be accidentally supported by this proposal.
+
+This replaces the Early destruction section.
+
 ## More constness! ## {#const-vs-move}
 
 Automatic objects are recommended by various guidelines to be constant, since a constant object
