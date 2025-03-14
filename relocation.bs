@@ -2722,18 +2722,20 @@ and destructor.
 
 #### Trivial relocation #### {#trivial-relocation}
 
-A relocation constructor of a class type `X` is *trivial* if it is not user-provided and
+A relocation constructor of a class type `T` is *trivial* if it is not user-provided and
 if:
-* `X` has no virtual functions and no virtual base classes, and
+* `T` has no virtual base classes, and
 * for each direct base class and direct non-static data member of class type or array thereof,
     the relocation operation (which may be a relocation constructor or
     synthesized from copy/move constructor plus destructor) selected
     to relocate that base or member is trivial.
 
+C++26 defines **trivial relocatability**. We amend this definition to account
+for the relocation constructor.
 A *trivially relocatable class* is one which:
-* has a trivial, eligible relocation constructor, or
+* has a trivial, eligible relocation constructor, or ;
 * does not have a relocation constructor (including one that is deleted),
-    and is trivially copyable.
+    and is *trivially relocatable* according to C++26.
 
 Note: *eligible* is defined in
 <a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
@@ -2745,6 +2747,53 @@ Advisement: We also tighten the definition of "trivial class" (and thus "trivial
 require that the class in question be trivially relocatable as well as trivially
 copyable. This is to ensure that if the user wants code to be called on relocation,
 the library does not bypass said code by, say, using `memmove`.
+
+#### Interaction with C++26 memberwise_trivially_relocatable #### {#trivial-and-memberwise_trivially_relocatable}
+
+This proposal provides its own way to define trivial relocation, while C++26
+also provides the `memberwise_trivially_relocatable` trait.
+We do not see it as a blocking point:
+
+- `memberwise_trivially_relocatable` can be specified by mistake causing
+    undefined behaviors. On the other hand, having the trivial relocation
+    trait deduced by whether the relocation constructor is trivial is a safer
+    approach ;
+- `memberwise_trivially_relocatable` only affects objects that live in
+    dynamic storage, while the relocation constructor is also available for
+    objects with automatic storage. They answer different needs.
+
+We propose `memberwise_trivially_relocatable` to have no effect if the class-type
+declares a user-provided relocation constructor (i.e. the constructor is
+declared and not defaulted). Under this condition, the class-type cannot be
+considered as trivially relocatable.
+
+This behavior follows the existing logic
+`memberwise_trivially_relocatable` has with regards to virtual bases:
+it's not an error if the two are combined, `memberwise_trivially_relocatable`
+is merely ignored.
+
+Note that `memberwise_trivially_relocatable` is not equivalent to defining
+a defaulted relocation constructor, as the latter will have an impact on the ABI.
+Hence in the following snippet:
+
+```c++
+struc T memberwise_trivially_relocatable
+{
+    T(T const&);
+    T(T&&);
+};
+void foo(T x)
+{
+    sink(reloc x); // #1
+}
+```
+Whether relocation happens at `#1` depends on the implementation, that is on whether
+`x` is *early destructible*. If relocation happens, then `x` can be trivially
+relocated, as if by `memcpy`.
+
+If this proposal is accepted, we expect `memberwise_trivially_relocatable`
+to vanish over time in favor of the more natural relocation constructor
+default declaration.
 
 ### Definition ### {#reloc-ctor-definition}
 
@@ -3860,56 +3909,20 @@ reloc_only_t getRelocOnly()
 }
 ```
 
-### std::uninitialized_relocate ### {#std-uninitialized_relocate}
+### std::relocate ### {#std-relocate}
 
-We propose to introduce the following new functions in the `std` namespace in
-the `memory` header:
+C++26 introduced `std::relocate` that allows to relocate a range of contiguous
+objects. This function can be only be used if the object is trivially relocatable
+or has a non-throwing move constructor.
 
-```c++
-template<class InputIt, class ForwardIt>
-ForwardIt uninitialized_relocate(InputIt first, InputIt last, ForwardIt d_first);
-
-template<class ExecutionPolicy, class InputIt, class ForwardIt>
-ForwardIt uninitialized_relocate(ExecutionPolicy&& policy, InputIt first, InputIt last,
-    ForwardIt d_first) ;
-
-template<class InputIt, class Size, class ForwardIt>
-pair<InputIt, ForwardIt> uninitialized_relocate_n(InputIt first, Size count,
-    ForwardIt d_first) ;
-
-template<class ExecutionPolicy, class InputIt, class Size, class ForwardIt>
-pair<InputIt, ForwardIt> uninitialized_relocate_n(
-    ExecutionPolicy&& policy, InputIt first, Size count, ForwardIt d_first);
-```
-
-Those relocate elements from the range `[first, last)` (or the first `count`
-elements from `first`) to an uninitialized memory area beginning at `d_first`.
-Elements in the source range will be destructed at the end of the function
-(even if an exception is thrown).
-
-Returns:
-
-- `uninitialized_relocate`: an iterator to the element past the last element relocated;
-- `uninitialized_relocate_n`: a pair whose first element is an iterator to the
-    element past the last element relocated in the source range, and whose second
-    element is an iterator to the element past the last element relocated in the
-    destination range.
-
-If the type to relocate is trivially relocatable and both iterator types are
-contiguous, then both functions can be implemented as single `memcpy` call over
-the entire source range.
-Otherwise relocation happens element-wise, as if by calling `std::reloc_and_uninitialize`
-on each element.
-
-If an exception is thrown by `std::reloc_and_uninitialize`, then the destructor of all
-remaining elements in the source range is called, as well as the destructor of
-all constructed objects in the output iterator.
+We propose to amend this function, so that it can also be used if the object
+has a non-throwing relocation constructor. The function then attempts
+trivial relocation, then fallbacks to relocation, and then to move construction.
 
 ## Type traits header ## {#std-type_traits-header}
 
 We propose to introduce the following type traits, which all derive from
-`std::true_type` or `std::false_type`
-accordingly:
+`std::true_type` or `std::false_type` accordingly:
 
 - `std::is_relocation_constructible<T>`: same as `std::is_constructible<T, T>` ;
 - `std::is_trivially_relocation_constructible<T>`: same as
@@ -3922,6 +3935,9 @@ accordingly:
 - `std::is_decomposable<T>`: derives from `std::true_type`
     if and only if `std::is_class_v<T>` is true, and `T` decomposition is legal ;
     Derives from `std::false_type` otherwise ;
+
+The existing trait `std::is_trivially_relocatable<T>` shall be amended to take
+into account the [updated definition](#trivial-relocation).
 
 For all new type traits, the inline constexpr boolean template variable counterparts
 are also proposed. For instance we propose to introduce:
@@ -4495,7 +4511,7 @@ We studied for a while a putative *dot-reloc* operator: `p.reloc first`.
 The first time the expression was evaluated, the object used as the left operand
 would become decomposed, and the subobject used as the right operand would be relocated.
 Once decomposed, the source object could no longer be used normally. We
-restricted the expressions where a decomposed object would be allowed down to:
+restricted the expressions where a decomposed object would be allowed, down to:
 
 - data member access ;
 - cast to base class ;
