@@ -42,7 +42,7 @@ automatic lifetime.
 We define relocation as the operation of constructing a
 new target object while simultaneously destructing the source object.
 Relocation will happen thanks to a new keyword `reloc` and a new relocation
-constructor (with signature `T(T)`).
+constructor (with signature `T(T reloc)`).
 
 ```c++
 // with: void foo(non_null<unique_ptr<T>>)
@@ -88,8 +88,8 @@ is *decomposed*, which allows the relocation of its subobjects with `reloc`.
 
 This proposal introduces:
 
-- two new special member functions: a relocation constructor `T(T)` and a relocation
-    assignment operator `T& operator=(T)` ;
+- two new special member functions: a relocation constructor `T(T reloc)` and a relocation
+    assignment operator `T& operator=(T)` or `T& operator=(T reloc)` ;
 - a new keyword: `reloc` which backs a new operator and the object
     decomposition feature ;
 - slight changes to overload resolution rules ;
@@ -204,11 +204,11 @@ public:
 
     box(box const&) = delete;
     box(box&&) = delete;
-    box(box) = default;
+    box(box reloc) = default;
 
     box& operator=(box const&) = delete;
     box& operator=(box&&) = delete;
-    box& operator=(box) = default;
+    box& operator=(box reloc) = default;
 
     T* operator->() const { return _ptr; }
     T& operator*() const { return *_ptr; }
@@ -292,10 +292,10 @@ less situations (moved-from state) to worry about:
 
 ```c++
 struct A {
-    A(A) = default;
+    A(A reloc) = default;
     A(const A &) = delete;
     A(A &&) = delete;
-    A& operator=(A) = default;
+    A& operator=(A reloc) = default;
     A &operator=(const A &) = delete;
     A &operator=(A &&) = delete;
     ~A() {
@@ -541,7 +541,7 @@ public:
   // some parameterized constructor
   // SomeType(...)
 
-  SomeType(SomeType) = default;
+  SomeType(SomeType reloc) = default;
 
 private:
   std::string const _key1;
@@ -928,7 +928,7 @@ constructor, destroying the source object in the process. However, `reloc` does
 not force the use of the relocation constructor. The constructor which will be used
 to create the temporary is selected by overload resolution. `reloc` merely enables
 the relocation constructor to be selected because of the value category change
-(the relocation constructor has the signature `T(T)`, meaning it will be preferred
+(the relocation constructor has the signature `T(T reloc)`, meaning it will be preferred
 when constructed from a prvalue, with our new [overload resolution rules](#overload-resolution)).
 
 ### Relocation constructor discardment with function parameters ### {#reloc-with-function-param}
@@ -979,7 +979,7 @@ struct A
     // [...]
     A(A const&) = default;
     A(A&&) = delete;
-    A(A) = default;
+    A(A reloc) = default;
 };
 
 void bar(A);
@@ -1121,15 +1121,15 @@ In conclusion, we establish the following rule when a `reloc` expression
 is evaluated:
 
 > **Rule:** If a `reloc` operand (the source object) is not relocated by its
-    relocation constructor, and:
+>   relocation constructor, and:
 >   - the source object is not a function parameter: then
-        its lifetime ends (i.e. its destructor is implicitly invoked) at the
-        end of the full-expression evaluation containing the evaluated `reloc` expression ;
+>       its lifetime ends (i.e. its destructor is implicitly invoked) at the
+>       end of the full-expression evaluation containing the evaluated `reloc` expression ;
 >   - the source object is a function parameter: then
-        its destructor must be implicitly invoked at the end of the full-expression
-        containing the evaluated `reloc` expression,
-        or at the caller site at the end of the
-        full-expression evaluation. Which it is is *implementation-defined*.
+>       its destructor must be implicitly invoked at the end of the full-expression
+>       containing the evaluated `reloc` expression,
+>       or at the caller site at the end of the
+>       full-expression evaluation. Which it is is *implementation-defined*.
 
 We acknowledge that with `reloc` expressions we allow for more code to be executed between
 the end of the full-expression which contained `reloc`,
@@ -1428,6 +1428,8 @@ if the `reloc` keyword appears in its definition.
 If an object is *decomposed*, then it ceases to exist, but all
 its subobjects are considered as complete objects.
 
+**Decomposition is an alternative way to end the lifetime of an object.**
+
 ### Declaration and definition ### {#decomposed-object-decl}
 
 #### Object definition #### {#decomposed-obj-def}
@@ -1490,8 +1492,14 @@ T const c, *d reloc; // ill-formed, d is not a class-type
 Functions parameters may be declared with `reloc`, in which case the parameter
 is declared as decomposed.
 
+The `reloc` specifier does not produce a new overload of a function: `f(T)` and
+`f(T reloc)` *refer to the same function*.
+
 If a function parameter is declared as decomposed, it needs to be done so
-for every visible function declaration and its definition.
+for every visible function declaration and its definition. In our previous
+example `f(T)` and `f(T reloc)` refer to the same function, but they have
+conflicting declarations, making the program ill-formed.
+
 Indeed, the decomposed parameter may be used in contract expressions (which
 must be identical across all visible function declarations), and the fact it's
 decomposed has a direct impact on the well-formedness of the contract
@@ -2617,7 +2625,10 @@ to add the tracking flags that in our proposal would be provided by the language
 Now that we have introduced the `reloc` operator and object decomposition, we
 introduce the relocation constructor, which is built upon those new concepts.
 As relocation happens from prvalues,
-the constructor takes a prvalue as parameter: `T(T)`.
+the constructor takes a prvalue as parameter.
+The relocation constructor must also relocate the resources of the source object
+and will rely on *object decomposition* for that purpose. Its signature logically
+follows: `T(T reloc)`.
 
 This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor
@@ -2658,21 +2669,16 @@ stealing* the resources from the source object. Unlike the move
 constructor, the relocation constructor needs not to leave the source object in
 valid state.
 
-### The relocation constructor is a second destructor ### {#reloc-ctor-is-2nd-dtor}
-
-The relocation constructor **is a second destructor** of the class-type
-with regards to the source object. Indeed, the lifetime of the source object
-was ended immediately prior to entering the relocation constructor, and thus
-the source object is considered as destructed thereafter.
-In particular, once an object has been passed to its relocation constructor, its
-destructor must not be implicitly invoked.
-See [destruction of the source object](#reloc-ctor-dtor-def) section
-for more details.
-
 ### Declaration ### {#reloc-ctor-declaration}
 
 The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.
+
+The relocation constructor must be have a decomposed source object of same type
+(modulo cv-qualifiers) as first parameter.
+Extra, defaulted parameters [are authorized](#reloc-ctor-additional-params).
+Hence its signature must be `T(T cv src reloc, [...])`, with `cv` the cv-qualifiers
+of `src`. In particular, the signature `T(T)` remains illegal as of today.
 
 The relocation constructor of a class-type `T` implicitly gets a `noexcept(true)`
 exception specification unless:
@@ -2702,7 +2708,7 @@ and all of the following is true:
     [virtual slicing function](#virtual-slicing).
 
 Then the compiler will declare a relocation constructor as a non-explicit inline
-public member of its class with the signature `T::T(T)`.
+public member of its class with the signature `T::T(T reloc)`.
 
 #### Deleted implicitly-declared or defaulted relocation constructor #### {#reloc-ctor-declaration-deleted}
 
@@ -2797,21 +2803,10 @@ default declaration.
 
 ### Definition ### {#reloc-ctor-definition}
 
-#### Destruction of the source object #### {#reloc-ctor-dtor-def}
+#### Decomposition of the source object #### {#reloc-ctor-dtor-def}
 
-As mentioned above, the relocation constructor **is a second destructor** of
-the class-type.
-Once its body has been executed,
-the relocation constructor proceeds with the
-destruction of the source object in a similar manner as the destructor:
-
-- All its subobjects will be destructed in reverse declaration
-    order, unless they got relocated.
-- If not already decomposed, the runtime type information of all its base
-    classes is adjusted to that of their base class.
-- If the constructor initialization sequence or body exits because of an
-    exception, this destruction sequence
-    is triggered by stack unwinding.
+As its signature suggests, the relocation constructor decomposes its source object.
+Refer to [the above section](#decomposed-state) to see how decomposition unrolls.
 
 #### Virtual bases #### {#reloc-dtor-virtual-bases}
 
@@ -2832,17 +2827,17 @@ For instance:
 ```c++
 class B
 {
-    B(B src);
+    B(B src reloc);
     // [...]
 };
 class C : public virtual B
 {
-    C(C src);
+    C(C src reloc);
     // [...]
 };
 class D : public C
 {
-    D(D src);
+    D(D src reloc);
     // [...]
 };
 
@@ -2891,17 +2886,6 @@ for each subobject `s` (of type `S`) of `T`, in declaration order:
     by calling its own relocation, move or copy
     constructor, as if by: `s{reloc src.s}` (or `S{reloc src.S}`);
 
-NOTE: If the relocation constructor is defaulted, then the `reloc` keyword
-marking the decomposition of the source object does not need to be specified.
-All the following definitions are well-formed and equivalent:
-
-```c++
-T(T) = default;
-T(T src) = default;
-T(T src reloc) = default;
-T(T reloc) = default;
-```
-
 #### User-provided definition #### {#reloc-ctor-user-definition}
 
 Although the default definition should cover almost all cases, users can provide
@@ -2936,11 +2920,9 @@ struct U
     ~U();
 
     // Second dummy example.
-    U(U src) {} /*
+    U(U src reloc) {} /*
         1. U::_a is default-constructed.
-        2. Although src is not explicitly decomposed, and that
-           src has a user-provided destructor,
-           src destructor is not called, only src._a is.
+        2. src._a is destructed.
     */
 };
 
@@ -2971,39 +2953,31 @@ private:
 
 #### Delegating relocation constructor #### {#reloc-ctor-delegate}
 
-We do not support writing a delegating relocation constructor. Doing would raise
-several problems that are difficult to solve:
+We do not support writing a delegating relocation constructor. This is hardly
+possible because of the decomposition of the source object.
 
-- `T(T src, [...])` with non-defaulted extra parameters after `src` is a valid
-    syntax today and considering this as a putative relocation constructor may
-    break existing code ;
-- When relocation constructor delegates to another relocation constructor,
-    the source object needs to be relocated in the parameter slot of the
-    delegating relocation constructor, causing infinite regress ;
-- It's the relocation constructor responsibility to properly destruct
-    non-relocated subobjects of the source object.
-    This rule would need to be clarified if a delegating relocation constructor
-    is called somehow or else we will have double destruction.
-
-For all those reasons, using `reloc` on the source object of the relocation
-constructor is likely wrong, and compiler vendors are encouraged to emit a
-warning in that case.
-
-NOTE: We do not consider this as a blocking issue.
+We do not consider this as a blocking issue.
 [Additional default parameters](#reloc-ctor-additional-params)
-are supported with the relocation constructor. And the relocation constructor
-may still delegate to another non-relocating constructor:
+are supported with the relocation constructor. And constructor delegation
+may still happen with an extra layer:
 
 ```c++
-struct T
+class T
 {
-    T(T src) : T{std::move(src), Helper{}} {} /*
-        all subobjects of src are destroyed upon exit */
-    // [...]
+    struct Impl
+    {
+        // [...] all data members useful to T go there instead.
+    };
+
+public:
+    T(T src reloc) : T{reloc src._impl, {}} {}
+    //                ^ delegating constructor
+
 private:
-    T(T&& src, Helper); /* can only be called from the relocation constructor.
-        may leave src in a dirty state, as we know src destructor body will not
-        be called. */
+    T(Impl src, Helper h) : _impl{reloc src} {}
+
+    Impl _impl;
+
 };
 ```
 
@@ -3049,7 +3023,7 @@ private:
 ```
 
 In the above, `T::_p` does not manage its own lifetime,
-but the presence of `T::_r` means that `T::T(T)` is not noexcept so we need to
+but the presence of `T::_r` means that `T::T(T reloc)` is not noexcept so we need to
 release its resources if an exception is thrown during relocation.
 
 ### Invocation ### {#reloc-ctor-invoke}
@@ -3150,7 +3124,7 @@ struct Type2
 {
     Type2(Type2 const&) = default;
     Type2(Type2&&) = default;
-    Type2(Type2) = default;
+    Type2(Type2 reloc) = default;
     ~Type2() = default;
     // no virtual slicing function
 };
@@ -3164,26 +3138,27 @@ struct Type3
 
 struct Type4
 {
-    Type4(Type4) = default;
+    Type4(Type4 reloc) = default;
     virtual ~Type4() = default;
     // declares a virtual slicing function
 };
 
 struct Type5 : public Type3
 {
-    // no virtual slicing function, relocation constructor is not implicitly declared
-    // because of the virtual destructor
+    // no virtual slicing function.
+    // the relocation constructor is not implicitly declared,
+    // as the inherited virtual destructor prevents its implicit declaration
 };
 
 struct Type6 : public Type3
 {
-    Type6(Type6) = default;
+    Type6(Type6 reloc) = default;
     // declares a virtual slicing function
 };
 
 struct Type7
 {
-    Type7(Type7) = default;
+    Type7(Type7 reloc) = default;
     // no virtual slicing function because no virtual destructor
 };
 
@@ -3196,7 +3171,7 @@ struct Type8 : public Type7
 
 struct Type9 : public Type8
 {
-    Type9(Type9) = default;
+    Type9(Type9 reloc) = default;
     // declares a virtual slicing function
 };
 ```
@@ -3261,7 +3236,7 @@ such as:
 ```c++
 struct B
 {
-    B(B) = default;
+    B(B reloc) = default;
     virtual ~B() = default; //< triggers virtual slicing function declaration
 };
 struct D : public B
@@ -3284,8 +3259,12 @@ will call the `unique_ptr`'s destructor.
 
 ## Relocation assignment operator ## {#reloc-assign-operator}
 
-We further introduce the relocation assignment operator. Its signature shall be:
-`T& T::operator=(T)`. Such operators may already be defined in existing codebases,
+We further introduce the relocation assignment operator.
+Its signature shall be:
+`T& T::operator=(T [reloc])`, the parameter decomposition being optional.
+If the parameter is decomposed, the function is then called the *decomposing
+relocation assignment operator*.
+Such non-decomposing operators may already be defined in existing codebases,
 but the proposed changes will not interfere with them.
 
 Sometimes we also make mentions to the *prvalue-assignment operator*.
@@ -3300,10 +3279,13 @@ declaring one breaks the Rule of Zero, which was not the case previously.
 The relocation assignment operator may be implicitly declared, and may be
 defaulted or deleted.
 
+Only the *decomposing* version may be defaulted
+(`T::operator=(T) = default;` is an ill-formed definition).
+
 #### Implicit declaration #### {#reloc-assign-operator-implicit}
 
 If a class-type follows the Rule of Zero, then the compiler will declare
-an inline public relocation assignment operator.
+an inline public decomposing relocation assignment operator.
 
 #### Deleted implicitly-declared or defaulted relocation assignment operator #### {#reloc-assign-declaration-deleted}
 
@@ -3337,10 +3319,10 @@ and/or which the caller may expect to destroy (see [[#abi]]).
 Nevertheless, we mandate elision where possible:
 
 - If the class-type (possibly implicitly) declares a non-deleted relocation constructor,
-    or declares a defaulted relocation assignment operator, then elision is
-    mandated at declaration level ;
-- Otherwise, if the class-type defines a relocation assignment operator as
-    defaulted, then elision is mandated at definition level ;
+    or a decomposing relocation assignment operator (possibly defaulted),
+    then elision is mandated at declaration level ;
+- Otherwise, if the class-type defines a decomposing relocation assignment operator
+    (possibly defaulted), then elision is mandated at definition level ;
 - Otherwise elision is not mandated.
 
 Elision is performed in such a way as to avoid ABI break (more on that on the [ABI
@@ -3352,7 +3334,8 @@ If elision is mandated at declaration level, then the assignment operator
 declaration actually declares two member functions:
 
 - the non-eliding one, which takes its input parameter by value.
-    This is the function that will get called when user-code calls the
+    If no optimizations allow otherwise, this is the function that will be
+    invoked when user-code calls the
     assignment operator. It is the prvalue-assignment operator as we know it
     today ;
 - the eliding one, which takes its input parameter as if by reference, and has the
@@ -3447,6 +3430,11 @@ and has optimal performance (memberwise, one resource clean-up and one memcpy).
 
 **destroy-and-construct**
 
+One may be tempted by the famous *destroy-and-construct* idiom.
+It is both convenient (no need to write code for each subobject) and efficient
+on paper. But if not used with caution, it can lead to serious undefined behaviors
+(likely program crashes).
+
 ```c++
 T& T::operator=(T src) noexcept
 {
@@ -3455,8 +3443,12 @@ T& T::operator=(T src) noexcept
 }
 ```
 
-Or an exception-safe version, necessary if the destructor or the relocation
-constructor throws:
+This function has a poor exception-safety.
+Should any of the destructor or the
+relocation constructor throws, the function would exit leaving `this` in a
+*destructed state*... hence the `noexcept`.
+
+An exception-safe version is possible, requiring more work:
 
 ```c++
 T& T::operator=(T src) requires std::is_default_constructible_v<T>
@@ -3467,21 +3459,34 @@ T& T::operator=(T src) requires std::is_default_constructible_v<T>
 }
 ```
 
-This idiom is as optiomal as we could hope for, merely destructing the object
-and reconstructing it thanks to the relocation constructor.
+Despite the improved exception safety, this pattern is still dangerous when
+mixed with inheritance. Consider the following code:
 
-Exception safety is a bit tricky and requires
-to be able to reconstruct a valid instance of the object from scratch, should
-an exception be thrown. Of course, this is not possible in the general case as
-not all classes are default-constructible.
+```c++
+struct B
+{
+    virtual ~B() = default;
+    B& operator=(B src); //< using destroy-and-construct idiom
+};
+struct D : B { std::string _str; };
 
-Note that if `T` is trivially
-relocatable, then the operator is as optimal as we would like, as it merely
-translates into a destructor call and a memcpy call.
+foo(B& obj) { obj = B{}; }
 
-NOTE: If the assignment operator needs no further logic than a simple memberwise
-assignment, then users should instead use the defaulted version of the operator
-as it will provide better exception safety for similar performance.
+void bar()
+{
+    D obj;
+    foo(obj);
+    // obj._str is now destructed.
+}
+```
+
+*destroy-and-construct* is only safe with a non-throwing destructor and
+relocation constructor, and for non-polymorphic types. In comparison,
+the defaulted or memberwise version offers similar performance, is exception-safe,
+and can be used regardless of the class hierarchy and polymorphism.
+
+Hence we don't recommend this implementation and highly
+encourage users to use the default implementation or memberwise implementation.
 
 **relocate-and-swap**
 
@@ -3494,25 +3499,7 @@ T& T::operator=(T src)
 }
 ```
 
-This version is exception-safe, although it may not be the most efficient approach.
-
-Should `std::swap` be optimized to perform memcpy on trivially relocatable
-objects, then it results in one destructor call (`src`'s) and three memcpy calls.
-
-**Union trick**
-
-If for some reason, the implementation needs to prevent the destructor call
-on the source object, it is still possible to perform the "union trick":
-
-```c++
-T& operator=(T src)
-{
-    union { T tmp } = { .tmp = reloc src; };
-    /* do some stuff with tmp (like calling std::reloc_and_uninitialize),
-     * knowing its destructor will not be called by the language */
-    return *this;
-}
-```
+This version is exception-safe, although it is not the most efficient approach.
 
 ### Invocation ### {#reloc-assign-invoke}
 
@@ -3860,7 +3847,7 @@ They also ensure the end-of-life of the source object: if the move or copy
 constructor is called then the destructor of `*src` is called afterwards.
 
 `reloc_and_uninitialize` leaves the memory that was occupied by `src` in an
-uninitialized state.  Even if it leaves with an exception,
+destructed state (uninitialized memory).  Even if it leaves with an exception,
 then `reloc_and_uninitialize` is guaranteed to leave the source object in a
 destructed state.
 
@@ -3897,9 +3884,9 @@ void foo()
 `reloc_and_reclaim` is intended to be used by end users and library vendors alike.
 
 ```c++
-unique_ptr<pair<string, reloc_only_t>> makeStuff();
+unique_ptr<pair<string, box<T>>> makeStuff();
 
-reloc_only_t getRelocOnly()
+box<T> getBox()
 {
     auto stuff = makeStuff();
     auto [str, relocOnly] = std::reloc_and_reclaim(stuff.release());
@@ -4034,19 +4021,6 @@ Also, the relocation assignment operator may be aliased.
 If aliasing occurs, then the ABI does not break as aliasing happens only on a
 new hidden function.
 
-The only scenario where the ABI might break is where:
-
-- aliasing happened on declaration level ;
-- code was compiled against it, and especially generated code that makes direct
-    calls to the aliased version ;
-- the class changes, the aliasing only happens at definition level, or does not happen at all.
-
-This may introduce an ABI break, detectable at link-time (aliased symbols missing):
-
-- if the aliasing now happens at definition level, but the aliased operator symbol
-    remains visible nonetheless, then no ABI breaks are introduced ;
-- otherwise the ABI break happens, but remains detectable at link-time.
-
 ### The virtual slicing function ### {#virtual-slicing-func-discussion}
 
 The introduction of a new virtual function is an ABI break. For this reason,
@@ -4071,11 +4045,11 @@ explicit.
 
 However this solution creates other issues:
 
-- Although the relocation constructor also acts as a destructor, declaring a
+- Although the relocation constructor sort of acts as a destructor, declaring a
     constructor as virtual is unusual in C++. Besides, overridden
     relocation constructors in derived classes will have a non-matching first
     parameter compared to the base class. (If the base class declares
-    `virtual B(B)`, then the derived class declares `D(D) override`.)
+    `virtual B(B reloc)`, then the derived class declares `D(D reloc) override`.)
 - If the slicing function is not declared, it may cause unsafe object slicing
     situations and resource leaks. The situation where we want to support this
     kind of safe slicing is when dealing with a polymorphic object that can be
