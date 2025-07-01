@@ -1162,7 +1162,7 @@ implementations. However please keep in mind that:
 
 ### Illegal uses of reloc ### {#reloc-illegal-uses}
 
-A `reloc` statement is ill-formed if any of the following conditions is met:
+A `reloc` expression is ill-formed if any of the following conditions is met:
 
 - its parameter is not the name of a variable, or a direct subobject of a
     decomposed object ;
@@ -1171,14 +1171,16 @@ A `reloc` statement is ill-formed if any of the following conditions is met:
     (i.e. not a local function variable and not a function parameter passed by
     value) ;
 - the source object is not ref-qualified and does not have an accessible relocation,
-    move, or copy constructor ;
+    move, or copy constructor. **Exception**: if the source object is not a function
+    parameter, and the `reloc` expression is [discarded](#discarded-reloc-expr),
+    then the source object is permitted to have none of the 3 constructors ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-decomposition">structured decomposition declaration</a>) ;
 - the source object is a lambda capture (unless the lambda closure object has been [decomposed](#decompose-lambda)) ;
 - the source object is a virtual base of a [decomposed object](#decomposed-state) ;
 
 
-In particular, the `reloc` statement is well-formed if the source object is a
+In particular, the `reloc` expression is well-formed if the source object is a
 member of a function-local anonymous union.
 
 For instance:
@@ -1229,11 +1231,14 @@ public:
 
 ### Discarded reloc expressions ### {#discarded-reloc-expr}
 
-`reloc` expressions can be discarded: `reloc obj;` (note the semi-colon).
-We expect this statement to have the same effect as ` { auto _ = reloc obj; } `.
+This section discusses the effect of discarded `reloc` expressions in cases
+where its operand is not ref-qualified. Such an expression is for instance
+`reloc obj;`
+
+We expect such expressions to have the same effect as ` { auto _ = reloc obj; } `.
 A temporary is constructed from the source object and is then destructed at scope
 exit (that is right-away). The source object is destructed right-away,
-or at later stage if it's a function parameter (*implementation-defined*).
+or at later stage if it's a function parameter (when exactly is *implementation-defined*).
 We will discuss here the effects of such expressions.
 
 Materializing a temporary whose only goal is to be
@@ -1241,8 +1246,11 @@ destroyed is suboptimal.
 We might be tempted to optimize away the temporary
 materialization, and only call the destructor of the source object.
 
-This optimization is authorized (whether it is performed is *implementation-defined*).
-If the optimization does not happen, then
+This optimization is mandatory if the source object is immovable
+(none of the three constructors are eligible) and not a function parameter.
+In other cases, this optimization remains authorized
+(whether it is performed is *implementation-defined*).
+If the optimization cannot happen, then
 the temporary must be materialized and destroyed at the end of full-expression
 evaluation. The lifetime of the source object follows
 [the established rules](#reloc-src-obj-lifetime).
@@ -1257,7 +1265,8 @@ Note that, if the temporary is materialized and that the source object:
 2. *only has an eligible copy constructor*:
     all the owned resources of the source object will be *copied* to the temporary.
     This is very likely a useless operation.
-3. Other cases need not to be considered, as the `reloc` expression requires the
+3. Other cases need not to be considered, as if materialized,
+    the `reloc` expression requires the
     source object to declare one of the three constructors.
 
 NOTE: If the source object is a copy-only function parameter, then implementations
@@ -1282,9 +1291,8 @@ To summarize, it means that `reloc obj;` has the following behavior:
 
 For instance this gives:
 ```c++
-void do_something_01(std::mutex& m)
+void do_something_01(std::lock_guard<std::mutex> guard)
 {
-    std::lock_guard guard{m};
     if (!some_test())
     {
         reloc guard; // ill-formed: no relocation, move or copy constructor
@@ -1293,7 +1301,20 @@ void do_something_01(std::mutex& m)
     }
     bar();
 }
-void do_something_02(std::unique_lock<std::mutex> guard)
+void do_something_02(std::mutex& m)
+{
+    std::lock_guard guard{m};
+    if (!some_test())
+    {
+        reloc guard; // well-formed: direct destructor call is forced to happen
+        log("thread ", std::this_thread::get_id(), " failed");
+        // ^ logging can happen without holding the lock
+        return;
+    }
+    bar();
+    /* guard destructor is called only if it wasn’t passed to reloc. */
+}
+void do_something_03(std::unique_lock<std::mutex> guard)
 {
     if (!some_test())
     {
@@ -1305,7 +1326,7 @@ void do_something_02(std::unique_lock<std::mutex> guard)
     }
     bar();
 }
-void do_something_03(std::mutex& m)
+void do_something_04(std::mutex& m)
 {
     std::unique_lock guard{m};
     if (!some_test())
@@ -1319,7 +1340,7 @@ void do_something_03(std::mutex& m)
     /* guard destructor is called only if it wasn't passed to reloc. */
 }
 // assuming non_null does not have a relocation constructor
-void do_something_04(non_null<shared_ptr<int>> copyOnlyObj)
+void do_something_05(non_null<shared_ptr<int>> copyOnlyObj)
 {
     if (!some_test())
     {
