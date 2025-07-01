@@ -335,7 +335,9 @@ There are still a couple of cases where `std::move` is still valuable:
     equivalent `reloc` expression would be ill-formed (see also [relocating data members](#reloc-data-members)).
 - when use after move is explicitly intended. If such expressions are promoted
     to `reloc`, then the expression that reuses the relocated objects will be
-    ill-formed.
+    ill-formed. Note that such `std::move` calls today would benefit of being
+    replaced by `std::exchange` calls, hence no *moved-from* objects are handled
+    in user code.
 
 Note though, that a mere find and replace from `std::move` to `reloc` in a code
 base will create compilation errors on the above cases (no quiet code break).
@@ -381,6 +383,14 @@ Constant objects can be relocated, they are just destroyed when done so.
 A const a = someFunc();
 bar(reloc a);
 ```
+
+NOTE: The above snippet suffers from no pessimization even if `A` only has a
+move constructor and no relocation constructor. Indeed `reloc a` promotes `a`
+to a prvalue, which occupies the same storage as `a`, and stripped of
+the cv-qualifiers that previously applied to it.
+It will effectively call `A`'s move constructor, with a deconstified rvalue
+reference on `a`. This further proves that `reloc` is a superior alternative
+to `std::move`.
 
 We also have to consider that the Immediately Invoked Function Expressions (IIFE)
 decouples the possibilities to declare constant variables (even when they have
@@ -480,7 +490,7 @@ In addition constant member functions and constant data members in class design
 enable to explicitly state class invariants. This subsection adds on the
 [Support for the always-valid types](#always-valid-code) and the
 [Simplify class writing](#simple-class-writing) sections: a constant data member,
-due to its constant nature, cannot be set an empty state. Hence it is intrinsically
+due to its constant nature, cannot be set to an empty state. Hence it is intrinsically
 backing an always-valid state, and simplified constructor/destructor writing.
 
 It's not uncommon to find in production code like this:
@@ -580,7 +590,7 @@ trivially relocated (e.g. `std::string` or `std::list` in some
 implementations) and a relocate-only type (e.g. a future `std::box`) can neither
 be relocated by move-and-destroy nor trivially relocated.
 (e.g. `std::pair<std::string, std::box<int>>` could never be relocated in
-some implementation). Thus non-trivial relocation emerges as a requirement.
+some implementation, not even moved). Thus non-trivial relocation emerges as a requirement.
 
 ## Pave the way to linear type support (higher RAII) ## {#linear-types}
 
@@ -611,7 +621,9 @@ will be forgotten. To get a more complete view of linear types, the reader is
 encouraged to read the mentioned blog posts.
 
 The current proposal brings C++ closer to linear type support because [object decomposition](#decomposed-object)
-allows a member function to act as a destructor. The `DBTransaction` class
+offers an alternative way to end the lifetime of an object, without going
+through a destructor.
+The `DBTransaction` class
 we mentioned earlier could then be implemented:
 
 ```c++
@@ -1011,7 +1023,7 @@ a relocation constructor but no move constructor, to be *early destructible*.
 As the C++ standard leaves this area implementation-defined, we are going to force
 this another way, although the effect is the same:
 
-> **Rule:** If the source object is a function parameter passed by value, and its type
+> **Rule:** In a temporary materialization, if the `reloc` operand is a function parameter passed by value, and its type
     provides an eligible move constructor, then the relocation constructor (if any)
     may be discarded during overload resolution. Whether the relocation constructor
     is discarded is *implementation-defined*.
@@ -1050,7 +1062,7 @@ void foo(pair<const string, int> val)
 }
 ```
 
-`val` has the three constructors, so our rule does not apply. The ownership
+`std::pair` has the three constructors, so our rule does not apply. The ownership
 of `val` by `foo` is implementation-defined. If `foo` doesn't own `val`, then
 `reloc val` will call the move constructor, making a full string copy
 (because of `const`). Contrary to our previous example which motivated us to
@@ -1333,87 +1345,50 @@ void g() {
 ```
 
 More formally, whether performed by relocation, move or copy constructor,
-the temporary created by the `reloc` expression may not be materialized if:
+the temporary created by the `reloc` expression may not be materialized if
+the implementation can ensure that the source object shares
+the same address as the one to be occupied by the target object.
 
-1. the implementation can ensure that the source object shares
-    the same address as the one to be occupied by the target object ;
-2. and the source object is *early destructible*.
+Of course, if relocation elision happens then the rules that impact the
+lifetime of the source object still applies.
 
 For instance,
 given the following function `void sink(T)`, let us observe the effects of the
 `sink(reloc obj)` expression (`obj` being not ref-qualified) across different
 ABIs and object lifetime ownerships:
 
-<table>
-<tr><th>`sink` ABI and object lifetime ownership</th><th>Effect</th></tr>
-
-<tr>
-<td valign="top">
-`sink` ABI is callee-destroy and `obj` is *early destructible*
-</td>
-<td valign="top">
-Elision may happen, in which case `sink` will end the lifetime of `obj`.
-</td>
-</tr>
-
-<tr>
-<td valign="top">
-`sink` ABI is callee-destroy and `obj` is **not** *early destructible*
-</td>
-<td valign="top">
-Elision cannot happen as `obj` cannot be destructed. A new instance is
-move-or-copy-constructed from `obj`, passed to `sink`.
-</td>
-</tr>
-
-<tr>
-<td valign="top">
-`sink` ABI is caller-destroy and `obj` is *early destructible*
-</td>
-<td valign="top">
-Elision may happen, in which case the destructor of `obj` is implicitly invoked
-at the end of the full-expression evaluation.
-</td>
-</tr>
-
-<tr>
-<td valign="top">
-`sink` ABI is caller-destroy and `obj` is **not** *early destructible*
-</td>
-<td valign="top">
-Elision cannot happen, a new instance is move-or-copy-constructed from `obj`, passed to `sink`.
-</td>
-</tr>
-
-</table>
+- If `obj` is *early destructible* and `sink` is callee-destroy:
+    relocation elision may happen, in which case `obj` occupies the same storage
+    as `sink` parameter slot. No new instance is created, and as `sink` is
+    callee-destroy, it will take care of the lifetime of `obj`.
+- If `obj` is *early destructible* and `sink` is caller-destroy:
+    relocation elision may happen, in which case `obj` occupies the same storage
+    as `sink` parameter slot. No new instance is created. As `sink` is caller-destroy,
+    **the destructor of** `obj` **is implicitly invoked** at the end of the
+    full-expression evaluation which invoked `sink`.
+- If `obj` is not *early destructible* and `sink` is caller-destroy:
+    relocation elision loses its interest. Should it happen, and as `sink` is
+    caller-destroy, then `obj` must be in a moved-from state after the `sink`
+    call (if `T` has a move constructor). Then requiring eventually to call
+    a move constructor to create and destroy a temporary object, only to trigger
+    the destructor side-effect... This can hardly be considered as an optimization.
+    Hence if `obj` is not *early destructible*, then relocation elision shall not
+    happen.
+- If `obj` is not *early destructible* and `sink` is callee-destroy: this
+    configuration cannot happen in practice.
 
 Likewise, we can observe when elisions are possible given the following
 function `void xvsink(T&&)`, invoked through the `xvsink(reloc obj)` expression:
 
-<table>
-<tr><th>Object lifetime ownership</th><th>Effect</th></tr>
+- If `obj` is *early destructible*:
+    relocation elision may happen, in which case an rvalue reference of `obj`
+    is sent to `xvsink` and the destructor of `obj` is implicitly invoked
+    at the end of the full-expression evaluation.
+- If `obj` is not *early destructible*:
+    Same as above. When `obj` is not *early destructible*, then relocation
+    elision loses its interest. A new instance is move-or-copy-constructed from `obj`,
+    whose rvalue reference is passed to `xvsink`.
 
-<tr>
-<td valign="top">
-`obj` is *early destructible*
-</td>
-<td valign="top">
-Elision is very likely to happen, in which case an rvalue reference of `obj` is sent to `xvsink`
-and the destructor of `obj` is implicitly invoked
-at the end of the full-expression evaluation.
-</td>
-</tr>
-
-<tr>
-<td valign="top">
-`obj` is **not** *early destructible*
-</td>
-<td valign="top">
-Elision cannot happen, a new instance is move-or-copy-constructed from `obj`,
-whose rvalue reference is passed to `xvsink`.
-</td>
-</tr>
-</table>
 
 The same kind of elision will happen with an `lvsink(T const&)` function:
 elision can only happen when the source object is *early destructible*.
@@ -1558,11 +1533,8 @@ When a complete object is defined as *decomposed*, then:
     - the introduced objects still inherit from the cv-qualifiers,
         if any, of the *decomposed* object.
 - *The lifetime of the* decomposed *object ends*: its destructor is never invoked implicitly.
-    All its non-static subobjects, now considered as complete objects, are still
-    alive and will
-    follow normal destruction rules: their destructor will be
-    invoked implicitly at scope exit
-    unless they have been relocated before.
+    All its non-static subobjects, now considered as complete objects, have a
+    lifetime of their own.
 
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
@@ -1614,21 +1586,15 @@ subobjects.
 The *id-expression* naming the decomposed object does not yield a value!
 (unless it is used in an [unevaluated operand](#decomposed-unevaluated)).
 
-If a decomposed object appears in an expression, then the expression is
-ill-formed unless:
+A decomposed object is used in expressions:
 
-- the decomposed object is used to access a former
-    [data member](#decomposed-data-member) ;
-- or the decomposed object is used to access a former
-    [base](#decomposed-direct-base) ;
-- or the decomposed object is used to call a
-    [static member function](#decomposed-static-member-func) ;
-- or the decomposed object is used to access a former data member through
+- to access a former [data member](#decomposed-data-member) ;
+- to access a former [base](#decomposed-direct-base) ;
+- to call a [static member function](#decomposed-static-member-func) ;
+- to access a former data member through
     a constant-evaluated [pointer to data member](#decomposed-data-member-ptr) ;
-- or the decomposed object is used as an [unevaluated operand](#decomposed-unevaluated)
+- as an [unevaluated operand](#decomposed-unevaluated)
     of `sizeof`, `typeid` or `decltype`.
-
-[Any other expression](#decomposed-expr-others) involving a decomposed object is ill-formed.
 
 NOTE: In particular, non-static member functions cannot be called from a decomposed object.
 Such expressions are ill-formed.
@@ -1642,16 +1608,17 @@ The data member of a decomposed object can be accessed through the expression:
 Such expressions are identical to the matching expression had the object not
 been decomposed:
 
-- it yields exactly the same result ;
-- the data member still needs to be accessible given the context or else the
-    expression is ill-formed ;
+- it yields exactly the same result (same type, same value category) ;
 - if the data member is not a direct data member of the decomposed object type,
     then base classes are looked-up for a matching data member. If there are no
     matching data members, several matching data members, or the matching
-    data member is inaccessible, then the expression is ill-formed. Note that the
-    returned object will not be a complete object and cannot be relocated
+    data member is inaccessible, then the expression is ill-formed.
+- The expression returns a complete object if the data member is a direct data
+    member of the decomposed object.
+    Otherwise the returned object cannot be relocated
     without decomposing its owner class first.
-    - The *data-member* expression may not contain disambiguation expressions.
+- The *data-member* expression may not contain disambiguation expressions.
+
 
 For instance:
 ```c++
@@ -1691,8 +1658,11 @@ accessed through the expression:
 If the base class is not a direct base class of the decomposed object type,
 then all non-direct base classes are looked-up. If there are no matching base
 classes, several matching base classes, or the matching base class is
-inaccessible, then the expression is ill-formed. Note that the returned object
-will not be a complete object and cannot be relocated without decomposing all
+inaccessible, then the expression is ill-formed.
+
+The expression returns a complete object only if the base class is a direct
+base of the decomposed object. Otherwise the returned object
+cannot be relocated without decomposing all
 intermediary classes on the inheritance path.
 
 Such expressions allow to access the base class as a data member, as if a data
@@ -1838,19 +1808,18 @@ following expressions are ill-formed:
 - `(a, obj).m`: same as above.
 - `auto x = (obj, a)`: same as above.
 
+This is a direct consequence of the `obj` expression not yielding a value.
+
 ### Decomposed subobjects in reloc expressions ### {#decomposed-reloc}
 
 The *direct* subobjects of a decomposed object can be used as the operand of `reloc`
 expressions. As such objects are complete objects, the `reloc`
-expression as the same effect as described in the
+expression has the same effect as described in the
 [reloc operator](#reloc-operator) section.
 
-There are just a few cases where such `reloc` expressions are ill-formed:
-
-- if the `reloc` operand is the virtual base of a decomposed object, then the
-    expression is ill-formed ;
-- if the `reloc` operand is not a direct subobject of a decomposed object, then
-    the expression is ill-formed ;
+Advisement: The only exception to the above is if the `reloc` operand is a
+virtual base of a decomposed object. Virtual bases cannot be safely relocated,
+and hence their relocation is ill-formed.
 
 For instance:
 ```c++
@@ -1877,10 +1846,14 @@ void foo(D obj reloc)
 
 ### Decomposition of a lambda closure type ### {#decompose-lambda}
 
-Lambda objects can be decomposed with the rules defined above. The subobjects
-of the closure type are all the lambda captures which are captured by copy.
+Lambda objects can be decomposed with the rules defined above.
 The decomposition can only happen from the lambda body and not from outside
 the lambda, as if its captures had private access.
+
+All the lambda captures are accessible through the decomposed lambda.
+In practice only the objects captured by value can be relocated.
+The objects captured by reference being ref-qualified, if they are used as
+ a `reloc` operand, they will then merely be forwarded.
 
 The following is well-formed:
 
@@ -1933,8 +1906,6 @@ the resulting expression can be converted to a prvalue with *implicit decomposit
     It's only if that array element is relocated or further implicitly decomposed
     that its destructor will not
     be implicitly invoked (for that element only).
-    It is the only situation where the decomposition of an
-    array-type is possible.
 - In [6.5](https://eel.is/c++draft/class.temporary#6.5), the pointer to data
     member case, **the pointer to data member must be constant-evaluated**.
     The language will identify which data member is pointed at.
@@ -2138,7 +2109,7 @@ is not part of the proposal.
 
 ### Variable state tracking ### {#variable-state-tracking}
 
-This section describes the static analysis necessary to implement to prevent
+This section describes the static analysis that is required to prevent
 reuses of a relocated object.
 
 The `reloc` operator changes the state of its operand, imposing
@@ -2674,7 +2645,7 @@ valid state.
 The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.
 
-The relocation constructor must be have a decomposed source object of same type
+The relocation constructor must take a decomposed source object of same type
 (modulo cv-qualifiers) as first parameter.
 Extra, defaulted parameters [are authorized](#reloc-ctor-additional-params).
 Hence its signature must be `T(T cv src reloc, [...])`, with `cv` the cv-qualifiers
@@ -3948,7 +3919,7 @@ parameters, and a potential ABI break.
 In the [case study](#reloc-with-function-param) of how `reloc` should behave
 with function parameters passed by value, we established the following rule:
 
-> **Rule:** If the source object is a function parameter passed by value, and its
+> **Rule:** In a temporary materialization, if the `reloc` operand is a function parameter passed by value, and its
 type provides an eligible move constructor, then the relocation constructor
 (if any) may be discarded during overload resolution. Whether the relocation
 constructor is discarded is implementation-defined.
