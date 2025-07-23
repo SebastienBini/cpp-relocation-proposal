@@ -930,6 +930,8 @@ created by relocation, move or copy constructor. In truth,
 given that the source object is not ref-qualified, `reloc` merely
 changes the value category of the source object from lvalue to prvalue
 (if the source object is ref-qualified, see [above](#reloc-perfect-fwd)).
+The prvalue produced by `reloc` occupies the same storage as that of the
+source object.
 
 It is this value category change that *may* trigger the creation of a temporary
 object. However, optimizations may happen that will elide the creation of the
@@ -1596,6 +1598,11 @@ These requirements ensure that we can only decompose (a) compound types,
 where subobjects have no dependencies with one another (like an `std::pair`),
 or (b) types that we are in control of (because of the private access).
 
+An additional requirement applies if the object to decompose is a function
+parameter. In that case, `T` must have an eligible relocation, move or
+copy constructor. This extra requirement is to make object decomposition
+available for function parameters [regardless of the ABI](#decompose-value-param).
+
 ### Decomposed objects in expressions ### {#decomposed-obj-expr}
 
 A decomposed object is not an object.
@@ -1845,7 +1852,7 @@ and hence their relocation is ill-formed.
 For instance:
 ```c++
 struct A { int _a; };
-struct B, public A { int _b; };
+struct B : public A { int _b; };
 struct V { int _v; };
 struct C : public virtual V { int _c; };
 struct D : public B, public C
@@ -1913,7 +1920,7 @@ std::string s = getPair().first; /* under conditions, equivalent to:
     auto pair reloc = getPair(); std::string s = reloc pair.first; */
 ```
 
-Inspired by [[class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)]
+Inspired by &bs[;[class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)]
 we add a clause to when a subobject of a temporary is to be converted to a
 prvalue (for instance because passed to the relocation constructor or relocation
 assignment operator).
@@ -1935,7 +1942,7 @@ the resulting expression can be converted to a prvalue with *implicit decomposit
     The pointer must be constant-evaluated, as it is otherwise impossible
     to know at compile-time whether it refers to a direct data member or
     to one of a base class (in which case further implicit decompositions will
-    happen). This information is required at compile-time to access the
+    happen). This information is required at compile-time to assess the
     well-formedness of the expression.
     If the pointer is not constant evaluated, then no implicit decomposition
     can happen.
@@ -1947,12 +1954,20 @@ to extract the desired subobject.
 
 If any *implicit decomposition* is illegal, then it does not cause the program
 to be ill-formed, the expression simply cannot be converted
-to a prvalue (e.g. any relocation constructor or assignment operator are
-discarded from overload resolution).
+to a prvalue (i.e. remains an xvalue).
 All the incurred decompositions must be legal, as defined
-[here](#ill-formed-decomposition), or else the *implicit decomposition* is
+below, or else the *implicit decomposition* is
 illegal. In particular, if any virtual base is to be decomposed,
 then the *implicit decomposition* is illegal.
+
+An *implicit decomposition* of a temporary object of type `T` is ill-formed
+if any of the following conditions is not satisfied:
+
+- all subobjects of `T` are accessible. They all need to be
+    since their destructor will be called if not relocated ;
+- all declared special member functions of `T` are declared either as
+    defaulted or deleted.
+    Note that private access privilege does not allow an implicit decomposition.
 
 For instance:
 ```c++
@@ -1982,6 +1997,27 @@ std::string b = getU()._pub[2]; /* implicit-decomposition is well-formed
     are destroyed */
 std::string c = getPair().second; /* implicit-decomposition is well-formed;
     std::string's relocation constructor is used */
+
+class V
+{
+public:
+    V();
+    ~V();
+    static std::string GetDefaultName()
+    {
+        return V()._name; /* implicit-decomposition is ill-formed
+            because T has a private member and user-defined special member
+            functions. V()._name remains an xvalue.
+            Note that this code is valid today, and should
+            implicit decomposition be legal in that case (because of the private
+            access privilege), then the expression
+            would not have the same effect as ~V would not be invoked. */
+    }
+private:
+    std::string _name;
+
+};
+
 ```
 
 ### Decomposition of value parameters ### {#decompose-value-param}
@@ -1995,7 +2031,8 @@ the `reloc` operator does.
 Indeed if the decomposed object is not *early destructible*, then the function
 may silently relocate its argument to some local storage before the function
 body is entered. *This is a putative
-workaround and is not part of the proposal.*
+workaround and is not part of the proposal.* Nonetheless it is made possible
+in the [object decomposition requirements](#ill-formed-decomposition).
 
 For instance:
 
@@ -2720,13 +2757,48 @@ and destructor.
 
 #### Trivial relocation #### {#trivial-relocation}
 
-A relocation constructor of a class type `T` is *trivial* if it is not user-provided and
+A class-type that has virtual bases or is polymorphic cannot be trivially
+relocatable, because of how those features are sometimes implemented.
+
+**About virtual inheritance**:
+A common implementation for virtual inheritance is to store in the memory layout
+of the derived class a pointer to the virtual base. This is incompatible with
+trivial relocation as the pointer needs then to be adjusted to the new memory
+location. Another possible implementation would be to store an offset to the
+virtual base location, which would make it trivially relocatable.
+
+**About polymorphic types**:
+You might think that polymorphic types can be trivially relocatable, as they
+only contain a pointer to a virtual table. However this is not true on some
+implementations. Quoting [[D3780R0]]'s explanation:
+
+> [...] On some architectures/ABIs (such as `arm64e`) these [vtable] pointers
+> are *authenticated*, meaning that some bits of the pointer value are used to
+> store a cryptographic signature. This signature gets verified when one accesses
+> the virtual table pointer (for instance by calling a virtual function).
+>
+> One of the inputs of the signature is target address of the pointer (that is,
+> the address of the virtual table). Another input, which is crucial to this
+> story, is the address of the virtual table pointer itself.
+>
+> **This means that, on those architectures, relocating a polymorphic object by
+> using a simple byte copy would produce an object whose virtual table pointer
+> would fail to authenticate.**
+
+**As a consequence**,
+a relocation constructor of a class type `T` is *trivial* if it is not user-provided and
 if:
 * `T` has no virtual base classes, and
+* `T` is not a polymorphic type, and
 * for each direct base class and direct non-static data member of class type or array thereof,
     the relocation operation (which may be a relocation constructor or
     synthesized from copy/move constructor plus destructor) selected
     to relocate that base or member is trivial.
+
+Note that implementations are allowed to benefit from the trivial relocation
+optimization (i.e. identical to a `memcpy` call) if the class-type is not trivially
+relocatable because of virtual inheritance or polymorphism (should their
+implementation of such class traits be compatible with trivial relocation).
 
 C++26 defines **trivial relocatability**. We amend this definition to account
 for the relocation constructor.
@@ -2755,7 +2827,7 @@ We do not see it as a blocking point:
 - `memberwise_trivially_relocatable` can be specified by mistake causing
     undefined behaviors. On the other hand, having the trivial relocation
     trait deduced by whether the relocation constructor is trivial is a safer
-    approach ;
+    approach, which does not make room for human errors ;
 - `memberwise_trivially_relocatable` only affects objects that live in
     dynamic storage, while the relocation constructor is also available for
     objects with automatic storage. They answer different needs.
@@ -3027,7 +3099,7 @@ since it may be elided
 if the compiler can arrange that the source glvalue was constructed at the
 appropriate address.
 
-In particular, code of the form `T x = reloc y;` is *highly* likely to be a
+In particular, code of the form `auto x = reloc y;` is *highly* likely to be a
 no-op, simply renaming an existing object. This is however likely to find use
 for "sealing" objects with complex initialization, replacing the idiom of
 immediately-invoked function expressions (IIFEs, [[IIFE]]):
@@ -3267,6 +3339,8 @@ but further indicates that this function existed prior to the proposal.
 
 The relocation assignment operator becomes a special member function. As such,
 declaring one breaks the Rule of Zero, which was not the case previously.
+A user-declared relocation assignment operator will prevent an implicit
+declaration of the relocation constructor.
 
 The relocation assignment operator may be implicitly declared, and may be
 defaulted or deleted.
@@ -3284,7 +3358,6 @@ an inline public decomposing relocation assignment operator.
 The implicitly-declared or defaulted relocation assignment operator for class `T` is defined as deleted:
 
 - if `T` has subobjects that have an implicitly or explicitly deleted relocation assignment operator ;
-- or `T` has no relocation, move, or copy constructor ;
 - or `T` has subobjects that have inaccessible relocation or move assignment operators ;
 - or `T` has subobjects with deleted or unaccessible destructor.
 
@@ -3308,22 +3381,14 @@ signature `T& (T::)(T)`, implying that the source object must occupy a parameter
 which may not find it possible to have the same storage address as the source object,
 and/or which the caller may expect to destroy (see [[#abi]]).
 
-Nevertheless, we mandate elision where possible:
-
-- If the class-type (possibly implicitly) declares a non-deleted relocation constructor,
-    or a decomposing relocation assignment operator (possibly defaulted),
-    then elision is mandated at declaration level ;
-- Otherwise, if the class-type defines a decomposing relocation assignment operator
-    (possibly defaulted), then elision is mandated at definition level ;
-- Otherwise elision is not mandated.
-
-Elision is performed in such a way as to avoid ABI break (more on that on the [ABI
+Nevertheless, **we mandate elision if the class-type (possibly implicitly)
+declares a non-deleted relocation constructor,
+or a decomposing relocation assignment operator (possibly defaulted)**.
+The proposed elision is performed in such a way as to avoid ABI break (more on that on the [ABI
 section](#prvalue-assign-op-abi)).
 
-#### Elision at declaration level #### {#aliased-reloc-assign-declaration}
-
-If elision is mandated at declaration level, then the assignment operator
-declaration actually declares two member functions:
+If elision is mandated, then the assignment operator declaration actually
+declares two member functions:
 
 - the non-eliding one, which takes its input parameter by value.
     If no optimizations allow otherwise, this is the function that will be
@@ -3353,26 +3418,13 @@ the call to the eliding one:
     3.  It forwards as return value whatever the eliding operator returns.
     4.  It does not call the destructor of that local copy.
 
+NOTE: If the implementation can guarantee that the relocation assignment operator
+is passed by address and is *early destructible*, then the non-eliding version is
+not needed.
+
 If the address of the assignment operator is queried, then the address of the
 non-eliding version is returned. If the assignment operator is virtual, then only
 the non-eliding version is considered to be `virtual` and is added to the vtable entry.
-
-#### Elision at definition level #### {#aliased-reloc-assign-definition}
-
-If elision is mandated at definition level, then the two versions of the operator
-are generated (eliding and non-eliding) in the translation unit where the operator
-is defined. The visibility of the eliding operator symbol to other translation
-units is *implementation-defined*.
-
-The eliding operator has an ABI where it takes its input parameter by reference,
-and is in charge of the lifetime of the source object (callee-destroy).
-
-The definition of the two functions are the same as if elision was mandated at
-declaration level.
-
-Typically, we expect code in the same translation unit to befenit from the
-elided-version. Code outside the translation unit may also benefit from it
-through link time optimizations.
 
 ### Definition ### {#reloc-assign-definition}
 
@@ -3401,10 +3453,6 @@ done with the defaulted version.
 Other definitions are possible, notably the famous *copy-and-swap*
 (now *relocate-and-swap*) and the *destroy-and-construct* idioms.
 
-Note that the most optimal implementation will result in a single destructor
-call and a single memcpy call (given that the class-type is trivially
-relocatable).
-
 **Memberwise relocation**
 
 ```c++
@@ -3422,7 +3470,7 @@ and has optimal performance (memberwise, one resource clean-up and one memcpy).
 
 **destroy-and-construct**
 
-One may be tempted by the famous *destroy-and-construct* idiom.
+One may be tempted by the infamous *destroy-and-construct* idiom.
 It is both convenient (no need to write code for each subobject) and efficient
 on paper. But if not used with caution, it can lead to serious undefined behaviors
 (likely program crashes).
@@ -3493,6 +3541,87 @@ T& T::operator=(T src)
 
 This version is exception-safe, although it is not the most efficient approach.
 
+**Putative std::unique_ptr implementation**
+
+It's interesting to see an implementation of the relocation assignment operator for
+classes that manage resources. Let's see one for `unique_ptr`:
+
+```c++
+unique_ptr<T,D>& unique_ptr<T,D>::operator=(unique_ptr<T,D> rhs reloc) noexcept
+{
+    reset();
+    _deleter = reloc rhs._deleter;
+    _ptr = rhs._ptr;
+    return *this;
+}
+```
+
+The implementation is straightforward, we simply deallocate the resources and
+perform memberwise relocations. The decomposition of `rhs` ensures its destructor
+is not run. This implementation assumes that the deleter object is nothrow
+relocatable.
+
+Note that, had `reset()` been allowed to throw (`reset()` is `noexcept`), the
+implementation would have been slightly more evolved:
+
+```c++
+unique_ptr<T,D>& unique_ptr<T,D>::operator=(unique_ptr<T,D> rhs) noexcept
+{
+    reset(); //< can throw, then rhs destructor is called
+    auto rhs_members reloc = reloc rhs;
+    _deleter = reloc rhs_members._deleter;
+    _ptr = rhs_members._ptr;
+    return *this;
+}
+```
+
+In this version, the decomposition happens at a later stage (note that the
+relocation caused by the decomposition will be elided). This is to ensure that
+any exception thrown in the resource destruction sequence (`reset()`) will
+trigger the proper destruction of `rhs`.
+
+**Putative std::box implementation**
+
+Likewise, let's see how an `std::box` relocation assignment operator would look
+like. For this section, let's consider a more realistic `std:box<T,A>`
+with an allocator object. A noexcept version may be:
+
+```c++
+box<T,A>& box<T,A>::operator=(box<T,A> rhs reloc) noexcept
+{
+    _alloc.deallocate(_ptr);
+    _alloc = reloc rhs._alloc;
+    _ptr = rhs._ptr;
+    return *this;
+}
+```
+
+This is straightforward, just as the noexcept `unique_ptr` implementation seen
+above. Likewise, an exception-safe version requires more work but is still
+possible:
+
+```c++
+box<T,A> box<T,A>::exchange(box<T,A> other reloc)
+requires std::is_nothrow_relocation_constructible_v<A>
+{
+    box const prev{_ptr, std::reloc_and_uninitialize(std::addressof(_alloc))};
+    new (std::addressof(_alloc)) A{reloc other._alloc};
+    _ptr = other._ptr;
+    return prev;
+}
+
+box<T,A>& box<T,A>::operator=(box<T,A> rhs)
+{
+    exchange(reloc rhs);
+    return *this;
+}
+```
+
+This implementation has a strong exception safety: should an exception be thrown,
+the `box` would still be in a valid state. Indeed, an exception may only be
+thrown by `T`'s destructor, and this is only called after the `box` is set a new
+valid state (i.e. `rhs`), when the object returned by exchange is destroyed.
+
 ### Invocation ### {#reloc-assign-invoke}
 
 ```c++
@@ -3502,16 +3631,13 @@ x = reloc y;
 
 Every call to the relocation assignment operator follows normal rules.
 
-If the call site detects that an eliding version of the operator is available
-(either because the eliding happened at declaration level, or because it
-happened at definition level and the call site is in the same
-translation unit as the definition, or through link-time optimization),
+If the call site detects that an eliding version of the operator is available,
 then which version of the operator
 is called is implementation-defined.
 
 The nominal case is to call the non-eliding version. The implementation is allowed
-to call the eliding version instead, as long as it can elide the call to the
-destructor on the source object.
+to call the eliding version instead, given that the source object is
+*early destructible*.
 
 ## Overload resolution ## {#overload-resolution}
 
@@ -3973,7 +4099,7 @@ However those functions might theoritically exist, and might have an ABI change.
 
 Also, library vendors are encouraged to migrate to an ABI where any function that
 takes non-trivial parameters by value are responsible for their destruction.
-Then, the function definitions can make the most of `reloc`.
+Then, the function definitions can make the most out of `reloc`.
 This is not required by the proposal.
 
 We believe it's up to the implementation to choose what they want to do with their ABI:
@@ -4752,7 +4878,6 @@ void fwd(decltype(auto)... args)
 }
 ```
 </td>
-</tr>
 </table>
 
 We suggest a new way to deduce template type parameters, by allowing
@@ -4846,6 +4971,12 @@ and eradicate some gotchas:
     "title": "Allow calling overload sets containing T, const T&",
     "href": "https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2665r0.pdf",
     "date": "October 2022"
+  },
+  "D3780R0": {
+    "authors": [ "Giuseppe D'Angelo" ],
+    "title": "Detecting bitwise trivially relocatable types",
+    "href": "https://isocpp.org/files/papers/D3780R0.html",
+    "date": "June 2025"
   }
 }
 </pre>
