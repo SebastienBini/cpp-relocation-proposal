@@ -1819,6 +1819,7 @@ decomposed, with just a few specificities:
     `typeid(decltype(obj))` (the RTTI if any is not inspected) ;
 - As `(obj)` is an ill-formed expression if `obj` is a decomposed object,
     `decltype((obj))` is also ill-formed.
+- `decltype(obj.member_function())` is also ill-formed.
 
 #### Other expressions with a decomposed objects #### {#decomposed-expr-others}
 
@@ -1869,6 +1870,53 @@ void foo(D obj reloc)
     auto c = reloc obj.C; // valid, but obj.V is in a moved-from state after
     // auto v = reloc obj.V; //< ill-formed, V is a virtual base of D
     auto v = std::move(obj.V); // valid
+}
+```
+
+### Getting the address of an object after its decomposition ### {#decompose-obj-addr}
+
+Sometimes the address an object had before being decomposed is needed.
+For instance this may be useful in relocation constructors, to adjust some
+external objects:
+
+```c++
+T::T(T src reloc) : _d{reloc src._d}
+{
+    gRegistry.erase(/* src address */);
+    gRegistry.insert(this);
+}
+```
+
+We propose the following expression `obj . this` to return the address the object
+occupied prior to its decomposition as a *prvalue*, with type `void cv *`,
+*cv* being the cv-qualifiers that applied to `obj`.
+
+- Since the expression is a prvalue, it cannot be assigned to a new address and
+    its own address cannot be taken (`obj.this = &x` and `&obj.this` are ill-formed).
+    Note that `this` today is already a prvalue.
+- The return type is a void pointer. As the object has ceased to exist, the
+    returned pointer cannot be a pointer of the former object type.
+
+Hence our example becomes:
+
+```c++
+T::T(T src reloc) : _d{reloc src._d}
+{
+    gRegistry.erase(src.this);
+    gRegistry.insert(this);
+}
+```
+
+And we have:
+
+```c++
+{
+    T obj reloc = {};
+    static_assert(std::is_same_v<void*, decltype(obj.this)>);
+}
+{
+    T const obj reloc = {};
+    static_assert(std::is_same_v<void const*, decltype(obj.this)>);
 }
 ```
 
