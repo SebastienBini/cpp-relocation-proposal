@@ -1540,7 +1540,7 @@ When a complete object is defined as *decomposed*, then:
 
 - The object is *initialized* using the existing rules ;
 - All its direct bases and non-static data members are now considered as
-    distinct complete objects:
+    distinct *complete* (or [semi-complete](#decompose-virtual-semi-complete)) objects:
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
     - for all of the virtual and direct bases which have a runtime type information, they
@@ -1590,8 +1590,7 @@ the following conditions is not satisfied:
 
 - all subobjects of `src` are accessible. They all need to be
     since their destructor will be called if not relocated ;
-- all declared special member functions of `T` are declared either as
-    defaulted or deleted,
+- `T`'s eligible destructor is not user-provided,
     **or** the call-site has private access privilege to `T`.
 
 These requirements ensure that we can only decompose (a) compound types,
@@ -1858,74 +1857,66 @@ expression has the same effect as described in the
 
 Advisement: The only exception to the above is if the `reloc` operand is a
 virtual base of a decomposed object. Virtual bases cannot be safely relocated,
-and hence their relocation is ill-formed (see [below](#reloc-virtual-bases)).
+and hence their relocation is ill-formed (see [below](#decompose-virtual-bases)).
 
 For instance:
 ```c++
 struct A { int _a; };
-struct B : public A { int _b; };
 struct V { int _v; };
-struct C : public virtual V { int _c; };
-struct D : public B, public C
+struct B : public A, public virtual V { int _b; };
+struct C : public B
 {
-    int _d;
+    int _c;
 };
 
-void foo(D obj reloc)
+void foo(C obj reloc)
 {
-    auto d = reloc obj._d; // valid
-    // auto c = reloc obj._c; //< ill-formed, _c is not a direct data member of D
-    // auto a = reloc obj.A; //< ill-formed, A is not a direct base of D
+    auto c = reloc obj._c; // valid
+    // auto b = reloc obj._b; //< ill-formed, _b is not a direct data member of C
+    // auto a = reloc obj.A; //< ill-formed, A is not a direct base of C
     auto b = reloc obj.B; // valid
     // auto b2 = obj._b; //< ill-formed, obj._b belongs to B base which has been relocated
-    auto c = reloc obj.C; // valid, but obj.V is in a moved-from state after
-    // auto v = reloc obj.V; //< ill-formed, V is a virtual base of D
+    // auto v = reloc obj.V; //< ill-formed, V is a virtual base of C
     auto v = std::move(obj.V); // valid
 }
 ```
 
-#### Relocation and virtual bases #### {#reloc-virtual-bases}
+### Decomposition and virtual bases ### {#decompose-virtual-bases}
 
 The current proposal does not support the relocation of virtual bases.
-Relocate-only types can hardly be a virtual base, and by extension
-virtual bases can hardly have relocate-only data members.
+Virtual bases can hardly be relocate-only types, and by extension,
+can hardly have relocate-only data members.
 
-We argue that this limitation comes from *the
-very nature of non-trivial relocation and virtual bases*.
+#### Problem description #### {#decompose-virtual-bases-problem}
+
 Let's consider the following snippet:
 
 ```c++
+struct A { int _a; };
 struct V { int _v; };
 struct B : public virtual V { int _b; };
-struct C : public virtual V { int _c; };
-struct D : public B, public C
+struct C : public B { int _c; };
+struct D : public A, public B, public C
 {
     int _d;
 };
 
 void foo(D obj reloc)
 {
-    auto c = reloc obj.C; // #1. valid, but obj.V is in a moved-from state after
-    // auto v = reloc obj.V; //< ill-formed, V is a virtual base of D
-    auto b = reloc obj.B; // #2. valid
+    auto c = reloc obj.C; // #1
+    auto b = reloc obj.B; // #2
 }
 ```
 
-Because of the decomposition, each subobject is now a complete object. However,
-because of the virtual inheritance, the virtual bases are shared across all the
-types that inherit from it. At #1, `C`'s relocation constructor will initialize its own
-`V` base, from `obj.C`. As `obj.C` does not have the ownership over its virtual base,
-then `C` relocation constructor cannot use `V` relocation constructor to
-initialize `V`.
-Instead the move or copy constructor will be used. Otherwise, had the virtual
-base been relocated (in `C` relocation constructor), then the expression
-`auto b = reloc obj.B` (#2)
-would have accessed uninitialized memory when it tried to initialize its
-own `V` base (in `B` relocation constructor).
-
-C++ is already a language with many pitfalls ; one common source of errors is
-dangling references, and should virtual bases be allowed to be relocated, then
-it would create even more of them...
+Now let's see what happens if relocating from a virtual base were allowed.
+At #1, `C`'s relocation constructor will initialize
+its own `V` base, using relocation semantics. This leaves the `V` base of `obj.C`
+in a destructed state. At #2, `B`'s relocation constructor will attempt the
+same, except that the `V` base of `obj.B` (which points to the same object as
+the `V` base of `obj.C`) is already destructed.
+Alternatively,
+#1 may throw and stack unwinding will invoke the destructor of `V` which is
+likewise already destructed.
 
 You might think that this issue arises from decomposition. In #1 and #2, we ask
 to create a new `V` instance twice. But surely it should work in the scope of a
@@ -1949,6 +1940,102 @@ Now the default relocation constructor of `D` will construct `V`, then invoke `B
 relocation constructor. If `D` initializes `V` with relocation semantics,
 then `B` relocation constructor will access uninitialized memory at #3!
 
+C++ is already a language with many pitfalls ; one common source of errors is
+dangling references, and should virtual bases be allowed to be relocated, then
+it would create even more of them...
+We propose a twofold solution:
+
+- Virtual bases cannot be relocated ;
+- We introduce the notion of [semi-complete](#decompose-virtual-semi-complete) objects.
+
+#### Virtual bases cannot be relocated #### {#decompose-virtual-no-reloc}
+
+Virtual bases are not allowed to be the operand of the `reloc` operator
+(otherwise the `reloc` expression is ill-formed).
+
+Instead virtual bases can only be moved-from or copied. This alone guarantees
+that no relocation constructor will attempt to relocate a virtual base
+(the default implementation moves virtual bases).
+
+```c++
+// Given D definition in the above section
+void foo(D obj reloc)
+{
+    auto v = reloc obj.V; // ill-formed
+    auto c = reloc obj.C; // #1: okay, the V base of obj.C
+    auto b = reloc obj.B; // #2: okay, the V base of obj.B
+}
+```
+
+At #1 and #2, the new rule ensures that the virtual base is not relocated,
+but it states nothing of the lifetime of the virtual base. This is where
+[semi-complete](#decompose-virtual-semi-complete) objects come in handy.
+
+#### Semi-complete objects #### {#decompose-virtual-semi-complete}
+
+We introduce the notion of *semi-complete* objects. A *semi-complete* object is a
+direct base of a decomposed object, and which inherits (maybe indirectly) of at
+least one virtual base.
+
+```c++
+// Given D definition in the above section
+void foo(D obj reloc)
+{
+    // obj.B and obj.C are semi-complete objects
+    // obj.A, obj.V, and obj._d are complete objects.
+}
+```
+
+*semi-complete* objects do not own their virtual bases. This means that:
+
+- when they are destroyed, they do not invoke the destructor of their virtual
+    bases ;
+- when they are passed as parameters of a relocation constructor, it
+    will not implicitly invoke the destructor of their virtual
+    bases.
+    (Using relocation semantics on the virtual bases is also forbidden,
+    as [seen above](#decompose-virtual-no-reloc)) ;
+- no relocation, move or copy elision can happen from a *semi-complete* object.
+    Whether an object is *semi-complete* is established by a static analysis,
+    which remains local to the scope of the object.
+
+```c++
+void foo(D obj reloc)
+{
+    auto c reloc = reloc obj.C; // #1
+}
+
+B bar(D obj reloc)
+{
+    return obj.B; // #2
+}
+```
+
+Expressions such as #1 may simply, thanks to relocation elision,
+further decompose `obj.C` without actually performing any relocation.
+But because `obj.C` is *semi-complete*, then no relocation elision can happen,
+and `c` object is initialized
+using relocation semantics. `c.V` is move-constructed from the virtual base of
+`obj.C`. `c.B` is *semi-complete* (as `obj.B`).
+
+Return value optimization cannot happen in #2 as `obj.B` is *semi-complete*.
+This ensures that the returned
+value of `bar` is a *complete* object.
+
+#### Discussion on the solution #### {#decompose-virtual-discuss}
+
+With the established rules, the snippet we had becomes safe, at the cost
+of no relocation from virtual bases:
+
+```c++
+void foo(D obj reloc)
+{
+    auto c = reloc obj.C; // obj.V is left in a moved-from state
+    auto b = reloc obj.B; // obj.V is reused to initialize b
+    // obj.V is implicitly destroyed
+}
+```
+
 We don't believe this to be a blocking limitation as some mitigation remains possible,
 through a custom `T T::exchange(T rhs)` function. Such a function is recommended
 to be implemented for any relocate-only type (see `std::box::exchange`). See
@@ -1970,44 +2057,20 @@ struct B : public virtual V
 
     int _b;
 };
-struct C : public virtual V
+struct C : public B
 {
-    C(C src reloc) : V{src.V.exchange({})}, _c{reloc src._c} {}
+    C(C src reloc) : V{src.V.exchange({})}, B{reloc src.B}, _c{reloc src._c} {}
 
     int _c;
 };
 
-struct D : public B, public C
+struct D : public A, public B, public C
 {
-    D(D src reloc) : V{src.V.exchange({})}, B{reloc src.B}, C{reloc src.C},
-        _d{reloc src._d} {}
+    D(D src reloc) : V{src.V.exchange({})}, A{reloc src.A},
+        B{reloc src.B}, C{reloc src.C}, _d{reloc src._d} {}
 
     int _d;
 };
-```
-
-NOTE: You might think that tracking whether an object owns its virtual bases
-may be difficult. On the contrary, it's actually straightforward: only subobjects
-of decomposed objects are not in charge of their virtual bases, all the rest
-are. See for instance:
-
-```c++
-struct V { int _v; };
-struct B : public virtual V { int _b; };
-struct C : public virtual V { int _c; };
-struct D : public B, public C
-{
-    int _d;
-};
-
-void foo(D obj reloc)
-{
-    B b reloc = reloc obj.B;
-    assert(&obj.V == &b.V);
-    // None of obj.B, obj.C and b.V have the ownership over their virtual base
-    C c = reloc obj.C;
-    // c has the ownership over its virtual base
-}
 ```
 
 ### Getting the address of an object after its decomposition ### {#decompose-obj-addr}
@@ -2152,10 +2215,9 @@ if any of the following conditions is not satisfied:
 
 - all subobjects of `T` are accessible. They all need to be
     since their destructor will be called if not relocated ;
-- all declared special member functions of `T` are declared either as
-    defaulted or deleted.
-    Note that private access privilege does not allow an implicit decomposition
-    if any special member function is user-provided.
+- `T`'s eligible destructor is not user-provided.
+    Unlike in the explicit decomposition, private access privilege does not
+    allow to bypass this check.
 
 #### Examples #### {#implicit-decomposition-examples}
 
@@ -2195,8 +2257,8 @@ public:
     static std::string GetDefaultName()
     {
         return V()._name; /* implicit decomposition is ill-formed
-            because T has a private member and user-defined special member
-            functions. V()._name remains an xvalue.
+            because T has a user-defined destructor.
+            V()._name remains an xvalue.
             Note that this code is valid today, and should
             implicit decomposition be legal in that case (because of the private
             access privilege), then the expression
@@ -2450,7 +2512,7 @@ For instance:
 void foo(T x)
 {
     decltype(reloc x) y = reloc x; // well-formed
-    decltype(reloc x, (reloc x).m) z = y.m; // well-formed
+    decltype((reloc x, (reloc x).m)) z = y.m; // well-formed
 }
 ```
 
@@ -3493,11 +3555,9 @@ A virtual slicing function definition of a class-type `T` is ill-formed if:
 All points but the first merely ensure that all the functions which the slicing
 function may call are invocable from that context.
 
-Note that if the destructor of `T` is user-provided, then because the slicing
-function proceeds by successive object decompositions and subobject destructions,
-`T`'s destructor *may not be called* (it is called in the case the source and
-target types are the same, and that type does not provide an eligible relocation
-constructor). This may result in some unwanted behavior such as:
+The virtual slicing function may only perform *implicit* decompositions,
+which is enforced by the fact that the destructor must not be user-provided.
+This design decision is motivated by the following example:
 
 ```c++
 struct B
@@ -3509,6 +3569,7 @@ struct D : public B
 {
 public:
     D() : _ptr{new T} {}
+    D(D reloc) = default;
     ~D() override { delete _ptr; }
 private:
     T* _ptr;
@@ -3566,6 +3627,19 @@ The implicitly-declared or defaulted relocation assignment operator for class `T
 
 A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.
+
+#### Exception specification #### {#reloc-assign-op-noexcept}
+
+Just like the relocation constructor, the relocation assignment operator is
+allowed to terminate  by throwing an exception.
+
+A relocation assignment operator that is implicitly declared or defaulted on its first
+declaration has a `noexcept(true)` noexcept specification unless any assignment operator
+or destructor of a subobject that the default definition would call is
+*potentially-throwing*.
+
+A non-defaulted user-declared relocation constructor with unspecified noexcept
+specification is *potentially-throwing*.
 
 ### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
 
@@ -4039,10 +4113,10 @@ has almost no side effect. Most notably, the implicit decomposition is only lega
 if the destructor is defaulted, meaning that the destructor body can safely
 be bypassed.
 
-Structured decomposition relies on implicit decomposition especially for its
-lack of side effects, which means it is much simpler to use.
 The intent of structured decomposition is merely to allow the relocation of the
-identifiers.
+identifiers, not to bypass some resource management code enforced by the destructor.
+Hence structured decomposition relies on implicit decomposition especially for its
+lack of side effects, making it much safer to use.
 
 Alternatively structured decomposition could have been explicit, emphasized by
 the `reloc` keyword. But that would have implied added complexity, as developers
@@ -4066,7 +4140,7 @@ public:
 }
 ```
 
-This kind of gotchas are not be possible with implicit decomposition (the above
+This kind of gotchas are not possible with implicit decomposition (the above
 code would fallback to structured bindings, and the return statement would be
 ill-formed). This motivated us to rely on implicit object decomposition
 for structured decomposition.
@@ -4853,12 +4927,12 @@ similarly to what is done today with `std::move`.
 ```c++
 struct A
 {
-    std::box<T> take_box() { return box_.exchange(); }
+    std::box<T> take_box() { return box_.exchange({}); }
     // [...]
 };
 
 std::pair<int, std::box<T>> p = getPair();
-foo(p.second.exchange());
+foo(p.second.exchange({}));
 ```
 
 Such an `exchange` function can be implemented **without resorting to destroy

@@ -1564,7 +1564,7 @@ Possible extra rowspan handling
   <meta content="Bikeshed version 618007319, updated Thu Jun 26 17:23:55 2025 -0700" name="generator">
   <link href="https://htmlpreview.github.io/?https://github.com/SebastienBini/cpp-relocation-proposal/blob/main/relocation.html" rel="canonical">
   <link href="https://isocpp.org/favicon.ico" rel="icon">
-  <meta content="07270474504115230cec10957e87036f69e04997" name="revision">
+  <meta content="7a130bd80b06736b243144484caabdd61220eb68" name="revision">
   <meta content="dark light" name="color-scheme">
 <style>/* Boilerplate: style-autolinks */
 .css.css, .property.property, .descriptor.descriptor {
@@ -2210,22 +2210,31 @@ supports for relocate-only types, library changes and the impact of the existing
           <li><a href="#decomposed-unevaluated"><span class="secno">5.2.4.5</span> <span class="content">Decomposed object as an unevaluated operand</span></a>
           <li><a href="#decomposed-expr-others"><span class="secno">5.2.4.6</span> <span class="content">Other expressions with a decomposed objects</span></a>
          </ol>
+        <li><a href="#decomposed-reloc"><span class="secno">5.2.5</span> <span class="content">Decomposed subobjects in reloc expressions</span></a>
         <li>
-         <a href="#decomposed-reloc"><span class="secno">5.2.5</span> <span class="content">Decomposed subobjects in reloc expressions</span></a>
+         <a href="#decompose-virtual-bases"><span class="secno">5.2.6</span> <span class="content">Decomposition and virtual bases</span></a>
          <ol class="toc">
-          <li><a href="#reloc-virtual-bases"><span class="secno">5.2.5.1</span> <span class="content">Relocation and virtual bases</span></a>
+          <li><a href="#decompose-virtual-bases-problem"><span class="secno">5.2.6.1</span> <span class="content">Problem description</span></a>
+          <li><a href="#decompose-virtual-no-reloc"><span class="secno">5.2.6.2</span> <span class="content">Virtual bases cannot be relocated</span></a>
+          <li><a href="#decompose-virtual-semi-complete"><span class="secno">5.2.6.3</span> <span class="content">Semi-complete objects</span></a>
+          <li><a href="#decompose-virtual-discuss"><span class="secno">5.2.6.4</span> <span class="content">Discussion on the solution</span></a>
          </ol>
-        <li><a href="#decompose-obj-addr"><span class="secno">5.2.6</span> <span class="content">Getting the address of an object after its decomposition</span></a>
-        <li><a href="#decompose-lambda"><span class="secno">5.2.7</span> <span class="content">Decomposition of a lambda closure type</span></a>
-        <li><a href="#decompose-tmp"><span class="secno">5.2.8</span> <span class="content">Implicit decomposition of temporaries</span></a>
-        <li><a href="#decompose-value-param"><span class="secno">5.2.9</span> <span class="content">Decomposition of value parameters</span></a>
-        <li><a href="#dot-reloc-constexpr"><span class="secno">5.2.10</span> <span class="content">Decomposition in constexpr</span></a>
+        <li><a href="#decompose-obj-addr"><span class="secno">5.2.7</span> <span class="content">Getting the address of an object after its decomposition</span></a>
+        <li><a href="#decompose-lambda"><span class="secno">5.2.8</span> <span class="content">Decomposition of a lambda closure type</span></a>
         <li>
-         <a href="#decomposed-object-examples"><span class="secno">5.2.11</span> <span class="content">Examples</span></a>
+         <a href="#implicit-decomposition"><span class="secno">5.2.9</span> <span class="content">Implicit decomposition of temporaries</span></a>
          <ol class="toc">
-          <li><a href="#decomposed-object-ex-nominal"><span class="secno">5.2.11.1</span> <span class="content">Nominal case</span></a>
-          <li><a href="#decomposed-object-ex-extractor"><span class="secno">5.2.11.2</span> <span class="content">Custom extractor</span></a>
-          <li><a href="#decomposed-object-putative-release"><span class="secno">5.2.11.3</span> <span class="content">Putative std::unique_ptr::release</span></a>
+          <li><a href="#implicit-decomposition-ill-formed"><span class="secno">5.2.9.1</span> <span class="content">Ill-formed implicit decomposition</span></a>
+          <li><a href="#implicit-decomposition-examples"><span class="secno">5.2.9.2</span> <span class="content">Examples</span></a>
+         </ol>
+        <li><a href="#decompose-value-param"><span class="secno">5.2.10</span> <span class="content">Decomposition of value parameters</span></a>
+        <li><a href="#dot-reloc-constexpr"><span class="secno">5.2.11</span> <span class="content">Decomposition in constexpr</span></a>
+        <li>
+         <a href="#decomposed-object-examples"><span class="secno">5.2.12</span> <span class="content">Examples</span></a>
+         <ol class="toc">
+          <li><a href="#decomposed-object-ex-nominal"><span class="secno">5.2.12.1</span> <span class="content">Nominal case</span></a>
+          <li><a href="#decomposed-object-ex-extractor"><span class="secno">5.2.12.2</span> <span class="content">Custom extractor</span></a>
+          <li><a href="#decomposed-object-putative-release"><span class="secno">5.2.12.3</span> <span class="content">Putative std::unique_ptr::release</span></a>
          </ol>
        </ol>
       <li>
@@ -2275,6 +2284,7 @@ supports for relocate-only types, library changes and the impact of the existing
          <ol class="toc">
           <li><a href="#reloc-assign-operator-implicit"><span class="secno">5.5.1.1</span> <span class="content">Implicit declaration</span></a>
           <li><a href="#reloc-assign-declaration-deleted"><span class="secno">5.5.1.2</span> <span class="content">Deleted implicitly-declared or defaulted relocation assignment operator</span></a>
+          <li><a href="#reloc-assign-op-noexcept"><span class="secno">5.5.1.3</span> <span class="content">Exception specification</span></a>
          </ol>
         <li><a href="#aliased-reloc-assign"><span class="secno">5.5.2</span> <span class="content">Relocation assignment operator parameter relocation elision</span></a>
         <li>
@@ -2293,8 +2303,12 @@ supports for relocate-only types, library changes and the impact of the existing
       <li>
        <a href="#structured-decomposition"><span class="secno">5.7</span> <span class="content">Structured decomposition</span></a>
        <ol class="toc">
-        <li><a href="#structured-decomposition-discussion"><span class="secno">5.7.1</span> <span class="content">Discussion</span></a>
-        <li><a href="#structured-decomposition-declaration"><span class="secno">5.7.2</span> <span class="content">Structured decomposition declaration</span></a>
+        <li><a href="#structured-decomposition-discussion"><span class="secno">5.7.1</span> <span class="content">Motivation</span></a>
+        <li>
+         <a href="#structured-decomposition-declaration"><span class="secno">5.7.2</span> <span class="content">Structured decomposition declaration</span></a>
+         <ol class="toc">
+          <li><a href="#structured-decomposition-implicit"><span class="secno">5.7.2.1</span> <span class="content">Implicit vs explicit decomposition</span></a>
+         </ol>
         <li>
          <a href="#structured-decomposition-obj-decomposition"><span class="secno">5.7.3</span> <span class="content">Structured decomposition protocols</span></a>
          <ol class="toc">
@@ -2452,15 +2466,15 @@ tripartite value system as we propose relocation to happen from prvalues.</p>
 where today’s C++ falls short, how we intend to improve, and each time illustrated with an
 example.</p>
    <h5 class="heading settled" data-level="1.1.1.2" id="changes-from-r3-dot-reloc"><span class="secno">1.1.1.2. </span><span class="content">Generalization of object decomposition</span><a class="self-link" href="#changes-from-r3-dot-reloc"></a></h5>
-   <p>One of the major changes we introduced is the generalization of the decomposition
+   <p>One of the major changes we introduced is the generalization of the object decomposition
 feature, which was introduced by the "decomposing functions".
 The <code class="highlight"><c- n>reloc</c-></code> keyword can now be used to decompose any object, not only
 the <code class="highlight"><c- k>this</c-></code> parameter of a member function.
 This has several advantages:</p>
    <ul>
     <li data-md>
-     <p>it greatly simplifies the writing and the understanding of the relocation constructor
-and reloc assignment operator ;</p>
+     <p>it greatly simplifies the writing and the understanding of the relocation constructor,
+relocation assignment operator and structured decomposition ;</p>
     <li data-md>
      <p>it simplifies the handling of relocate-only subobjects in user code ;</p>
     <li data-md>
@@ -3700,6 +3714,11 @@ For instance:</p>
     <c- n>T</c-> <c- n>obj2</c-> <c- n>reloc</c-><c- p>;</c-> <c- c1>// well-formed if T is a class-type</c->
 <c- p>}</c->
 </pre>
+   <p class="note" role="note"><span class="marker">NOTE:</span> We do not foresee any technical limitation that would prevent from
+decomposing objects with static storage.
+However since the point of the decomposition is to allow
+the relocation of the subobjects, and that the relocation of objects with non-automatic
+storage is not permitted, we do not see any good reason to authorize it.</p>
    <p>If several objects are declared in the same expression, then <code class="highlight"><c- n>reloc</c-></code> needs to be
 repeated for each object which the user wants to decompose:</p>
 <pre class="language-c++ highlight"><c- n>T</c-> <c- k>const</c-> <c- n>value</c-> <c- n>reloc</c-> <c- o>=</c-> <c- n>getValue</c-><c- p>(</c-><c- mi>0</c-><c- p>),</c-> <c- n>value2</c-> <c- o>=</c-> <c- n>getValue</c-><c- p>(</c-><c- mi>1</c-><c- p>),</c-> <c- n>value3</c-> <c- n>reloc</c-> <c- o>=</c-> <c- n>getValue</c-><c- p>(</c-><c- mi>2</c-><c- p>);</c->
@@ -3753,7 +3772,7 @@ function pointer, the parameter decomposition must still be honored.</p>
      <p>The object is <em>initialized</em> using the existing rules ;</p>
     <li data-md>
      <p>All its direct bases and non-static data members are now considered as
-distinct complete objects:</p>
+distinct <em>complete</em> (or <a href="#decompose-virtual-semi-complete">semi-complete</a>) objects:</p>
      <ul>
       <li data-md>
        <p>the decomposition does not odr-use any of the copy, move or relocation
@@ -3809,8 +3828,7 @@ the following conditions is not satisfied:</p>
      <p>all subobjects of <code class="highlight"><c- n>src</c-></code> are accessible. They all need to be
 since their destructor will be called if not relocated ;</p>
     <li data-md>
-     <p>all declared special member functions of <code class="highlight"><c- n>T</c-></code> are declared either as
-defaulted or deleted,
+     <p><code class="highlight"><c- n>T</c-></code>’s eligible destructor is not user-provided,
 <strong>or</strong> the call-site has private access privilege to <code class="highlight"><c- n>T</c-></code>.</p>
    </ul>
    <p>These requirements ensure that we can only decompose (a) compound types,
@@ -4053,65 +4071,57 @@ expression has the same effect as described in the
 <a href="#reloc-operator">reloc operator</a> section.</p>
    <p><strong class="advisement"> The only exception to the above is if the <code class="highlight"><c- n>reloc</c-></code> operand is a
 virtual base of a decomposed object. Virtual bases cannot be safely relocated,
-and hence their relocation is ill-formed (see <a href="#reloc-virtual-bases">below</a>).</strong></p>
+and hence their relocation is ill-formed (see <a href="#decompose-virtual-bases">below</a>).</strong></p>
    <p>For instance:</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>A</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_a</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>B</c-> <c- o>:</c-> <c- n>public</c-> <c- n>A</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- p>};</c->
 <c- k>struct</c-> <c- nc>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_v</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
+<c- k>struct</c-> <c- nc>B</c-> <c- o>:</c-> <c- n>public</c-> <c- n>A</c-><c- p>,</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c->
 <c- p>{</c->
-    <c- b>int</c-> <c- n>_d</c-><c- p>;</c->
+    <c- b>int</c-> <c- n>_c</c-><c- p>;</c->
 <c- p>};</c->
 
-<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>C</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
 <c- p>{</c->
-    <c- k>auto</c-> <c- n>d</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>_d</c-><c- p>;</c-> <c- c1>// valid</c->
-    <c- c1>// auto c = reloc obj._c; //&lt; ill-formed, _c is not a direct data member of D</c->
-    <c- c1>// auto a = reloc obj.A; //&lt; ill-formed, A is not a direct base of D</c->
+    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>_c</c-><c- p>;</c-> <c- c1>// valid</c->
+    <c- c1>// auto b = reloc obj._b; //&lt; ill-formed, _b is not a direct data member of C</c->
+    <c- c1>// auto a = reloc obj.A; //&lt; ill-formed, A is not a direct base of C</c->
     <c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// valid</c->
     <c- c1>// auto b2 = obj._b; //&lt; ill-formed, obj._b belongs to B base which has been relocated</c->
-    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// valid, but obj.V is in a moved-from state after</c->
-    <c- c1>// auto v = reloc obj.V; //&lt; ill-formed, V is a virtual base of D</c->
+    <c- c1>// auto v = reloc obj.V; //&lt; ill-formed, V is a virtual base of C</c->
     <c- k>auto</c-> <c- n>v</c-> <c- o>=</c-> <c- n>std</c-><c- o>::</c-><c- n>move</c-><c- p>(</c-><c- n>obj</c-><c- p>.</c-><c- n>V</c-><c- p>);</c-> <c- c1>// valid</c->
 <c- p>}</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.5.1" id="reloc-virtual-bases"><span class="secno">5.2.5.1. </span><span class="content">Relocation and virtual bases</span><a class="self-link" href="#reloc-virtual-bases"></a></h5>
+   <h4 class="heading settled" data-level="5.2.6" id="decompose-virtual-bases"><span class="secno">5.2.6. </span><span class="content">Decomposition and virtual bases</span><a class="self-link" href="#decompose-virtual-bases"></a></h4>
    <p>The current proposal does not support the relocation of virtual bases.
-Relocate-only types can hardly be a virtual base, and by extension
-virtual bases can hardly have relocate-only data members.</p>
-   <p>We argue that this limitation comes from <em>the
-very nature of non-trivial relocation and virtual bases</em>.
-Let’s consider the following snippet:</p>
-<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_v</c-><c- p>;</c-> <c- p>};</c->
+Virtual bases can hardly be relocate-only types, and by extension,
+can hardly have relocate-only data members.</p>
+   <h5 class="heading settled" data-level="5.2.6.1" id="decompose-virtual-bases-problem"><span class="secno">5.2.6.1. </span><span class="content">Problem description</span><a class="self-link" href="#decompose-virtual-bases-problem"></a></h5>
+   <p>Let’s consider the following snippet:</p>
+<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>A</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_a</c-><c- p>;</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_v</c-><c- p>;</c-> <c- p>};</c->
 <c- k>struct</c-> <c- nc>B</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
+<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- p>};</c->
+<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>A</c-><c- p>,</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
 <c- p>{</c->
     <c- b>int</c-> <c- n>_d</c-><c- p>;</c->
 <c- p>};</c->
 
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
 <c- p>{</c->
-    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// #1. valid, but obj.V is in a moved-from state after</c->
-    <c- c1>// auto v = reloc obj.V; //&lt; ill-formed, V is a virtual base of D</c->
-    <c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// #2. valid</c->
+    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// #1</c->
+    <c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// #2</c->
 <c- p>}</c->
 </pre>
-   <p>Because of the decomposition, each subobject is now a complete object. However,
-because of the virtual inheritance, the virtual bases are shared across all the
-types that inherit from it. At #1, <code class="highlight"><c- n>C</c-></code>’s relocation constructor will initialize its own
-<code class="highlight"><c- n>V</c-></code> base, from <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code>. As <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code> does not have the ownership over its virtual base,
-then <code class="highlight"><c- n>C</c-></code> relocation constructor cannot use <code class="highlight"><c- n>V</c-></code> relocation constructor to
-initialize <code class="highlight"><c- n>V</c-></code>.
-Instead the move or copy constructor will be used. Otherwise, had the virtual
-base been relocated (in <code class="highlight"><c- n>C</c-></code> relocation constructor), then the expression
-<code class="highlight"><c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-></code> (#2)
-would have accessed uninitialized memory when it tried to initialize its
-own <code class="highlight"><c- n>V</c-></code> base (in <code class="highlight"><c- n>B</c-></code> relocation constructor).</p>
-   <p>C++ is already a language with many pitfalls ; one common source of errors is
-dangling references, and should virtual bases be allowed to be relocated, then
-it would create even more of them...</p>
+   <p>Now let’s see what happens if relocating from a virtual base were allowed.
+At #1, <code class="highlight"><c- n>C</c-></code>’s relocation constructor will initialize
+its own <code class="highlight"><c- n>V</c-></code> base, using relocation semantics. This leaves the <code class="highlight"><c- n>V</c-></code> base of <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code>
+in a destructed state. At #2, <code class="highlight"><c- n>B</c-></code>’s relocation constructor will attempt the
+same, except that the <code class="highlight"><c- n>V</c-></code> base of <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>B</c-></code> (which points to the same object as
+the <code class="highlight"><c- n>V</c-></code> base of <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code>) is already destructed.
+Alternatively,
+#1 may throw and stack unwinding will invoke the destructor of <code class="highlight"><c- n>V</c-></code> which is
+likewise already destructed.</p>
    <p>You might think that this issue arises from decomposition. In #1 and #2, we ask
 to create a new <code class="highlight"><c- n>V</c-></code> instance twice. But surely it should work in the scope of a
 relocation constructor right? Because then only one <code class="highlight"><c- n>V</c-></code> instance is created. But
@@ -4130,6 +4140,89 @@ then consider the following snippet, with an amended <code class="highlight"><c-
    <p>Now the default relocation constructor of <code class="highlight"><c- n>D</c-></code> will construct <code class="highlight"><c- n>V</c-></code>, then invoke <code class="highlight"><c- n>B</c-></code>
 relocation constructor. If <code class="highlight"><c- n>D</c-></code> initializes <code class="highlight"><c- n>V</c-></code> with relocation semantics,
 then <code class="highlight"><c- n>B</c-></code> relocation constructor will access uninitialized memory at #3!</p>
+   <p>C++ is already a language with many pitfalls ; one common source of errors is
+dangling references, and should virtual bases be allowed to be relocated, then
+it would create even more of them...
+We propose a twofold solution:</p>
+   <ul>
+    <li data-md>
+     <p>Virtual bases cannot be relocated ;</p>
+    <li data-md>
+     <p>We introduce the notion of <a href="#decompose-virtual-semi-complete">semi-complete</a> objects.</p>
+   </ul>
+   <h5 class="heading settled" data-level="5.2.6.2" id="decompose-virtual-no-reloc"><span class="secno">5.2.6.2. </span><span class="content">Virtual bases cannot be relocated</span><a class="self-link" href="#decompose-virtual-no-reloc"></a></h5>
+   <p>Virtual bases are not allowed to be the operand of the <code class="highlight"><c- n>reloc</c-></code> operator
+(otherwise the <code class="highlight"><c- n>reloc</c-></code> expression is ill-formed).</p>
+   <p>Instead virtual bases can only be moved-from or copied. This alone guarantees
+that no relocation constructor will attempt to relocate a virtual base
+(the default implementation moves virtual bases).</p>
+<pre class="language-c++ highlight"><c- c1>// Given D definition in the above section</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- k>auto</c-> <c- n>v</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>V</c-><c- p>;</c-> <c- c1>// ill-formed</c->
+    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// #1: okay, the V base of obj.C</c->
+    <c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// #2: okay, the V base of obj.B</c->
+<c- p>}</c->
+</pre>
+   <p>At #1 and #2, the new rule ensures that the virtual base is not relocated,
+but it states nothing of the lifetime of the virtual base. This is where
+<a href="#decompose-virtual-semi-complete">semi-complete</a> objects come in handy.</p>
+   <h5 class="heading settled" data-level="5.2.6.3" id="decompose-virtual-semi-complete"><span class="secno">5.2.6.3. </span><span class="content">Semi-complete objects</span><a class="self-link" href="#decompose-virtual-semi-complete"></a></h5>
+   <p>We introduce the notion of <em>semi-complete</em> objects. A <em>semi-complete</em> object is a
+direct base of a decomposed object, and which inherits (maybe indirectly) of at
+least one virtual base.</p>
+<pre class="language-c++ highlight"><c- c1>// Given D definition in the above section</c->
+<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- c1>// obj.B and obj.C are semi-complete objects</c->
+    <c- c1>// obj.A, obj.V, and obj._d are complete objects.</c->
+<c- p>}</c->
+</pre>
+   <p><em>semi-complete</em> objects do not own their virtual bases. This means that:</p>
+   <ul>
+    <li data-md>
+     <p>when they are destroyed, they do not invoke the destructor of their virtual
+bases ;</p>
+    <li data-md>
+     <p>when they are passed as parameters of a relocation constructor, it
+will not implicitly invoke the destructor of their virtual
+bases.
+(Using relocation semantics on the virtual bases is also forbidden,
+as <a href="#decompose-virtual-no-reloc">seen above</a>) ;</p>
+    <li data-md>
+     <p>no relocation, move or copy elision can happen from a <em>semi-complete</em> object.
+Whether an object is <em>semi-complete</em> is established by a static analysis,
+which remains local to the scope of the object.</p>
+   </ul>
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- k>auto</c-> <c- n>c</c-> <c- n>reloc</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// #1</c->
+<c- p>}</c->
+
+<c- n>B</c-> <c- nf>bar</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- k>return</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// #2</c->
+<c- p>}</c->
+</pre>
+   <p>Expressions such as #1 may simply, thanks to relocation elision,
+further decompose <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code> without actually performing any relocation.
+But because <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code> is <em>semi-complete</em>, then no relocation elision can happen,
+and <code class="highlight"><c- n>c</c-></code> object is initialized
+using relocation semantics. <code class="highlight"><c- n>c</c-><c- p>.</c-><c- n>V</c-></code> is move-constructed from the virtual base of
+<code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>C</c-></code>. <code class="highlight"><c- n>c</c-><c- p>.</c-><c- n>B</c-></code> is <em>semi-complete</em> (as <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>B</c-></code>).</p>
+   <p>Return value optimization cannot happen in #2 as <code class="highlight"><c- n>obj</c-><c- p>.</c-><c- n>B</c-></code> is <em>semi-complete</em>.
+This ensures that the returned
+value of <code class="highlight"><c- n>bar</c-></code> is a <em>complete</em> object.</p>
+   <h5 class="heading settled" data-level="5.2.6.4" id="decompose-virtual-discuss"><span class="secno">5.2.6.4. </span><span class="content">Discussion on the solution</span><a class="self-link" href="#decompose-virtual-discuss"></a></h5>
+   <p>With the established rules, the snippet we had becomes safe, at the cost
+of no relocation from virtual bases:</p>
+<pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
+<c- p>{</c->
+    <c- k>auto</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c-> <c- c1>// obj.V is left in a moved-from state</c->
+    <c- k>auto</c-> <c- n>b</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c-> <c- c1>// obj.V is reused to initialize b</c->
+    <c- c1>// obj.V is implicitly destroyed</c->
+<c- p>}</c->
+</pre>
    <p>We don’t believe this to be a blocking limitation as some mitigation remains possible,
 through a custom <code class="highlight"><c- n>T</c-> <c- n>T</c-><c- o>::</c-><c- n>exchange</c-><c- p>(</c-><c- n>T</c-> <c- n>rhs</c-><c- p>)</c-></code> function. Such a function is recommended
 to be implemented for any relocate-only type (see <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>::</c-><c- n>exchange</c-></code>). See
@@ -4149,43 +4242,22 @@ for instance:</p>
 
     <c- b>int</c-> <c- n>_b</c-><c- p>;</c->
 <c- p>};</c->
-<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c->
+<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c->
 <c- p>{</c->
-    <c- n>C</c-><c- p>(</c-><c- n>C</c-> <c- n>src</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>:</c-> <c- n>V</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>V</c-><c- p>.</c-><c- n>exchange</c-><c- p>({})},</c-> <c- n>_c</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>_c</c-><c- p>}</c-> <c- p>{}</c->
+    <c- n>C</c-><c- p>(</c-><c- n>C</c-> <c- n>src</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>:</c-> <c- n>V</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>V</c-><c- p>.</c-><c- n>exchange</c-><c- p>({})},</c-> <c- n>B</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>B</c-><c- p>},</c-> <c- n>_c</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>_c</c-><c- p>}</c-> <c- p>{}</c->
 
     <c- b>int</c-> <c- n>_c</c-><c- p>;</c->
 <c- p>};</c->
 
-<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
+<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>A</c-><c- p>,</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
 <c- p>{</c->
-    <c- n>D</c-><c- p>(</c-><c- n>D</c-> <c- n>src</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>:</c-> <c- n>V</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>V</c-><c- p>.</c-><c- n>exchange</c-><c- p>({})},</c-> <c- n>B</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>B</c-><c- p>},</c-> <c- n>C</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>C</c-><c- p>},</c->
-        <c- n>_d</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>_d</c-><c- p>}</c-> <c- p>{}</c->
+    <c- n>D</c-><c- p>(</c-><c- n>D</c-> <c- n>src</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>:</c-> <c- n>V</c-><c- p>{</c-><c- n>src</c-><c- p>.</c-><c- n>V</c-><c- p>.</c-><c- n>exchange</c-><c- p>({})},</c-> <c- n>A</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>A</c-><c- p>},</c->
+        <c- n>B</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>B</c-><c- p>},</c-> <c- n>C</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>C</c-><c- p>},</c-> <c- n>_d</c-><c- p>{</c-><c- n>reloc</c-> <c- n>src</c-><c- p>.</c-><c- n>_d</c-><c- p>}</c-> <c- p>{}</c->
 
     <c- b>int</c-> <c- n>_d</c-><c- p>;</c->
 <c- p>};</c->
 </pre>
-   <p class="note" role="note"><span class="marker">NOTE:</span> You might think that tracking whether an object owns its virtual bases
-may be difficult. On the contrary, it’s actually straightforward: only subobjects
-of decomposed objects are not in charge of their virtual bases, all the rest
-are. See for instance:</p>
-<pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_v</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>B</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_b</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>C</c-> <c- o>:</c-> <c- n>public</c-> <c- n>virtual</c-> <c- n>V</c-> <c- p>{</c-> <c- b>int</c-> <c- n>_c</c-><c- p>;</c-> <c- p>};</c->
-<c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-><c- p>,</c-> <c- n>public</c-> <c- n>C</c->
-<c- p>{</c->
-    <c- b>int</c-> <c- n>_d</c-><c- p>;</c->
-<c- p>};</c->
-
-<c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>D</c-> <c- n>obj</c-> <c- n>reloc</c-><c- p>)</c->
-<c- p>{</c->
-    <c- n>B</c-> <c- n>b</c-> <c- n>reloc</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>B</c-><c- p>;</c->
-    <c- n>assert</c-><c- p>(</c-><c- o>&amp;</c-><c- n>obj</c-><c- p>.</c-><c- n>V</c-> <c- o>==</c-> <c- o>&amp;</c-><c- n>b</c-><c- p>.</c-><c- n>V</c-><c- p>);</c->
-    <c- c1>// None of obj.B, obj.C and b.V have the ownership over their virtual base</c->
-    <c- n>C</c-> <c- n>c</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>obj</c-><c- p>.</c-><c- n>C</c-><c- p>;</c->
-    <c- c1>// c has the ownership over its virtual base</c->
-<c- p>}</c->
-</pre>
-   <h4 class="heading settled" data-level="5.2.6" id="decompose-obj-addr"><span class="secno">5.2.6. </span><span class="content">Getting the address of an object after its decomposition</span><a class="self-link" href="#decompose-obj-addr"></a></h4>
+   <h4 class="heading settled" data-level="5.2.7" id="decompose-obj-addr"><span class="secno">5.2.7. </span><span class="content">Getting the address of an object after its decomposition</span><a class="self-link" href="#decompose-obj-addr"></a></h4>
    <p>Sometimes retrieving the address of a decomposed object is needed.
 For instance this may be useful in relocation constructors, to adjust some
 external objects:</p>
@@ -4224,7 +4296,7 @@ returned pointer cannot be a pointer of the former object type.</p>
     <c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- b>void</c-> <c- k>const</c-><c- o>*</c-><c- p>,</c-> <c- n>decltype</c-><c- p>(</c-><c- n>obj</c-><c- p>.</c-><c- n>this</c-><c- p>)</c-><c- o>></c-><c- p>);</c->
 <c- p>}</c->
 </pre>
-   <h4 class="heading settled" data-level="5.2.7" id="decompose-lambda"><span class="secno">5.2.7. </span><span class="content">Decomposition of a lambda closure type</span><a class="self-link" href="#decompose-lambda"></a></h4>
+   <h4 class="heading settled" data-level="5.2.8" id="decompose-lambda"><span class="secno">5.2.8. </span><span class="content">Decomposition of a lambda closure type</span><a class="self-link" href="#decompose-lambda"></a></h4>
    <p>Lambda objects can be decomposed with the rules defined above.
 The decomposition can only happen from the lambda body and not from outside
 the lambda, as if its captures had private access.</p>
@@ -4249,7 +4321,7 @@ The objects captured by reference being ref-qualified, if they are used as
 <c- p>};</c->
 <c- k>auto</c-> <c- n>ptr2</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>getPtr</c-><c- p>.</c-><c- n>p</c-><c- p>;</c->
 </pre>
-   <h4 class="heading settled" data-level="5.2.8" id="decompose-tmp"><span class="secno">5.2.8. </span><span class="content">Implicit decomposition of temporaries</span><a class="self-link" href="#decompose-tmp"></a></h4>
+   <h4 class="heading settled" data-level="5.2.9" id="implicit-decomposition"><span class="secno">5.2.9. </span><span class="content">Implicit decomposition of temporaries</span><a class="self-link" href="#implicit-decomposition"></a></h4>
    <p>Temporary objects can be implicitly decomposed to allow relocations in the following
 scenarios (but non exclusively):</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>D</c-> <c- o>:</c-> <c- n>public</c-> <c- n>B</c-> <c- p>{};</c->
@@ -4300,18 +4372,19 @@ All the incurred decompositions must be legal, as defined
 below, or else the <em>implicit decomposition</em> is
 illegal. In particular, if any virtual base is to be decomposed,
 then the <em>implicit decomposition</em> is illegal.</p>
-   <p>An <em>implicit decomposition</em> of a temporary object of type <code class="highlight"><c- n>T</c-></code> is ill-formed
+   <h5 class="heading settled" data-level="5.2.9.1" id="implicit-decomposition-ill-formed"><span class="secno">5.2.9.1. </span><span class="content">Ill-formed implicit decomposition</span><a class="self-link" href="#implicit-decomposition-ill-formed"></a></h5>
+   <p>An <em>implicit decomposition</em> of an object of type <code class="highlight"><c- n>T</c-></code> is ill-formed
 if any of the following conditions is not satisfied:</p>
    <ul>
     <li data-md>
      <p>all subobjects of <code class="highlight"><c- n>T</c-></code> are accessible. They all need to be
 since their destructor will be called if not relocated ;</p>
     <li data-md>
-     <p>all declared special member functions of <code class="highlight"><c- n>T</c-></code> are declared either as
-defaulted or deleted.
-Note that private access privilege does not allow an implicit decomposition.</p>
+     <p><code class="highlight"><c- n>T</c-></code>’s eligible destructor is not user-provided.
+Unlike in the explicit decomposition, private access privilege does not
+allow to bypass this check.</p>
    </ul>
-   <p>For instance:</p>
+   <h5 class="heading settled" data-level="5.2.9.2" id="implicit-decomposition-examples"><span class="secno">5.2.9.2. </span><span class="content">Examples</span><a class="self-link" href="#implicit-decomposition-examples"></a></h5>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c->
 <c- p>{</c->
 <c- n>public</c-><c- o>:</c->
@@ -4331,12 +4404,12 @@ Note that private access privilege does not allow an implicit decomposition.</p>
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>></c-> <c- n>getPair</c-><c- p>();</c->
 
 
-<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>a</c-> <c- o>=</c-> <c- n>getT</c-><c- p>().</c-><c- n>_pub</c-><c- p>;</c-> <c- d>/* implicit-decomposition is ill-formed</c->
+<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>a</c-> <c- o>=</c-> <c- n>getT</c-><c- p>().</c-><c- n>_pub</c-><c- p>;</c-> <c- d>/* implicit decomposition is ill-formed</c->
 <c- d>    because T has a private member, move constructor is used */</c->
-<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getU</c-><c- p>().</c-><c- n>_pub</c-><c- p>[</c-><c- mi>2</c-><c- p>];</c-> <c- d>/* implicit-decomposition is well-formed</c->
+<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>b</c-> <c- o>=</c-> <c- n>getU</c-><c- p>().</c-><c- n>_pub</c-><c- p>[</c-><c- mi>2</c-><c- p>];</c-> <c- d>/* implicit decomposition is well-formed</c->
 <c- d>    std::string's relocation constructor is used; _pub[0] to _pub[4] but _pub[2]</c->
 <c- d>    are destroyed */</c->
-<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>().</c-><c- n>second</c-><c- p>;</c-> <c- d>/* implicit-decomposition is well-formed;</c->
+<c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>c</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>().</c-><c- n>second</c-><c- p>;</c-> <c- d>/* implicit decomposition is well-formed;</c->
 <c- d>    std::string's relocation constructor is used */</c->
 
 <c- n>class</c-> <c- n>V</c->
@@ -4346,9 +4419,9 @@ Note that private access privilege does not allow an implicit decomposition.</p>
     <c- o>~</c-><c- n>V</c-><c- p>();</c->
     <c- k>static</c-> <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- nf>GetDefaultName</c-><c- p>()</c->
     <c- p>{</c->
-        <c- k>return</c-> <c- n>V</c-><c- p>().</c-><c- n>_name</c-><c- p>;</c-> <c- d>/* implicit-decomposition is ill-formed</c->
-<c- d>            because T has a private member and user-defined special member</c->
-<c- d>            functions. V()._name remains an xvalue.</c->
+        <c- k>return</c-> <c- n>V</c-><c- p>().</c-><c- n>_name</c-><c- p>;</c-> <c- d>/* implicit decomposition is ill-formed</c->
+<c- d>            because T has a user-defined destructor.</c->
+<c- d>            V()._name remains an xvalue.</c->
 <c- d>            Note that this code is valid today, and should</c->
 <c- d>            implicit decomposition be legal in that case (because of the private</c->
 <c- d>            access privilege), then the expression</c->
@@ -4360,7 +4433,7 @@ Note that private access privilege does not allow an implicit decomposition.</p>
 <c- p>};</c->
 
 </pre>
-   <h4 class="heading settled" data-level="5.2.9" id="decompose-value-param"><span class="secno">5.2.9. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
+   <h4 class="heading settled" data-level="5.2.10" id="decompose-value-param"><span class="secno">5.2.10. </span><span class="content">Decomposition of value parameters</span><a class="self-link" href="#decompose-value-param"></a></h4>
    <p>As we have seen, decomposition ends the lifetime of the source object.
 The reader may be concerned that this may break existing ABIs, should the source
 object be a function parameter passed by value.
@@ -4432,11 +4505,11 @@ in the <a href="#ill-formed-decomposition">object decomposition requirements</a>
 <c- k>catch</c-> <c- p>(...)</c-> <c- p>{}</c->
 </pre>
    </table>
-   <h4 class="heading settled" data-level="5.2.10" id="dot-reloc-constexpr"><span class="secno">5.2.10. </span><span class="content">Decomposition in constexpr</span><a class="self-link" href="#dot-reloc-constexpr"></a></h4>
+   <h4 class="heading settled" data-level="5.2.11" id="dot-reloc-constexpr"><span class="secno">5.2.11. </span><span class="content">Decomposition in constexpr</span><a class="self-link" href="#dot-reloc-constexpr"></a></h4>
    <p>Object decomposition can be used in constexpr functions and
 constant-evaluated expressions.</p>
-   <h4 class="heading settled" data-level="5.2.11" id="decomposed-object-examples"><span class="secno">5.2.11. </span><span class="content">Examples</span><a class="self-link" href="#decomposed-object-examples"></a></h4>
-   <h5 class="heading settled" data-level="5.2.11.1" id="decomposed-object-ex-nominal"><span class="secno">5.2.11.1. </span><span class="content">Nominal case</span><a class="self-link" href="#decomposed-object-ex-nominal"></a></h5>
+   <h4 class="heading settled" data-level="5.2.12" id="decomposed-object-examples"><span class="secno">5.2.12. </span><span class="content">Examples</span><a class="self-link" href="#decomposed-object-examples"></a></h4>
+   <h5 class="heading settled" data-level="5.2.12.1" id="decomposed-object-ex-nominal"><span class="secno">5.2.12.1. </span><span class="content">Nominal case</span><a class="self-link" href="#decomposed-object-ex-nominal"></a></h5>
    <p>One of the main practical uses of object decomposition is for compound types, such as
 <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>. Note that this code would not be feasible without relocation and
 without decomposition.</p>
@@ -4447,7 +4520,7 @@ without decomposition.</p>
     <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>p</c-><c- p>.</c-><c- n>first</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>p</c-><c- p>.</c-><c- n>second</c-><c- p>);</c->
 <c- p>}</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.11.2" id="decomposed-object-ex-extractor"><span class="secno">5.2.11.2. </span><span class="content">Custom extractor</span><a class="self-link" href="#decomposed-object-ex-extractor"></a></h5>
+   <h5 class="heading settled" data-level="5.2.12.2" id="decomposed-object-ex-extractor"><span class="secno">5.2.12.2. </span><span class="content">Custom extractor</span><a class="self-link" href="#decomposed-object-ex-extractor"></a></h5>
 <pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c->
 <c- p>{</c->
 <c- n>private</c-><c- o>:</c->
@@ -4472,7 +4545,7 @@ without decomposition.</p>
 <c- k>auto</c-> <c- n>val1</c-> <c- o>=</c-> <c- n>getT</c-><c- p>().</c-><c- n>getVal</c-><c- p>();</c->
 <c- k>auto</c-> <c- n>val2</c-> <c- o>=</c-> <c- p>(</c-><c- n>reloc</c-> <c- n>src</c-><c- p>).</c-><c- n>getVal</c-><c- p>();</c->
 </pre>
-   <h5 class="heading settled" data-level="5.2.11.3" id="decomposed-object-putative-release"><span class="secno">5.2.11.3. </span><span class="content">Putative std::unique_ptr::release</span><a class="self-link" href="#decomposed-object-putative-release"></a></h5>
+   <h5 class="heading settled" data-level="5.2.12.3" id="decomposed-object-putative-release"><span class="secno">5.2.12.3. </span><span class="content">Putative std::unique_ptr::release</span><a class="self-link" href="#decomposed-object-putative-release"></a></h5>
 <pre class="language-c++ highlight"><c- n>template</c-> <c- o>&lt;</c-><c- n>class</c-> <c- n>T</c-><c- p>,</c-> <c- n>class</c-> <c- n>Deleter</c-><c- o>></c->
 <c- n>class</c-> <c- n>unique_ptr</c->
 <c- p>{</c->
@@ -4599,7 +4672,7 @@ and (b) the state of their operands do not change.</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>T</c-> <c- n>x</c-><c- p>)</c->
 <c- p>{</c->
     <c- n>decltype</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>)</c-> <c- n>y</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>x</c-><c- p>;</c-> <c- c1>// well-formed</c->
-    <c- n>decltype</c-><c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>,</c-> <c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>).</c-><c- n>m</c-><c- p>)</c-> <c- n>z</c-> <c- o>=</c-> <c- n>y</c-><c- p>.</c-><c- n>m</c-><c- p>;</c-> <c- c1>// well-formed</c->
+    <c- n>decltype</c-><c- p>((</c-><c- n>reloc</c-> <c- n>x</c-><c- p>,</c-> <c- p>(</c-><c- n>reloc</c-> <c- n>x</c-><c- p>).</c-><c- n>m</c-><c- p>))</c-> <c- n>z</c-> <c- o>=</c-> <c- n>y</c-><c- p>.</c-><c- n>m</c-><c- p>;</c-> <c- c1>// well-formed</c->
 <c- p>}</c->
 </pre>
    <h4 class="heading settled" data-level="5.3.3" id="reloc-dot-reloc-ill-formed-showcase"><span class="secno">5.3.3. </span><span class="content">Examples</span><a class="self-link" href="#reloc-dot-reloc-ill-formed-showcase"></a></h4>
@@ -5570,11 +5643,9 @@ slicing function, has a non-accessible slicing function ;</p>
    </ul>
    <p>All points but the first merely ensure that all the functions which the slicing
 function may call are invocable from that context.</p>
-   <p>Note that if the destructor of <code class="highlight"><c- n>T</c-></code> is user-provided, then because the slicing
-function proceeds by successive object decompositions and subobject destructions,
-<code class="highlight"><c- n>T</c-></code>’s destructor <em>may not be called</em> (it is called in the case the source and
-target types are the same, and that type does not provide an eligible relocation
-constructor). This may result in some unwanted behavior such as:</p>
+   <p>The virtual slicing function may only perform <em>implicit</em> decompositions,
+which is enforced by the fact that the destructor must not be user-provided.
+This design decision is motivated by the following example:</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>B</c->
 <c- p>{</c->
     <c- n>B</c-><c- p>(</c-><c- n>B</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
@@ -5584,6 +5655,7 @@ constructor). This may result in some unwanted behavior such as:</p>
 <c- p>{</c->
 <c- n>public</c-><c- o>:</c->
     <c- n>D</c-><c- p>()</c-> <c- o>:</c-> <c- n>_ptr</c-><c- p>{</c-><c- n>new</c-> <c- n>T</c-><c- p>}</c-> <c- p>{}</c->
+    <c- n>D</c-><c- p>(</c-><c- n>D</c-> <c- n>reloc</c-><c- p>)</c-> <c- o>=</c-> <c- k>default</c-><c- p>;</c->
     <c- o>~</c-><c- n>D</c-><c- p>()</c-> <c- n>override</c-> <c- p>{</c-> <c- n>delete</c-> <c- n>_ptr</c-><c- p>;</c-> <c- p>}</c->
 <c- n>private</c-><c- o>:</c->
     <c- n>T</c-><c- o>*</c-> <c- n>_ptr</c-><c- p>;</c->
@@ -5631,6 +5703,15 @@ an inline public decomposing relocation assignment operator.</p>
    </ul>
    <p>A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.</p>
+   <h5 class="heading settled" data-level="5.5.1.3" id="reloc-assign-op-noexcept"><span class="secno">5.5.1.3. </span><span class="content">Exception specification</span><a class="self-link" href="#reloc-assign-op-noexcept"></a></h5>
+   <p>Just like the relocation constructor, the relocation assignment operator is
+allowed to terminate  by throwing an exception.</p>
+   <p>A relocation assignment operator that is implicitly declared or defaulted on its first
+declaration has a <code class="highlight"><c- k>noexcept</c-><c- p>(</c->true<c- p>)</c-></code> noexcept specification unless any assignment operator
+or destructor of a subobject that the default definition would call is
+<em>potentially-throwing</em>.</p>
+   <p>A non-defaulted user-declared relocation constructor with unspecified noexcept
+specification is <em>potentially-throwing</em>.</p>
    <h4 class="heading settled" data-level="5.5.2" id="aliased-reloc-assign"><span class="secno">5.5.2. </span><span class="content">Relocation assignment operator parameter relocation elision</span><a class="self-link" href="#aliased-reloc-assign"></a></h4>
    <p>As with the relocation constructor, it is desirable that the parameter should be
 the source object <em>converted to</em> a prvalue, and not a temporary prvalue relocated
@@ -5983,7 +6064,7 @@ resolution rules that we propose, compilers may still be allowed to pick the
 prvalue overload if they analyse it may bring a performance boost, as P2665R0
 suggests.</p>
    <h3 class="heading settled" data-level="5.7" id="structured-decomposition"><span class="secno">5.7. </span><span class="content">Structured decomposition</span><a class="self-link" href="#structured-decomposition"></a></h3>
-   <h4 class="heading settled" data-level="5.7.1" id="structured-decomposition-discussion"><span class="secno">5.7.1. </span><span class="content">Discussion</span><a class="self-link" href="#structured-decomposition-discussion"></a></h4>
+   <h4 class="heading settled" data-level="5.7.1" id="structured-decomposition-discussion"><span class="secno">5.7.1. </span><span class="content">Motivation</span><a class="self-link" href="#structured-decomposition-discussion"></a></h4>
    <p><code class="highlight"><c- k>auto</c-> <c- p>[</c-><c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>]</c-> <c- o>=</c-> <c- n>foo</c-><c- p>();</c-> <c- n>sink</c-><c- p>(</c-><c- n>reloc</c-> <c- n>y</c-><c- p>);</c-></code> is ill-formed given the rules we
 established for <code class="highlight"><c- n>reloc</c-></code>. <code class="highlight"><c- n>x</c-></code> and <code class="highlight"><c- n>y</c-></code> are not complete objects but aliases to
 some anonymous object which the language creates behind the scene.</p>
@@ -5994,13 +6075,15 @@ relocation from a structured binding.</p>
 a complete, separate object, and not a name alias to some subobject. As such
 it would feel unnatural for them if they cannot relocate from a structured binding.</p>
    <p>We propose "structured decomposition" as an alternative to structured bindings.
-Instead of binding the subobjects of the initializer (<code class="highlight"><c- n>foo</c-><c- p>()</c-></code> in the example)
-to the new identifiers, the initializer is <em>decomposed</em> into the new identifiers.
-The new identifiers, being individual complete objects, can then be relocated.</p>
+The subobjects of the initializer are still bound to the new identifiers,
+except that they are now considered as complete objects thanks to the object
+decomposition feature.
+The new identifiers can then be relocated.</p>
    <h4 class="heading settled" data-level="5.7.2" id="structured-decomposition-declaration"><span class="secno">5.7.2. </span><span class="content">Structured decomposition declaration</span><a class="self-link" href="#structured-decomposition-declaration"></a></h4>
    <p>A structured decomposition declaration is syntactically identical to a structured
-binding, with the exception that no ref-qualifiers are allowed after the <code class="highlight"><c- k>auto</c-></code>
-type specifier.</p>
+binding, with the exception that
+no ref-qualifiers are allowed after the type specifier,
+and the declared object must have automatic storage.</p>
 <pre class="language-c++ highlight"><c- n>T</c-> <c- nf>foo</c-><c- p>();</c->
 <c- n>T</c-> <c- k>const</c-><c- o>&amp;</c-> <c- n>bar</c-><c- p>();</c->
 <c- n>T</c-> <c- nf>foobar</c-><c- p>();</c->
@@ -6009,18 +6092,54 @@ type specifier.</p>
 
 <c- k>auto</c-> <c- p>[</c-><c- n>x</c-><c- p>,</c-> <c- n>y</c-><c- p>]</c-> <c- o>=</c-> <c- n>foo</c-><c- p>();</c-> <c- c1>// matches structured decomposition declaration</c->
 <c- k>auto</c-> <c- k>const</c-> <c- p>[</c-><c- n>w</c-><c- p>,</c-> <c- n>z</c-><c- p>]</c-> <c- o>=</c-> <c- n>bar</c-><c- p>();</c-> <c- c1>// matches structured decomposition declaration</c->
-<c- k>auto</c-><c- o>&amp;&amp;</c-> <c- p>[</c-><c- n>a</c-><c- p>,</c-> <c- n>b</c-><c- p>]</c-> <c- o>=</c-> <c- n>foobar</c-><c- p>();</c-> <c- c1>// structured bindings will be used</c->
+<c- k>thread_local</c-> <c- k>auto</c-> <c- k>const</c-> <c- p>[</c-><c- n>w</c-><c- p>,</c-> <c- n>z</c-><c- p>]</c-> <c- o>=</c-> <c- n>bar</c-><c- p>();</c-> <c- c1>// matches structured bindings declaration</c->
+<c- k>auto</c-><c- o>&amp;&amp;</c-> <c- p>[</c-><c- n>a</c-><c- p>,</c-> <c- n>b</c-><c- p>]</c-> <c- o>=</c-> <c- n>foobar</c-><c- p>();</c-> <c- c1>// matches structured bindings declaration</c->
 </pre>
-   <p>The structured decomposition declaration further requires that the type of the
-expression that is used to initialize it
-supports any of the <a href="#structured-decomposition-obj-decomposition">structured decomposition protocol</a>.
-<strong>If not, then the declaration is simply a structured bindings declaration and will
-follow structured bindings rules.</strong></p>
+   <p>The structured decomposition declaration will initialize an anonymous object
+(named <code class="highlight"><c- n>e</c-></code> here) from an <em>initialization</em> expression.
+<code class="highlight"><c- n>e</c-></code> is then <em>implicitly</em> decomposed, and each of its subobjects is bound to the
+newly introduced identifiers.</p>
+   <p>For that purpose, there are three <a href="#structured-decomposition-obj-decomposition">initialization and binding protocols</a>.</p>
+   <h5 class="heading settled" data-level="5.7.2.1" id="structured-decomposition-implicit"><span class="secno">5.7.2.1. </span><span class="content">Implicit vs explicit decomposition</span><a class="self-link" href="#structured-decomposition-implicit"></a></h5>
+   <p>The decomposition that happens with structured decomposition is <em>implicit</em>:
+no <code class="highlight"><c- n>reloc</c-></code> keyword is required nor allowed to explicitly mark the decomposition.
+The implicit decomposition follows its own rules, described <a href="#implicit-decomposition">here</a>.</p>
+   <p>The difference between implicit and explicit decomposition is that the former
+has almost no side effect. Most notably, the implicit decomposition is only legal
+if the destructor is defaulted, meaning that the destructor body can safely
+be bypassed.</p>
+   <p>The intent of structured decomposition is merely to allow the relocation of the
+identifiers, not to bypass some resource management code enforced by the destructor.
+Hence structured decomposition relies on implicit decomposition especially for its
+lack of side effects, making it much safer to use.</p>
+   <p>Alternatively structured decomposition could have been explicit, emphasized by
+the <code class="highlight"><c- n>reloc</c-></code> keyword. But that would have implied added complexity, as developers
+would need to be careful of the side effect of the destructor, should they use
+structured decomposition from a code location with private access privilege.</p>
+<pre class="language-c++ highlight"><c- n>class</c-> <c- n>T</c->
+<c- p>{</c->
+    <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>></c-> <c- n>_name</c-><c- p>;</c->
+<c- n>public</c-><c- o>:</c->
+    <c- n>T</c-><c- p>();</c->
+    <c- o>~</c-><c- n>T</c-><c- p>();</c->
+
+    <c- k>static</c-> <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- o>></c-> <c- n>GetDefaultName</c-><c- p>()</c->
+    <c- p>{</c->
+        <c- k>auto</c-> <c- p>[</c-><c- n>name</c-><c- p>]</c-> <c- n>reloc</c-> <c- o>=</c-> <c- n>T</c-><c- p>();</c->
+        <c- c1>//   ^ beware that ~T() is no longer invoked...</c->
+        <c- k>return</c-> <c- n>name</c-><c- p>;</c->
+    <c- p>}</c->
+<c- p>}</c->
+</pre>
+   <p>This kind of gotchas are not possible with implicit decomposition (the above
+code would fallback to structured bindings, and the return statement would be
+ill-formed). This motivated us to rely on implicit object decomposition
+for structured decomposition.</p>
    <h4 class="heading settled" data-level="5.7.3" id="structured-decomposition-obj-decomposition"><span class="secno">5.7.3. </span><span class="content">Structured decomposition protocols</span><a class="self-link" href="#structured-decomposition-obj-decomposition"></a></h4>
    <p>As there are three binding protocols for structured bindings, there are likewise
-three "structured decomposition" protocols. If none
-of those protocols match, then the declaration is not a
-structured decomposition declaration, and structured bindings are considered.</p>
+three "structured decomposition" protocols that apply on the <em>initialization</em> expression.
+If none of those protocols match, then the declaration is considered to be
+a structured bindings declaration.</p>
    <p>The protocols are tested in the following order:</p>
    <ol>
     <li data-md>
@@ -6030,30 +6149,21 @@ structured decomposition declaration, and structured bindings are considered.</p
     <li data-md>
      <p>The <em>data members</em> protocol ;</p>
    </ol>
-   <p>In what follows, let <code class="highlight"><c- n>E</c-></code> be the type of the initializer expression (the type
-of the expression used to initialize the structured decomposition).</p>
-   <ul>
-    <li data-md>
-     <p>If <code class="highlight"><c- n>E</c-></code> is a glvalue, then let <code class="highlight"><c- n>S</c-></code> be the same as <code class="highlight"><c- n>E</c-></code>, but deprived of its
-ref-qualifiers.
-If one of the three protocols applies, then an anonymous object of type <code class="highlight"><c- n>S</c-></code> is
-constructed from the initializer, using the appropriate constructor.
-This anonymous object will be considered as the prvalue source object ;</p>
-    <li data-md>
-     <p>Otherwise (<code class="highlight"><c- n>E</c-></code> is a prvalue), then let <code class="highlight"><c- n>S</c-></code> be the same as <code class="highlight"><c- n>E</c-></code>. The initializer
-expression will be used as source object.</p>
-   </ul>
+   <p>In what follows, let <code class="highlight"><c- n>S</c-></code> be the type of the <em>initialization</em> expression,
+deprived of its reference and cv qualifiers.</p>
    <h5 class="heading settled" data-level="5.7.3.1" id="structured-decomposition-array"><span class="secno">5.7.3.1. </span><span class="content">array protocol</span><a class="self-link" href="#structured-decomposition-array"></a></h5>
-   <p>The <em>array</em> protocol is quite similar to that of structured bindings.
-For this protocol to apply, all the following conditions must be satisfied:</p>
+   <p>For this protocol to apply, all the following conditions must be satisfied:</p>
    <ul>
     <li data-md>
      <p><code class="highlight"><c- n>S</c-></code> must be an array-type of known bound ;</p>
     <li data-md>
      <p>the number of identifiers must equal the number of array elements ;</p>
    </ul>
-   <p>If this protocol applies, then the <em>i</em>-th identifier is constructed by
-relocation, move or copy constructor using the <em>i</em>-th array element as source object.</p>
+   <p>If this protocol applies, then <code class="highlight"><c- n>e</c-></code> is initialized from the <em>initialization</em>
+expression. The <em>i</em>-th identifier is bound to the <em>i</em>-th array element of <code class="highlight"><c- n>e</c-></code>
+(yields the same result and value category as the <code class="highlight"><c- n>e</c-><c- p>[</c-><c- n>i</c-><c- p>]</c-></code> expression,
+except that it is now a complete object).</p>
+   <p class="note" role="note"><span class="marker">NOTE:</span> This is the only proposed way to decompose an array.</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>foo</c-><c- p>()</c->
 <c- p>{</c->
     <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- k>const</c-> <c- n>strs</c-><c- p>[</c-><c- mi>3</c-><c- p>]</c-> <c- o>=</c-> <c- p>{</c-> <c- d>/* ... */</c-> <c- p>};</c->
@@ -6065,46 +6175,62 @@ relocation, move or copy constructor using the <em>i</em>-th array element as so
    <h5 class="heading settled" data-level="5.7.3.2" id="structured-decomposition-get_all"><span class="secno">5.7.3.2. </span><span class="content">get_all protocol</span><a class="self-link" href="#structured-decomposition-get_all"></a></h5>
    <p>The function <code class="highlight"><c- n>get_all</c-><c- p>(</c-><c- n>S</c-><c- p>)</c-></code> is looked-up using ADL-lookup. If there is
 no match, then this protocol does not apply.</p>
-   <p>If there is a match, then this function is called (copy-elision will happen,
-<code class="highlight"><c- n>S</c-></code> prvalue will share the same address as <code class="highlight"><c- n>get_all</c-></code> parameter slot).
+   <p>If there is a match, then this function is called using the <em>initialization</em>
+expression to initialize the function parameter.
 The returned type is tested recursively:</p>
    <ol>
     <li data-md>
-     <p>If <em>get_all</em> matches for the returned type, then we reapply it again ;</p>
+     <p>If <em>get_all</em> matches for the returned type, then we reapply it again using
+the returned value as new parameter ;</p>
     <li data-md>
-     <p>If <em>data members</em> protocol matches for the
-returned type, then it is applied ;</p>
+     <p>If <em>data members</em> protocol matches for the returned type, then it is applied ;</p>
     <li data-md>
      <p>If no protocol matches for the returned type, then the expression is
-<strong>ill-formed</strong> (structured bindings is not tried).</p>
+<strong>ill-formed</strong>. The expression is no longer a candidate for a structured
+bindings declaration as long as one <em>get_all</em> protocol matched.</p>
    </ol>
    <p>This follows the same recursive logic as <code class="highlight"><c- k>operator</c-><c- o>-></c-><c- p>()</c-></code>.
 We recursively call <code class="highlight"><c- n>get_all</c-></code> as long as the <em>get_all</em> protocol applies.
 When the recursion ends, we end up with a type which
 matches the <em>data member</em> protocol, or else the expression is ill-formed.</p>
-   <p class="note" role="note"><span class="marker">NOTE:</span> If there are concerns that <code class="highlight"><c- n>get_all</c-><c- p>(</c-><c- n>S</c-><c- p>)</c-></code> may clash with existing functions,
-then other names may be used, such as <code class="highlight"><c- n>__get_all__</c-></code> or <code class="highlight"><c- n>__decompose__</c-></code>.</p>
+   <p>This protocol does not say how <code class="highlight"><c- n>e</c-></code> is initialized and how the identifiers are
+bound. Those will happen at the end of the recursion by the <em>data member</em>
+protocol.</p>
+   <p class="note" role="note"><span class="marker">NOTE:</span> If there are concerns that <code class="highlight"><c- n>get_all</c-></code> may clash with existing functions,
+then other names may be used, such as <code class="highlight"><c- n>__get_all__</c-></code> or <code class="highlight"><c- n>__decompose__</c-></code> or
+even <code class="highlight"><c- k>operator</c-><c- p>[]</c-><c- n>reloc</c-></code>.</p>
    <h5 class="heading settled" data-level="5.7.3.3" id="structured-decomposition-dm"><span class="secno">5.7.3.3. </span><span class="content">data members protocol</span><a class="self-link" href="#structured-decomposition-dm"></a></h5>
-   <p>The <em>data members</em> protocol is also similar to that of structured bindings.
-For this protocol to apply, all the following conditions must be satisfied:</p>
+   <p>Let <code class="highlight"><c- n>t</c-></code> be the resulting expression after unrolling the <code class="highlight"><c- n>get_all</c-></code> recursion
+(<code class="highlight"><c- n>t</c-></code> is the <em>initialization</em> expression if the <em>get_all</em> protocol was not
+applied) and <code class="highlight"><c- n>T</c-></code> the type <code class="highlight"><c- n>t</c-></code>,
+deprived of its reference and cv qualifiers.</p>
+   <p>For this protocol to apply, all the following conditions must be satisfied:</p>
    <ul>
     <li data-md>
-     <p>every non-static data member of <code class="highlight"><c- n>S</c-></code> must be a direct member of <code class="highlight"><c- n>S</c-></code> or of the same
-base class of <code class="highlight"><c- n>S</c-></code> ;</p>
+     <p><code class="highlight"><c- n>T</c-></code> is a non-union class-type ;</p>
     <li data-md>
-     <p>the number of identifiers must equal the number of non-static data members ;</p>
+     <p>every non-static data member of <code class="highlight"><c- n>T</c-></code> must be an accessible direct member of
+<code class="highlight"><c- n>T</c-></code> or of the same base class of <code class="highlight"><c- n>T</c-></code>.
+Let’s call <code class="highlight"><c- n>B</c-></code> the class containing the data members ;</p>
     <li data-md>
-     <p><code class="highlight"><c- n>S</c-></code> may not have an anonymous union member ;</p>
+     <p>the number of identifiers must equal the number of non-static data members of <code class="highlight"><c- n>B</c-></code> ;</p>
     <li data-md>
-     <p><em>specific to structured decomposition:</em> for every base class, between <code class="highlight"><c- n>S</c-></code> and the base
-class the data members are found in, its decomposition is <a href="#ill-formed-decomposition">well-formed</a>.</p>
+     <p><code class="highlight"><c- n>B</c-></code> may not have an anonymous union member ;</p>
    </ul>
-   <p>If this protocol applies, then the <em>i</em>-th identifier is constructed as if by
-<code class="highlight"><c- n>reloc</c-> <c- n>s</c-><c- p>.</c-><c- n>i</c-></code>, <code class="highlight"><c- n>s</c-></code> being the decomposed base class holding all the data members
-and <code class="highlight"><c- n>i</c-></code> the <em>i</em>-th identifier.</p>
+   <p>If this protocol applies, then <code class="highlight"><c- n>e</c-></code> is initialized with <code class="highlight"><c- n>t</c-></code>. If <code class="highlight"><c- n>T</c-></code> is different
+from <code class="highlight"><c- n>B</c-></code>, then <code class="highlight"><c- n>e</c-></code> is recursively <em>implicitly</em> decomposed until the base class
+<code class="highlight"><c- n>B</c-></code> is reached. All the <em>implicit</em> decompositions must be
+<a href="#implicit-decomposition-ill-formed">legal</a> or else the declaration is ill-formed.</p>
+   <p>Finally, let’s call <code class="highlight"><c- n>b</c-></code> the decomposed object that contains the data members.
+The <em>i</em>-th identifier is bound to the <em>i</em>-th non-static data member of <code class="highlight"><c- n>b</c-></code>
+(it yields the same result and value category as the <code class="highlight"><c- n>b</c-><c- p>.</c-><c- n>i</c-></code> expression).</p>
    <h5 class="heading settled" data-level="5.7.3.4" id="structured-decomposition-tuple"><span class="secno">5.7.3.4. </span><span class="content">Implementation-defined library support</span><a class="self-link" href="#structured-decomposition-tuple"></a></h5>
-   <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code>, <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>array</c-></code> shall provide their own implementation
-of <code class="highlight"><c- n>get_all</c-></code>. The return type is implementation-defined (may rely on compiler magic).</p>
+   <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>, and <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>array</c-></code> shall provide their own implementation
+of <code class="highlight"><c- n>get_all</c-></code>. The return type is <em>implementation-defined</em> (may rely on compiler
+magic, which will return a flat structure containing all the tuple or array
+elements as data members).</p>
+   <p><code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>pair</c-></code> already complies with the <em>data member</em> protocol and does not need a
+<code class="highlight"><c- n>get_all</c-></code> implementation.</p>
    <p>This allows us to write things like:</p>
 <pre class="language-c++ highlight"><c- b>void</c-> <c- nf>bar</c-><c- p>(</c-><c- n>T</c-><c- p>);</c->
 <c- b>void</c-> <c- nf>foo</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>&amp;</c-> <c- n>v</c-><c- p>)</c->
@@ -6112,8 +6238,7 @@ of <code class="highlight"><c- n>get_all</c-></code>. The return type is impleme
     <c- d>/* This code uses a putative vector::pilfer(const_iterator) (not proposed),</c->
 <c- d>     * which removes a vector element at given iterator, and</c->
 <c- d>     * returns a pair with next valid iterator and relocated vector element. */</c->
-    <c- k>auto</c-> <c- p>[</c-><c- n>val</c-><c- p>,</c-> <c- n>it</c-><c- p>]</c-> <c- o>=</c-> <c- n>v</c-><c- p>.</c-><c- n>pilfer</c-><c- p>(</c-><c- n>v</c-><c- p>.</c-><c- n>begin</c-><c- p>()</c-> <c- o>+</c-> <c- mi>1</c-><c- p>);</c-> <c- d>/* calls get_all behind</c->
-<c- d>        the scene. */</c->
+    <c- k>auto</c-> <c- p>[</c-><c- n>val</c-><c- p>,</c-> <c- n>it</c-><c- p>]</c-> <c- o>=</c-> <c- n>v</c-><c- p>.</c-><c- n>pilfer</c-><c- p>(</c-><c- n>v</c-><c- p>.</c-><c- n>begin</c-><c- p>()</c-> <c- o>+</c-> <c- mi>1</c-><c- p>);</c->
     <c- n>bar</c-><c- p>(</c-><c- n>reloc</c-> <c- n>val</c-><c- p>);</c-> <c- d>/* can call reloc on val as it is not a structured binding */</c->
 <c- p>}</c->
 </pre>
@@ -6125,33 +6250,37 @@ a <code class="highlight"><c- n>get_all</c-></code> implementation for a custom 
 <c- p>{</c->
 <c- n>public</c-><c- o>:</c->
     <c- n>MyType</c-><c- p>();</c->
-    <c- n>MyType</c-><c- p>(</c-><c- n>MyType</c-><c- p>);</c->
+    <c- n>MyType</c-><c- p>(</c-><c- n>MyType</c-> <c- n>reloc</c-><c- p>);</c->
 
     <c- c1>// Possible implementation:</c->
     <c- k>auto</c-> <c- n>get_all</c-><c- p>(</c-><c- n>this</c-> <c- n>MyType</c-> <c- n>self</c-> <c- n>reloc</c-><c- p>)</c->
     <c- p>{</c->
-        <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>tuple</c-><c- p>{</c-><c- n>reloc</c-> <c- n>self</c-><c- p>.</c-><c- n>_name</c-><c- p>,</c-> <c- n>self</c-><c- p>.</c-><c- n>_flag</c-><c- p>,</c->
-            <c- o>!</c-><c- n>self</c-><c- p>.</c-><c- n>_nodes</c-><c- p>.</c-><c- n>empty</c-><c- p>()};</c->
+        <c- k>return</c-> <c- n>std</c-><c- o>::</c-><c- n>tuple</c-><c- p>{</c-><c- n>_rep</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>self</c-><c- p>.</c-><c- n>_name</c-><c- p>,</c-> <c- n>reloc</c-> <c- n>self</c-><c- p>.</c-><c- n>_box</c-><c- p>};</c->
     <c- p>}</c->
 
 <c- n>private</c-><c- o>:</c->
+    <c- n>Repository</c-><c- o>&amp;</c-> <c- n>_rep</c-><c- p>;</c->
     <c- n>std</c-><c- o>::</c-><c- n>string</c-> <c- n>_name</c-><c- p>;</c->
-    <c- b>bool</c-> <c- n>_flag</c-><c- p>;</c->
-    <c- n>std</c-><c- o>::</c-><c- n>vector</c-><c- o>&lt;</c-><c- n>Node</c-><c- o>*></c-> <c- n>_nodes</c-><c- p>;</c->
+    <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-> <c- k>const</c-> <c- n>_box</c-><c- p>;</c->
 
 <c- p>};</c->
 </pre>
-   <p>The implementation relies on a putative new constructor for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>
+   <p><strong class="advisement"> The implementation relies on a putative new constructor for <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>tuple</c-></code>
 (not proposed) which captures the tuple elements by value category,
-which allows to relocate objects into a tuple.</p>
+which allows to relocate objects into a tuple.</strong></p>
    <p>Then, in the following snippet:</p>
 <pre class="language-c++ highlight"><c- n>MyType</c-> <c- n>tp</c-><c- p>;</c->
-<c- k>auto</c-> <c- p>[</c-><c- n>name</c-><c- p>,</c-> <c- n>flag</c-><c- p>,</c-> <c- n>nodes</c-><c- p>]</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>tp</c-><c- p>;</c->
-<c- c1>// equivalent to: auto [name, flag, nodes] = get_all(get_all(reloc tp));</c->
+<c- k>auto</c-> <c- p>[</c-><c- n>rep</c-><c- p>,</c-> <c- n>name</c-><c- p>,</c-> <c- n>box</c-><c- p>]</c-> <c- o>=</c-> <c- n>reloc</c-> <c- n>tp</c-><c- p>;</c->
+<c- c1>// equivalent to: auto [rep, name, box] = get_all(get_all(reloc tp));</c->
 </pre>
    <p><code class="highlight"><c- n>MyType</c-></code>’s <code class="highlight"><c- n>get_all</c-></code> returns a tuple. <code class="highlight"><c- n>get_all</c-></code> is defined for tuples as well, so
 it is called again. The second return type won’t have a <code class="highlight"><c- n>get_all</c-></code> defined, hence
 the recursion stops and the <em>data member</em> protocol is used.</p>
+   <p>And we have:</p>
+<pre class="language-c++ highlight"><c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>Repository</c-><c- o>&amp;</c-><c- p>,</c-> <c- n>decltype</c-><c- p>(</c-><c- n>rep</c-><c- p>)</c-><c- o>></c-><c- p>);</c->
+<c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>string</c-><c- p>,</c-> <c- n>decltype</c-><c- p>(</c-><c- n>name</c-><c- p>)</c-><c- o>></c-><c- p>);</c->
+<c- k>static_assert</c-><c- p>(</c-><c- n>std</c-><c- o>::</c-><c- n>is_same_v</c-><c- o>&lt;</c-><c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- b>int</c-><c- o>></c-><c- p>,</c-> <c- n>decltype</c-><c- p>(</c-><c- n>box</c-><c- p>)</c-><c- o>></c-><c- p>);</c->
+</pre>
    <h2 class="heading settled" data-level="6" id="proposed-lib-changes"><span class="secno">6. </span><span class="content">Proposed library changes</span><a class="self-link" href="#proposed-lib-changes"></a></h2>
    <p class="note" role="note"><span class="marker">NOTE:</span> Adding support for relocation in the STL is another major change.
 What we are proposing to add for the moment is the bare minimum to allow
@@ -6710,12 +6839,12 @@ Such a function enables to relocate a data member (or any non-complete object)
 similarly to what is done today with <code class="highlight"><c- n>std</c-><c- o>::</c-><c- n>move</c-></code>.</p>
 <pre class="language-c++ highlight"><c- k>struct</c-> <c- nc>A</c->
 <c- p>{</c->
-    <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-> <c- n>take_box</c-><c- p>()</c-> <c- p>{</c-> <c- k>return</c-> <c- n>box_</c-><c- p>.</c-><c- n>exchange</c-><c- p>();</c-> <c- p>}</c->
+    <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- n>T</c-><c- o>></c-> <c- n>take_box</c-><c- p>()</c-> <c- p>{</c-> <c- k>return</c-> <c- n>box_</c-><c- p>.</c-><c- n>exchange</c-><c- p>({});</c-> <c- p>}</c->
     <c- c1>// [...]</c->
 <c- p>};</c->
 
 <c- n>std</c-><c- o>::</c-><c- n>pair</c-><c- o>&lt;</c-><c- b>int</c-><c- p>,</c-> <c- n>std</c-><c- o>::</c-><c- n>box</c-><c- o>&lt;</c-><c- n>T</c-><c- o>>></c-> <c- n>p</c-> <c- o>=</c-> <c- n>getPair</c-><c- p>();</c->
-<c- n>foo</c-><c- p>(</c-><c- n>p</c-><c- p>.</c-><c- n>second</c-><c- p>.</c-><c- n>exchange</c-><c- p>());</c->
+<c- n>foo</c-><c- p>(</c-><c- n>p</c-><c- p>.</c-><c- n>second</c-><c- p>.</c-><c- n>exchange</c-><c- p>({}));</c->
 </pre>
    <p>Such an <code class="highlight"><c- n>exchange</c-></code> function can be implemented <strong>without resorting to destroy
 and reconstruct</strong>, as it can take advantage of the private access to
