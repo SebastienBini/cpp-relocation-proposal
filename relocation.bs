@@ -803,6 +803,7 @@ T* y = new (buf) >>T(x);
 Here the lifetime of `x` has been ended as if by a destructor call, but the language
 is not aware of this,
 so firstly the user may erreoneously refer to `x` as if it was within its lifetime,
+so firstly the user may erroneously refer to `x` as if it was within its lifetime,
 and secondly if an object is not recreated in `x` by the time the block
 exits, the behavior is undefined by <a href="https://eel.is/c++draft/basic.life#9">[basic.life]/9</a>.
 Likewise, the language is not aware of the existence of `*y` so will not call its
@@ -1821,7 +1822,7 @@ void valid2(D d reloc)
 }
 void valid3(D d reloc)
 {
-    constexpr int D::* a = &B::_d;
+    constexpr int D::* a = &D::_d;
     d.*a = d._d; // valid
 }
 ```
@@ -1841,7 +1842,7 @@ decomposed, with just a few specificities:
 
 #### Other expressions with a decomposed objects #### {#decomposed-expr-others}
 
-Any the expression involving a decomposed object that is not covered in the
+Any expression involving a decomposed object that is not covered in the
 subsections above **is ill-formed**.
 
 In particular, with `obj` being a decomposed object, the evaluations of the
@@ -3116,7 +3117,7 @@ a defaulted relocation constructor, as the latter will have an impact on the ABI
 Hence in the following snippet:
 
 ```c++
-struc T memberwise_trivially_relocatable
+struct T memberwise_trivially_relocatable
 {
     T(T const&);
     T(T&&);
@@ -3144,13 +3145,13 @@ Refer to [the above section](#decomposed-state) to see how decomposition unrolls
 #### Virtual bases #### {#reloc-dtor-virtual-bases}
 
 Virtual bases have a special treatment in constructors and destructors:
-they are only contructed and destructed by the class-type of the complete object,
+they are only constructed and destructed by the class-type of the complete object,
 and not by its base classes.
 The relocation constructor has the same behavior.
 Hence it must be passed with the same extra information
 that is passed today to any constructor and to the destructor:
 (a) whether it is in charge of the construction of the virtual bases, and
-(b) whether it is in charge of the destructon of the virtual bases of the source object.
+(b) whether it is in charge of the destruction of the virtual bases of the source object.
 
 It follows that the relocation constructor will construct the virtual
 bases of the target object (respectively destroy them from the source object)
@@ -3554,7 +3555,7 @@ A possible implementation of the virtual slicing function is:
 The slicing function is defined in the same translation units of the destructors.
 If the destructor is inline, then so is the slicing function.
 
-#### Ill-fomed definition #### {#virtual-slicing-def-ill-formed}
+#### Ill-formed definition #### {#virtual-slicing-def-ill-formed}
 
 A virtual slicing function definition of a class-type `T` is ill-formed if:
 
