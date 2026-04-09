@@ -69,9 +69,10 @@ This tackles every flaw not solved by move-semantics:
     class invariant, as the relocated-from object is simultaneously destructed.
 
 Another major addition of this proposal is the object decomposition feature.
-Object decomposition enables to relocate data members of compound types
-(such as `std::pair`) and to easily write user-defined relocation constructors
-and relocation assignment operators.
+Object decomposition enables relocation of subobjects in compound types
+(such as `std::pair`), including non-trivial relocation through user-defined
+relocation constructors when needed, while keeping defaulted relocation
+constructors sufficient for most classes.
 
 ```c++
 pair<std::string const, int> const keyValue reloc = extractKV();
@@ -3223,8 +3224,10 @@ for each subobject `s` (of type `S`) of `T`, in declaration order:
 Although the default definition should cover almost all cases, users can provide
 their own definition of the relocation constructor. Doing so is relatively
 straightforward thanks to the object decomposition feature.
-The only reason we have found to write a custom relocation constructor is to adjust some
-self-referencing pointers, otherwise the default implementation should suffice.
+Custom relocation constructors are important to cover non-trivial relocation
+patterns in real code bases (for example self-referencing fixups and similar
+invariant adjustments), though the default implementation should suffice for
+most classes.
 
 Consider the following examples:
 
