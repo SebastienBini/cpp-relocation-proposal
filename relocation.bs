@@ -70,7 +70,7 @@ This tackles every flaw not solved by move-semantics:
 
 Another major addition of this proposal is the object decomposition feature.
 Object decomposition enables to relocate data members of compound types
-(such as `std::pair`) and to easily write used-defined relocation constructors
+(such as `std::pair`) and to easily write user-defined relocation constructors
 and relocation assignment operators.
 
 ```c++
