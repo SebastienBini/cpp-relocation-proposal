@@ -4432,6 +4432,11 @@ trivial relocation, then fallbacks to relocation, and then to move construction.
 We propose to introduce the following type traits, which all derive from
 `std::true_type` or `std::false_type` accordingly:
 
+As with existing copy/move traits, these relocation traits are behavioral:
+they test whether the corresponding construction or assignment expression is
+well-formed (and whether it is trivial or non-throwing), not whether a
+specific relocation special member function is explicitly declared.
+
 - `std::is_relocation_constructible<T>`: same as `std::is_constructible<T, T>` ;
 - `std::is_trivially_relocation_constructible<T>`: same as
     `std::is_trivially_constructible<T, T>` ;
