@@ -1586,10 +1586,10 @@ struct B { int _b; };
 struct D : B { std::string _d; };
 void foo(D const d reloc)
 {
-    // d.B designates the base of former d object
-    static_assert(std::is_same_v<decltype(d.B), B>);
+    // d.base<B> designates the base of former d object
+    static_assert(std::is_same_v<decltype(d.base<B>), B>);
     static_assert(std::is_same_v<decltype(d._d), std::string>);
-    bar(reloc d.B); // well-formed
+    bar(reloc d.base<B>); // well-formed
 }
 ```
 
@@ -1679,8 +1679,9 @@ void foo(D d reloc)
 {
     d._d = d._b_pub; // valid
     d._d = d._common; // ill-formed, d._common is ambiguous
-    d._d = d.C::_common; // ill-formed, disambiguation is not possible
-    d._d = d.C._common; // valid, see next section
+    d._d = d.C::_common; // ill-formed, disambiguation syntax is not supported
+    d._d = d.base<C>::_common; // ill-formed, qualified base-member access is not supported
+    d._d = d.base<C>._common; // valid, see next section
     d._d = d._b_priv; // ill-formed, _b_priv is private in the context
 }
 ```
@@ -1694,22 +1695,92 @@ it belongs to a base class that has been relocated.
 Any base class (even virtual and non-direct) of a decomposed object can be
 accessed through the expression:
 
-*decomposed-object* . *base-class-name*
+*decomposed-object* . base < *base-class-type* >
+
+The *base-class-type* may be dependent, for instance a template type
+parameter. In that case, the syntax is still allowed and its validity is
+checked at instantiation. A cv-qualified *base-class-type* makes the
+expression ill-formed.
+
+The `base` token is a contextual keyword in this grammar position only.
+It is needed to avoid ambiguities with normal data-member lookup.
+For instance, in current C++, the following is valid:
+
+```c++
+struct B { int B; };
+struct D : B { int B; };
+```
+
+With decomposition support, `obj.B` must keep its ordinary meaning (data-member
+lookup). Base access is therefore explicit as `obj.base<B>`.
+
+We intentionally do not preserve `obj.B::member` syntax for decomposed objects.
+Although `obj.B::member` is meaningful in current C++ when `obj` is not
+decomposed, supporting it here would introduce a second special-case base
+access path, while `obj.B` itself would still keep ordinary member-lookup
+semantics. Keeping `obj.base<B>` as the single spelling for selecting a base
+subobject makes the feature easier to specify and teach. A future proposal may
+choose to reintroduce qualified base-member access if implementation experience
+shows it is worthwhile.
+
+Likewise, for a decomposed object, `.base<...>` is always interpreted as base
+selection syntax, not as ordinary member lookup followed by template arguments.
+If the class defines a member named `base`, including a static variable
+template, that member must still be accessed through the usual class-based
+syntax such as `T::base<U>`.
+
+For example:
+
+```c++
+struct B {};
+struct D1 : B
+{
+    int base;
+};
+
+void foo(D1 obj reloc)
+{
+    auto b = obj.base<B>; // selects the B base subobject
+    auto x = obj.base; // names the non-static data member
+}
+
+struct D2 : B
+{
+    template <class T>
+    static constexpr T base = T{};
+};
+
+void bar(D2 obj reloc)
+{
+    auto b = obj.base<B>; // selects the B base subobject
+    auto x = D2::base<int>; // names the static variable template
+}
+```
+
+We picked this syntax because:
+
+- it is easy to parse (`<` disambiguates immediately after `.base`) ;
+- it is readable and explicit about selecting a base by type ;
+- it avoids introducing a second notation for base access such as `obj.B::member` ;
+- `base` remains available as an identifier outside this specific grammar form.
 
 If the base class is not a direct base class of the decomposed object type,
 then all non-direct base classes are looked-up. If there are no matching base
-classes, several matching base classes, or the matching base class is
-inaccessible, then the expression is ill-formed.
+classes, several matching base classes, the matching base class is
+cv-qualified, or the matching base class is inaccessible, then the expression
+is ill-formed.
 
 The expression returns a complete object only if the base class is a direct
 base of the decomposed object. Otherwise the returned object
 cannot be relocated without decomposing all
 intermediary classes on the inheritance path.
 
-Such expressions allow to access the base class as a data member, as if a data
-member named after the class had been declared in the decomposed object,
-sharing the same access specifier as that of its inheritance, not ref-qualified,
-and with no *cv-qualifiers*.
+Such expressions allow access to the selected base class as if a data member
+named after the class had been declared in the decomposed object, sharing the
+same access specifier as that of its inheritance. The expression
+*decomposed-object* . base<*base-class-type*> is an lvalue. Its type is the
+unqualified *base-class-type*. When used as a glvalue, it has the same
+*cv-qualifiers* as the corresponding base subobject of the decomposed object.
 
 You might think such expressions are identical to the following expression,
 had the object not been decomposed:
@@ -1719,7 +1790,7 @@ had the object not been decomposed:
 with `B` being the base class to access, and *cv* the *cv-qualifiers* that
 apply to the decomposed object. One notable difference though, is that the
 type of the `static_cast` expression is ref-qualified, while the type
-of *decomposed-object* . *base-class-name* expression is not.
+of *decomposed-object* . base<*base-class-type*> expression is not.
 
 For instance:
 ```c++
@@ -1734,16 +1805,16 @@ struct D : public B, public C
 
 void foo(D d reloc, D const d_const reloc)
 {
-    std::println(d.C._common); // valid
-    std::println(d.B._common); // valid
-    std::println(d.V._v); // valid
-    std::println(d.A._a); // valid, d._a is also okay
+    std::println(d.base<C>._common); // valid
+    std::println(d.base<B>._common); // valid
+    std::println(d.base<V>._v); // valid
+    std::println(d.base<A>._a); // valid, d._a is also okay
 
-    static_assert(std::is_same_v<B, decltype(d.B)>);
-    static_assert(std::is_same_v<B&, decltype((d.B))>);
+    static_assert(std::is_same_v<B, decltype(d.base<B>)>);
+    static_assert(std::is_same_v<B&, decltype((d.base<B>))>);
 
-    static_assert(std::is_same_v<B, decltype(d_const.B)>);
-    static_assert(std::is_same_v<B const&, decltype((d_const.B))>);
+    static_assert(std::is_same_v<B, decltype(d_const.base<B>)>);
+    static_assert(std::is_same_v<B const&, decltype((d_const.base<B>))>);
 }
 ```
 
@@ -1883,11 +1954,11 @@ void foo(C obj reloc)
 {
     auto c = reloc obj._c; // valid
     // auto b = reloc obj._b; //< ill-formed, _b is not a direct data member of C
-    // auto a = reloc obj.A; //< ill-formed, A is not a direct base of C
-    auto b = reloc obj.B; // valid
+    // auto a = reloc obj.base<A>; //< ill-formed, A is not a direct base of C
+    auto b = reloc obj.base<B>; // valid
     // auto b2 = obj._b; //< ill-formed, obj._b belongs to B base which has been relocated
-    // auto v = reloc obj.V; //< ill-formed, V is a virtual base of C
-    auto v = std::move(obj.V); // valid
+    // auto v = reloc obj.base<V>; //< ill-formed, V is a virtual base of C
+    auto v = std::move(obj.base<V>); // valid
 }
 ```
 
@@ -1913,17 +1984,17 @@ struct D : public A, public B, public C
 
 void foo(D obj reloc)
 {
-    auto c = reloc obj.C; // #1
-    auto b = reloc obj.B; // #2
+    auto c = reloc obj.base<C>; // #1
+    auto b = reloc obj.base<B>; // #2
 }
 ```
 
 Now let's see what happens if relocating from a virtual base were allowed.
 At #1, `C`'s relocation constructor will initialize
-its own `V` base, using relocation semantics. This leaves the `V` base of `obj.C`
+its own `V` base, using relocation semantics. This leaves the `V` base of `obj.base<C>`
 in a destructed state. At #2, `B`'s relocation constructor will attempt the
-same, except that the `V` base of `obj.B` (which points to the same object as
-the `V` base of `obj.C`) is already destructed.
+same, except that the `V` base of `obj.base<B>` (which points to the same object as
+the `V` base of `obj.base<C>`) is already destructed.
 Alternatively,
 #1 may throw and stack unwinding will invoke the destructor of `V` which is
 likewise already destructed.
@@ -1936,7 +2007,7 @@ then consider the following snippet, with an amended `B`:
 ```c++
 struct B : public virtual V
 {
-    B(B rhs reloc) : V(std::move(rhs.V)), _b(reloc rhs._b)
+    B(B rhs reloc) : V(std::move(rhs.base<V>)), _b(reloc rhs._b)
     {
         std::cout << rhs._v << std::endl; // #3
     }
@@ -1971,9 +2042,9 @@ that no relocation constructor will attempt to relocate a virtual base
 // Given D definition in the above section
 void foo(D obj reloc)
 {
-    auto v = reloc obj.V; // ill-formed
-    auto c = reloc obj.C; // #1: okay, the V base of obj.C
-    auto b = reloc obj.B; // #2: okay, the V base of obj.B
+    auto v = reloc obj.base<V>; // ill-formed
+    auto c = reloc obj.base<C>; // #1: okay, the V base of obj.base<C>
+    auto b = reloc obj.base<B>; // #2: okay, the V base of obj.base<B>
 }
 ```
 
@@ -1991,8 +2062,8 @@ least one virtual base.
 // Given D definition in the above section
 void foo(D obj reloc)
 {
-    // obj.B and obj.C are semi-complete objects
-    // obj.A, obj.V, and obj._d are complete objects.
+    // obj.base<B> and obj.base<C> are semi-complete objects
+    // obj.base<A>, obj.base<V>, and obj._d are complete objects.
 }
 ```
 
@@ -2012,23 +2083,23 @@ void foo(D obj reloc)
 ```c++
 void foo(D obj reloc)
 {
-    auto c reloc = reloc obj.C; // #1
+    auto c reloc = reloc obj.base<C>; // #1
 }
 
 B bar(D obj reloc)
 {
-    return obj.B; // #2
+    return obj.base<B>; // #2
 }
 ```
 
 Expressions such as #1 may simply, thanks to relocation elision,
-further decompose `obj.C` without actually performing any relocation.
-But because `obj.C` is *semi-complete*, then no relocation elision can happen,
+further decompose `obj.base<C>` without actually performing any relocation.
+But because `obj.base<C>` is *semi-complete*, then no relocation elision can happen,
 and `c` object is initialized
-using relocation semantics. `c.V` is move-constructed from the virtual base of
-`obj.C`. `c.B` is *semi-complete* (as `obj.B`).
+using relocation semantics. `c.base<V>` is move-constructed from the virtual base of
+`obj.base<C>`. `c.base<B>` is *semi-complete* (as `obj.base<B>`).
 
-Return value optimization cannot happen in #2 as `obj.B` is *semi-complete*.
+Return value optimization cannot happen in #2 as `obj.base<B>` is *semi-complete*.
 This ensures that the returned
 value of `bar` is a *complete* object.
 
@@ -2040,9 +2111,9 @@ of no relocation from virtual bases:
 ```c++
 void foo(D obj reloc)
 {
-    auto c = reloc obj.C; // obj.V is left in a moved-from state
-    auto b = reloc obj.B; // obj.V is reused to initialize b
-    // obj.V is implicitly destroyed
+    auto c = reloc obj.base<C>; // obj.base<V> is left in a moved-from state
+    auto b = reloc obj.base<B>; // obj.base<V> is reused to initialize b
+    // obj.base<V> is implicitly destroyed
 }
 ```
 
@@ -2063,21 +2134,21 @@ struct V
 };
 struct B : public virtual V
 {
-    B(B src reloc) : V{src.V.exchange({})}, _b{reloc src._b} {}
+    B(B src reloc) : V{src.base<V>.exchange({})}, _b{reloc src._b} {}
 
     int _b;
 };
 struct C : public B
 {
-    C(C src reloc) : V{src.V.exchange({})}, B{reloc src.B}, _c{reloc src._c} {}
+    C(C src reloc) : V{src.base<V>.exchange({})}, B{reloc src.base<B>}, _c{reloc src._c} {}
 
     int _c;
 };
 
 struct D : public A, public B, public C
 {
-    D(D src reloc) : V{src.V.exchange({})}, A{reloc src.A},
-        B{reloc src.B}, C{reloc src.C}, _d{reloc src._d} {}
+    D(D src reloc) : V{src.base<V>.exchange({})}, A{reloc src.base<A>},
+        B{reloc src.base<B>}, C{reloc src.base<C>}, _d{reloc src._d} {}
 
     int _d;
 };
@@ -2173,7 +2244,7 @@ D getD();
 std::pair<std::string, std::string> getPair();
 
 B b = getD(); /* under conditions, equivalent to:
-    auto d reloc = getD(); B b = reloc d.B; */
+    auto d reloc = getD(); B b = reloc d.base<B>; */
 std::string s = getPair().first; /* under conditions, equivalent to:
     auto pair reloc = getPair(); std::string s = reloc pair.first; */
 ```
@@ -3180,7 +3251,7 @@ void foo(C);
 void bar()
 {
     D const d reloc = getD();
-    foo(reloc d.C); // #1
+    foo(reloc d.base<C>); // #1
 }
 ```
 
@@ -3195,10 +3266,10 @@ parameter of `foo`:
 
 After #1:
 
-- `d.B` still points to valid data, albeit that it was likely moved-from
+- `d.base<B>` still points to valid data, albeit that it was likely moved-from
     in `C(C)` ;
-- `d.B` destructor will be implicitly invoked, as it will be for all the data
-    members of `d.D` ;
+- `d.base<B>` destructor will be implicitly invoked, as it will be for all the
+    former data members of `d` ;
 
 #### Default definition #### {#reloc-ctor-default-definition}
 
@@ -3215,10 +3286,10 @@ memberwise relocations. In the relocation constructor `T(T src reloc)`,
 for each subobject `s` (of type `S`) of `T`, in declaration order:
 
 - if `S` is a virtual base, then `S` is move-or-copy-constructed as if by:
-    `S{std::move(src.S)}` ;
+    `S{std::move(src.base<S>)}` ;
 - otherwise we construct `s` (or `S` for direct base classes)
     by calling its own relocation, move or copy
-    constructor, as if by: `s{reloc src.s}` (or `S{reloc src.S}`);
+    constructor, as if by: `s{reloc src.s}` (or `S{reloc src.base<S>}`);
 
 #### User-provided definition #### {#reloc-ctor-user-definition}
 
@@ -3727,10 +3798,10 @@ In `T`'s default assignment operator, the source object `src` of type `T` is
 decomposed, and for all its subobjects `s` of type `S`:
 
 - if `S` is a virtual base, then `S` is move-or-copy-assigned as if by:
-    `static_cast<S&>(*this) = std::move(src.S);` ;
+    `static_cast<S&>(*this) = std::move(src.base<S>);` ;
 - otherwise we construct `s` (or `S`) by calling its own relocation, move or copy
     assignment operator, as if by: `s = reloc src.s;`
-    (or `static_cast<S&>(*this) = reloc src.S;` for base classes);
+    (or `static_cast<S&>(*this) = reloc src.base<S>;` for base classes);
 
 Thanks to the relocation-assignment operator special eliding,
 no copies or relocations of the source subobjects are performed.
@@ -3827,7 +3898,7 @@ T& T::operator=(T src)
 {
     cleanup();
     auto src_d reloc = reloc src; // inplace decomposition
-    static_cast<B&>(*this) = reloc src_d.B; // relocate base
+    static_cast<B&>(*this) = reloc src_d.base<B>; // relocate base
     this->_a = reloc src_d._a;
     return *this;
 }
@@ -3850,7 +3921,7 @@ by exceptions:
 T& T::operator=(T src reloc) noexcept
 {
     cleanup();
-    static_cast<B&>(*this) = reloc src.B; // relocate base
+    static_cast<B&>(*this) = reloc src.base<B>; // relocate base
     this->_a = reloc src._a;
     return *this;
 }
@@ -5111,7 +5182,7 @@ support relocation of a data member through a constant-evaluated pointer-to-memb
 
 Code parsing is not made more complex, as the object must be declared as decomposed,
 and the decomposed object does not yield a value. There is still the unsual
-`obj.Base` syntax, (which is made possible as `obj` is decomposed and is not a value)
+`obj.base<Base>` syntax, (which is made possible as `obj` is decomposed and is not a value)
 but we consider this to be a minor issue.
 
 ## Why a new keyword? ## {#reloc-new-keyword}
