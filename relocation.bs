@@ -403,8 +403,8 @@ move constructor and no relocation constructor. Indeed `reloc a` promotes `a`
 to a prvalue, which occupies the same storage as `a`, and stripped of
 the cv-qualifiers that previously applied to it.
 It will effectively call `A`'s move constructor, with a deconstified rvalue
-reference on `a`. This further proves that `reloc` is a superior alternative
-to `std::move`.
+reference on `a`. This further proves that `reloc` is a semantically safer and
+more expressive alternative to `std::move`.
 
 We also have to consider that the Immediately Invoked Function Expressions (IIFE)
 decouples the possibilities to declare constant variables (even when they have
