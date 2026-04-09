@@ -48,7 +48,7 @@ Throughout this paper, we may use `T(T reloc)` as an exposition-only shorthand.
 Formally, the first parameter is a decomposed parameter of type `T` (potentially
 cv-qualified), and additional parameters are permitted if they have default
 initializers; see [the declaration section](#reloc-ctor-declaration). The general
-form is thus `T(T cv src reloc, ...)`, where `...` denotes only parameters with
+form is thus `T(T cv reloc src, ...)`, where `...` denotes only parameters with
 default initializers.
 
 ```c++
@@ -75,7 +75,7 @@ relocation constructors when needed, while keeping defaulted relocation
 constructors sufficient for most classes.
 
 ```c++
-pair<std::string const, int> const keyValue reloc = extractKV();
+pair<std::string const, int> const reloc keyValue = extractKV();
 storeKey(reloc keyValue.first);
 ```
 ```c++
@@ -87,7 +87,7 @@ public:
     Second second;
 
     // user-defined relocation constructor (could have been defaulted)
-    MyPair(MyPair rhs reloc) : first{reloc rhs.first}, second{reloc rhs.second} {}
+    MyPair(MyPair reloc rhs) : first{reloc rhs.first}, second{reloc rhs.second} {}
 };
 ```
 
@@ -304,7 +304,7 @@ struct A {
     A(A reloc) = default;
     A(const A &) = delete;
     A(A &&) = delete;
-    A& operator=(A rhs reloc) {
+    A& operator=(A reloc rhs) {
         delete ptr;
         ptr = rhs.ptr;
         return *this;
@@ -645,15 +645,15 @@ struct DBTransaction
 {
 // [...] data members and other functions
 
-    void rollback(this DBTransaction self reloc)
-    //                                    ^ marks the decomposition of self
+    void rollback(this DBTransaction reloc self)
+    //                               ^ marks the decomposition of self
     {
         self._cxn.rollback();
         // as self is decomposed, its destructor is not invoked
         // (but all its subobjects are still destroyed)
     }
-    void commit(this DBTransaction self reloc)
-    //                                  ^ marks the decomposition of self
+    void commit(this DBTransaction reloc self)
+    //                             ^ marks the decomposition of self
     {
         self._cxn.commit();
         // as self is decomposed, its destructor is not invoked
@@ -1436,16 +1436,15 @@ its subobjects are considered as complete objects.
 
 #### Object definition #### {#decomposed-obj-def}
 
-In an object definition, the `reloc` keyword can be specified after the
+In an object definition, the `reloc` keyword can be specified before the
 object name:
 
 ```c++
-T const value reloc = getValue();
+T const reloc value = getValue();
 ```
 
 `reloc` cannot be used in an object declaration or else the program is ill-formed.
-Note that `reloc` is not part of the C++ type system. This is emphasized by the
-fact that `reloc` can only be specified *after* the object name.
+Note that `reloc` is not part of the C++ type system.
 
 `reloc` can only be used in an object definition
 (with `T` the type of the object being defined) if:
@@ -1461,22 +1460,22 @@ For instance:
 ```c++
 struct X
 {
-    std::pair<int, std::string> m reloc; // ill-formed
+    std::pair<int, std::string> reloc m; // ill-formed
 };
 
-static std::pair<int, std::string> g reloc; // ill-formed
+static std::pair<int, std::string> reloc g; // ill-formed
 
-void foo(T const& a reloc) {} // ill-formed (ref-qualified)
-void foo(T const* a reloc) {} // ill-formed (not a class-type)
+void foo(T const& reloc a) {} // ill-formed (ref-qualified)
+void foo(T const* reloc a) {} // ill-formed (not a class-type)
 void foo()
 {
-    T const a[] reloc = { }; // ill-formed (not a class-type)
+    T const reloc a[] = { }; // ill-formed (not a class-type)
 }
 
 // But
-void foo(T const obj reloc) // well-formed if T is a class-type
+void foo(T const reloc obj) // well-formed if T is a class-type
 {
-    T obj2 reloc; // well-formed if T is a class-type
+    T reloc obj2; // well-formed if T is a class-type
 }
 ```
 
@@ -1490,9 +1489,9 @@ If several objects are declared in the same expression, then `reloc` needs to be
 repeated for each object which the user wants to decompose:
 
 ```c++
-T const value reloc = getValue(0), value2 = getValue(1), value3 reloc = getValue(2);
+T const reloc value = getValue(0), value2 = getValue(1), reloc value3 = getValue(2);
 // only "value" and "value3" are decomposed.
-T const c, *d reloc; // ill-formed, d is not a class-type
+T const c, reloc *d; // ill-formed, d is not a class-type
 ```
 
 #### Function declaration and definition #### {#decomposed-func-def}
@@ -1501,11 +1500,11 @@ Functions parameters may be declared with `reloc`, in which case the parameter
 is declared as decomposed.
 
 The `reloc` specifier does not produce a new overload of a function: `f(T)` and
-`f(T reloc)` *refer to the same function*.
+`f(T reloc obj)` *refer to the same function*.
 
 If a function parameter is declared as decomposed, it needs to be done so
 for every visible function declaration and its definition. In our previous
-example `f(T)` and `f(T reloc)` refer to the same function, but they have
+example `f(T)` and `f(T reloc obj)` refer to the same function, but they have
 conflicting declarations, making the program ill-formed.
 
 Indeed, the decomposed parameter may be used in contract expressions (which
@@ -1521,24 +1520,24 @@ When a function which decomposes one or more of its parameters is invoked throug
 function pointer, the parameter decomposition must still be honored.
 
 ```c++
-void foobar(T obj reloc);
+void foobar(T reloc obj);
 
 void foobar(T obj) // ill-formed, not matching its declaration
 {}
 
 void foobar2(T obj);
-void foobar2(T obj reloc); // ill-formed, not matching previous declaration
+void foobar2(T reloc obj); // ill-formed, not matching previous declaration
 
 struct X
 {
-    void foo(T obj reloc);
+    void foo(T reloc obj);
     void bar(T obj);
 };
 
-void X::foo(T obj reloc) // well-formed
+void X::foo(T reloc obj) // well-formed
 {}
 
-void X::bar(T obj reloc) // ill-formed, not matching its declaration
+void X::bar(T reloc obj) // ill-formed, not matching its declaration
 {}
 
 static_assert(std::is_same_v<decltype(&X::foo), void (X::*)(T)>); // ok
@@ -1574,7 +1573,7 @@ the decomposition operation would be a no-op.
 
 For instance:
 ```c++
-void foo(std::pair<std::string const, int> kv reloc)
+void foo(std::pair<std::string const, int> reloc kv)
 {
     // kv object no longer exists
     // its subobjects are accessible through the decomposed object "kv"
@@ -1584,7 +1583,7 @@ void foo(std::pair<std::string const, int> kv reloc)
 
 struct B { int _b; };
 struct D : B { std::string _d; };
-void foo(D const d reloc)
+void foo(D const reloc d)
 {
     // d.base<B> designates the base of former d object
     static_assert(std::is_same_v<decltype(d.base<B>), B>);
@@ -1675,7 +1674,7 @@ struct D : public B, public C
     int _d;
 };
 
-void foo(D d reloc)
+void foo(D reloc d)
 {
     d._d = d._b_pub; // valid
     d._d = d._common; // ill-formed, d._common is ambiguous
@@ -1738,7 +1737,7 @@ struct D1 : B
     int base;
 };
 
-void foo(D1 obj reloc)
+void foo(D1 reloc obj)
 {
     auto b = obj.base<B>; // selects the B base subobject
     auto x = obj.base; // names the non-static data member
@@ -1750,7 +1749,7 @@ struct D2 : B
     static constexpr T base = T{};
 };
 
-void bar(D2 obj reloc)
+void bar(D2 reloc obj)
 {
     auto b = obj.base<B>; // selects the B base subobject
     auto x = D2::base<int>; // names the static variable template
@@ -1803,7 +1802,7 @@ struct D : public B, public C
     int _d;
 };
 
-void foo(D d reloc, D const d_const reloc)
+void foo(D reloc d, D const reloc d_const)
 {
     std::println(d.base<C>._common); // valid
     std::println(d.base<B>._common); // valid
@@ -1835,7 +1834,7 @@ struct D
     static int _data;
 };
 
-void foo(D d reloc)
+void foo(D reloc d)
 {
     d.func(); // well-formed
     std::invoke(d.func); // well-formed
@@ -1878,20 +1877,20 @@ struct D : public B, public C
     int _d;
 };
 
-void illformed(D d reloc, int D::* data)
+void illformed(D reloc d, int D::* data)
 {
     d.*data = d._d; // ill-formed, data is not constant-evaluated
 }
-consteval void valid1(D d reloc, int D::* data)
+consteval void valid1(D reloc d, int D::* data)
 {
     d.*data = d._d; // valid
 }
 template <int D::* Ptr>
-void valid2(D d reloc)
+void valid2(D reloc d)
 {
     d.*Ptr = d._d; // valid
 }
-void valid3(D d reloc)
+void valid3(D reloc d)
 {
     constexpr int D::* a = &D::_d;
     d.*a = d._d; // valid
@@ -1950,7 +1949,7 @@ struct C : public B
     int _c;
 };
 
-void foo(C obj reloc)
+void foo(C reloc obj)
 {
     auto c = reloc obj._c; // valid
     // auto b = reloc obj._b; //< ill-formed, _b is not a direct data member of C
@@ -1982,7 +1981,7 @@ struct D : public A, public B, public C
     int _d;
 };
 
-void foo(D obj reloc)
+void foo(D reloc obj)
 {
     auto c = reloc obj.base<C>; // #1
     auto b = reloc obj.base<B>; // #2
@@ -2007,7 +2006,7 @@ then consider the following snippet, with an amended `B`:
 ```c++
 struct B : public virtual V
 {
-    B(B rhs reloc) : V(std::move(rhs.base<V>)), _b(reloc rhs._b)
+    B(B reloc rhs) : V(std::move(rhs.base<V>)), _b(reloc rhs._b)
     {
         std::cout << rhs._v << std::endl; // #3
     }
@@ -2040,7 +2039,7 @@ that no relocation constructor will attempt to relocate a virtual base
 
 ```c++
 // Given D definition in the above section
-void foo(D obj reloc)
+void foo(D reloc obj)
 {
     auto v = reloc obj.base<V>; // ill-formed
     auto c = reloc obj.base<C>; // #1: okay, the V base of obj.base<C>
@@ -2060,7 +2059,7 @@ least one virtual base.
 
 ```c++
 // Given D definition in the above section
-void foo(D obj reloc)
+void foo(D reloc obj)
 {
     // obj.base<B> and obj.base<C> are semi-complete objects
     // obj.base<A>, obj.base<V>, and obj._d are complete objects.
@@ -2081,12 +2080,12 @@ void foo(D obj reloc)
     which remains local to the scope of the object.
 
 ```c++
-void foo(D obj reloc)
+void foo(D reloc obj)
 {
-    auto c reloc = reloc obj.base<C>; // #1
+    auto reloc c = reloc obj.base<C>; // #1
 }
 
-B bar(D obj reloc)
+B bar(D reloc obj)
 {
     return obj.base<B>; // #2
 }
@@ -2109,7 +2108,7 @@ With the established rules, the snippet we had becomes safe, at the cost
 of no relocation from virtual bases:
 
 ```c++
-void foo(D obj reloc)
+void foo(D reloc obj)
 {
     auto c = reloc obj.base<C>; // obj.base<V> is left in a moved-from state
     auto b = reloc obj.base<B>; // obj.base<V> is reused to initialize b
@@ -2127,27 +2126,27 @@ struct V
 {
     std::box<int> _v; // V is now relocate-only
 
-    V exchange(V rhs reloc)
+    V exchange(V reloc rhs)
     {
         return {_v.exchange(reloc rhs._v)};
     }
 };
 struct B : public virtual V
 {
-    B(B src reloc) : V{src.base<V>.exchange({})}, _b{reloc src._b} {}
+    B(B reloc src) : V{src.base<V>.exchange({})}, _b{reloc src._b} {}
 
     int _b;
 };
 struct C : public B
 {
-    C(C src reloc) : V{src.base<V>.exchange({})}, B{reloc src.base<B>}, _c{reloc src._c} {}
+    C(C reloc src) : V{src.base<V>.exchange({})}, B{reloc src.base<B>}, _c{reloc src._c} {}
 
     int _c;
 };
 
 struct D : public A, public B, public C
 {
-    D(D src reloc) : V{src.base<V>.exchange({})}, A{reloc src.base<A>},
+    D(D reloc src) : V{src.base<V>.exchange({})}, A{reloc src.base<A>},
         B{reloc src.base<B>}, C{reloc src.base<C>}, _d{reloc src._d} {}
 
     int _d;
@@ -2161,7 +2160,7 @@ For instance this may be useful in relocation constructors, to adjust some
 external objects:
 
 ```c++
-T::T(T src reloc) : _d{reloc src._d}
+T::T(T reloc src) : _d{reloc src._d}
 {
     gRegistry.erase(/* src address */);
     gRegistry.insert(this);
@@ -2181,7 +2180,7 @@ occupied prior to its decomposition as a *prvalue*, with type `void cv *`,
 Hence our example becomes:
 
 ```c++
-T::T(T src reloc) : _d{reloc src._d}
+T::T(T reloc src) : _d{reloc src._d}
 {
     gRegistry.erase(src.this);
     gRegistry.insert(this);
@@ -2192,11 +2191,11 @@ And we have:
 
 ```c++
 {
-    T obj reloc = {};
+    T reloc obj = {};
     static_assert(std::is_same_v<void*, decltype(obj.this)>);
 }
 {
-    T const obj reloc = {};
+    T const reloc obj = {};
     static_assert(std::is_same_v<void const*, decltype(obj.this)>);
 }
 ```
@@ -2216,7 +2215,7 @@ The following is well-formed:
 
 ```c++
 box<int> ptr;
-auto const getPtr = [p = reloc ptr](this auto self reloc)
+auto const getPtr = [p = reloc ptr](this auto reloc self)
 {
     foo(reloc self.p);
 };
@@ -2225,8 +2224,8 @@ auto const getPtr = [p = reloc ptr](this auto self reloc)
 But this is ill-formed:
 ```c++
 box<int> ptr;
-auto const getPtr reloc = [p = reloc ptr](this auto self reloc)
-//                ^ ill-formed decomposition
+auto const reloc getPtr = [p = reloc ptr](this auto reloc self)
+//         ^ ill-formed decomposition
 {
     foo(reloc self.p);
 };
@@ -2244,9 +2243,9 @@ D getD();
 std::pair<std::string, std::string> getPair();
 
 B b = getD(); /* under conditions, equivalent to:
-    auto d reloc = getD(); B b = reloc d.base<B>; */
+    auto reloc d = getD(); B b = reloc d.base<B>; */
 std::string s = getPair().first; /* under conditions, equivalent to:
-    auto pair reloc = getPair(); std::string s = reloc pair.first; */
+    auto reloc pair = getPair(); std::string s = reloc pair.first; */
 ```
 
 Inspired by &bs[;[class.temporary](https://eel.is/c++draft/class.temporary#6.sentence-2)]
@@ -2372,7 +2371,7 @@ For instance:
 <tr><th>User-written code</th><th>Putative equivalent generated code</th></tr>
 <tr>
 <td valign="top"><pre lang="cpp">
-void foo01(T obj reloc)
+void foo01(T reloc obj)
 {
     // ...
     if (test())
@@ -2385,7 +2384,7 @@ void foo01(T obj reloc)
 <td valign="top"><pre lang="cpp">
 void foo01(T __obj)
 {
-    auto obj reloc{reloc __obj};
+    auto reloc obj{reloc __obj};
     // ...
     if (test())
     {
@@ -2397,7 +2396,7 @@ void foo01(T __obj)
 </tr>
 <tr>
 <td valign="top"><pre lang="cpp">
-void foo02(T obj reloc) try
+void foo02(T reloc obj) try
 {
     // ...
     if (test())
@@ -2411,7 +2410,7 @@ catch (...) {}
 <td valign="top"><pre lang="cpp">
 void foo02(T __obj) try
 {
-    auto obj reloc{reloc __obj};
+    auto reloc obj{reloc __obj};
     // ...
     if (test())
     {
@@ -2440,7 +2439,7 @@ without decomposition.
 ```c++
 void bar(string, box<int>);
 
-void foo(pair<string const, box<int>> p reloc)
+void foo(pair<string const, box<int>> reloc p)
 {
     bar(reloc p.first, reloc p.second);
 }
@@ -2457,7 +2456,7 @@ private:
 
 public:
     // [...]
-    box<int> getVal(this T self reloc)
+    box<int> getVal(this T reloc self)
     {
         return self._val;
         // note that here the destructor of self is not called.
@@ -2484,7 +2483,7 @@ class unique_ptr
 {
 // ...
 public:
-    T* release(this T self reloc)
+    T* release(this T reloc self)
     {
         return reloc self._ptr;
     }
@@ -2863,7 +2862,7 @@ void reloc_showcase_16()
     }
     else
     {
-        auto const y reloc = reloc x;
+        auto const reloc y = reloc x;
         do_smth_else(reloc y.m); // well-formed
         // equivalent to: do_smth_else((reloc x).m);
     }
@@ -3041,7 +3040,7 @@ As noted above, `T(T reloc)` is used in this paper as shorthand.
 Formally, the relocation constructor must take a decomposed source object of same type
 (modulo cv-qualifiers) as first parameter.
 Extra, defaulted parameters [are authorized](#reloc-ctor-additional-params).
-Hence its general form is `T(T cv src reloc, [...])`, with `cv` the cv-qualifiers
+Hence its general form is `T(T cv reloc src, [...])`, with `cv` the cv-qualifiers
 of `src`, and where `[...]` denotes only parameters with default initializers.
 In particular, the signature `T(T)` (without `reloc`)
 remains illegal as of today.
@@ -3232,17 +3231,17 @@ For instance:
 ```c++
 class B
 {
-    B(B src reloc);
+    B(B reloc src);
     // [...]
 };
 class C : public virtual B
 {
-    C(C src reloc);
+    C(C reloc src);
     // [...]
 };
 class D : public C
 {
-    D(D src reloc);
+    D(D reloc src);
     // [...]
 };
 
@@ -3250,7 +3249,7 @@ void foo(C);
 
 void bar()
 {
-    D const d reloc = getD();
+    D const reloc d = getD();
     foo(reloc d.base<C>); // #1
 }
 ```
@@ -3282,7 +3281,7 @@ a `memcpy` over its entire memory layout.
 
 Otherwise the constructor implementation first decomposes
 the source object, and then performs
-memberwise relocations. In the relocation constructor `T(T src reloc)`,
+memberwise relocations. In the relocation constructor `T(T reloc src)`,
 for each subobject `s` (of type `S`) of `T`, in declaration order:
 
 - if `S` is a virtual base, then `S` is move-or-copy-constructed as if by:
@@ -3309,7 +3308,7 @@ struct T
     std::string _a, _b, _c;
 
     // Dummy example to explain all the steps of the relocation constructor.
-    T(T src reloc) :
+    T(T reloc src) :
         _a{std::move(src._a)}, _c{reloc src._c} {} /*
         1. T::_a is constructed using the move constructor.
         2. T::_b is default constructed.
@@ -3327,7 +3326,7 @@ struct U
     ~U();
 
     // Second dummy example.
-    U(U src reloc) {} /*
+    U(U reloc src) {} /*
         1. U::_a is default-constructed.
         2. src._a is destructed.
     */
@@ -3339,7 +3338,7 @@ class BinaryTree
 {
 public:
     // works also if T is relocate-only
-    BinaryTree(BinaryTree src reloc) noexcept : _root{reloc src._root}
+    BinaryTree(BinaryTree reloc src) noexcept : _root{reloc src._root}
     {
         /* fixup references */
         if (_root._left)
@@ -3377,7 +3376,7 @@ class T
     };
 
 public:
-    T(T src reloc) : T{reloc src._impl, {}} {}
+    T(T reloc src) : T{reloc src._impl, {}} {}
     //                ^ delegating constructor
 
 private:
@@ -3410,7 +3409,7 @@ public:
         int* p;
     };
 
-    T(T src reloc, Helper storage = {}) noexcept(false)
+    T(T reloc src, Helper storage = {}) noexcept(false)
         : _p(storage.p = std::exchange(src._p, nullptr))
         , _q{reloc src._q}
         , _r{reloc src._r}
@@ -3897,7 +3896,7 @@ Note however that it is not the most efficient approach.
 T& T::operator=(T src)
 {
     cleanup();
-    auto src_d reloc = reloc src; // inplace decomposition
+    auto reloc src_d = reloc src; // inplace decomposition
     static_cast<B&>(*this) = reloc src_d.base<B>; // relocate base
     this->_a = reloc src_d._a;
     return *this;
@@ -3918,7 +3917,7 @@ Alternatively, a simpler version is possible, should we not want to be bothered
 by exceptions:
 
 ```c++
-T& T::operator=(T src reloc) noexcept
+T& T::operator=(T reloc src) noexcept
 {
     cleanup();
     static_cast<B&>(*this) = reloc src.base<B>; // relocate base
@@ -3936,7 +3935,7 @@ assignment operator for `unique_ptr`.
 The simpler implementation is:
 
 ```c++
-unique_ptr<T,D>& unique_ptr<T,D>::operator=(unique_ptr<T,D> rhs reloc) noexcept
+unique_ptr<T,D>& unique_ptr<T,D>::operator=(unique_ptr<T,D> reloc rhs) noexcept
 {
     reset();
     _deleter = reloc rhs._deleter;
@@ -3957,7 +3956,7 @@ implementation would have been slightly more evolved:
 unique_ptr<T,D>& unique_ptr<T,D>::operator=(unique_ptr<T,D> rhs)
 {
     reset(); //< can throw, then rhs destructor is called
-    auto rhs_members reloc = reloc rhs;
+    auto reloc rhs_members = reloc rhs;
     _deleter = reloc rhs_members._deleter;
     _ptr = rhs_members._ptr;
     return *this;
@@ -3998,7 +3997,7 @@ with an allocator object.
 A simple implementation will only need the *cleanup and memberwise relocation* pattern:
 
 ```c++
-box<T,A>& box<T,A>::operator=(box<T,A> rhs reloc) noexcept
+box<T,A>& box<T,A>::operator=(box<T,A> reloc rhs) noexcept
 {
     _alloc.deallocate(_ptr);
     _alloc = reloc rhs._alloc;
@@ -4012,7 +4011,7 @@ above. Likewise, an exception-safe version requires more work but is still
 possible, thanks to the *relocate-and-exchange* pattern:
 
 ```c++
-box<T,A> box<T,A>::exchange(box<T,A> other reloc)
+box<T,A> box<T,A>::exchange(box<T,A> reloc other)
 requires std::is_nothrow_relocation_constructible_v<A>
 {
     box const prev{_ptr, std::reloc_and_uninitialize(std::addressof(_alloc))};
@@ -4362,7 +4361,7 @@ public:
     MyType(MyType reloc);
 
     // Possible implementation:
-    auto get_all(this MyType self reloc)
+    auto get_all(this MyType reloc self)
     {
         return std::tuple{_rep, reloc self._name, reloc self._box};
     }
@@ -5036,11 +5035,11 @@ is the preferred approach as the cost to reconstruct a valid state is avoided.
 ```c++
 struct A
 {
-    std::box<T> take_box(this A self reloc) { return self.box_; }
+    std::box<T> take_box(this A reloc self) { return self.box_; }
     // [...]
 };
 
-std::pair<int, std::box<T>> p reloc = getPair();
+std::pair<int, std::box<T>> reloc p = getPair();
 foo(reloc p.second);
 ```
 
@@ -5052,7 +5051,7 @@ could only be decomposed through a member function:
 ```c++
 class T {
     // [..]
-    auto extract(this T reloc) { return _obj; }
+    auto extract(this T reloc self) { return self._obj; }
 private:
     reloc_only_t _obj;
 };
@@ -5137,7 +5136,7 @@ The main idea was that the decomposed object would be exploded into a dedicated
 special namespace, named after the object name. For instance:
 
 ```c++
-pair<string, string> p reloc = getPair();
+pair<string, string> reloc p = getPair();
 // p becomes a namespace containing all its direct subobjects
 if (test()) {
     foo(reloc p::first);
@@ -5146,7 +5145,7 @@ if (test()) {
 foobar(p); // ko: p is not a value
 
 struct D : public B {};
-D d reloc = D{};
+D reloc d = D{};
 foo(reloc d::B); // relocates base class
 ```
 
@@ -5158,12 +5157,12 @@ base class whose name is passed as a template type parameter:
 
 ```c++
 template <string T::*_str>
-string GetStr(T obj reloc)
+string GetStr(T reloc obj)
 {
     return obj::*_str; // invalid expression
 }
 template <class B>
-B GetBase(T obj reloc)
+B GetBase(T reloc obj)
 {
     return obj::B; // invalid expression
 }
@@ -5171,6 +5170,27 @@ B GetBase(T obj reloc)
 
 Second, the namespace syntax was too unusual for C++, so a third approach, taking
 the best of the two was picked.
+
+### A dedicated `decompose` keyword ### {#decompose-keyword-take-3}
+
+Another possible spelling would have been to introduce a dedicated
+decomposition keyword, for instance:
+
+```c++
+decompose T obj = expr;
+```
+
+This has some attractive properties: it is explicit, self-descriptive, and it
+makes it immediately clear that the declaration introduces a decomposed object
+rather than an ordinary one.
+
+We nevertheless did not select this direction. The proposed design already
+introduces `reloc` as a new keyword for the relocation operator and for
+relocation-related declarations. Introducing `decompose` in addition would add
+another reserved keyword, another grammar entry point, and another concept for
+users to learn, while not materially changing the semantics of the feature.
+Reusing `reloc` keeps the model smaller and ties decomposition more directly to
+its motivating operation.
 
 ### The proposed approach ### {#dot-reloc-no-longer}
 
@@ -5184,6 +5204,10 @@ Code parsing is not made more complex, as the object must be declared as decompo
 and the decomposed object does not yield a value. There is still the unsual
 `obj.base<Base>` syntax, (which is made possible as `obj` is decomposed and is not a value)
 but we consider this to be a minor issue.
+
+Compared to the earlier `T obj reloc` spelling, placing `reloc` before the
+declarator also makes it clearer, at first reading, that the declaration does
+not introduce an ordinary object.
 
 ## Why a new keyword? ## {#reloc-new-keyword}
 
