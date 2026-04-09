@@ -2549,14 +2549,14 @@ void reloc_showcase_02()
         do_smth(var); // #1 ill-formed: state of 'var' is relocated
         {
             const T var;
-            do_smth(var); // OK
+            do_smth(var); // #2 OK
         }
-        do_smth(var); // #2 ill-formed: state of 'var' is relocated
+        do_smth(var); // #3 ill-formed: state of 'var' is relocated
     }
-    do_smth(var); // OK
+    do_smth(var); // #4 OK
 }
 ```
-At #1 and #2, the calls to `do_smth(var)` are allowed because the name `var`
+At #2 and #4, the calls to `do_smth(var)` are allowed because the name `var`
 does not resolve to the relocated object.
 ```cpp
 void reloc_showcase_03()
