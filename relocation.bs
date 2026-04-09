@@ -42,7 +42,14 @@ automatic lifetime.
 We define relocation as the operation of constructing a
 new target object while simultaneously destructing the source object.
 Relocation will happen thanks to a new keyword `reloc` and a new relocation
-constructor (with signature `T(T reloc)`).
+constructor (conventionally written in this paper as `T(T reloc)`).
+
+Throughout this paper, we may use `T(T reloc)` as an exposition-only shorthand.
+Formally, the first parameter is a decomposed parameter of type `T` (potentially
+cv-qualified), and additional parameters are permitted if they have default
+initializers; see [the declaration section](#reloc-ctor-declaration). The general
+form is thus `T(T cv src reloc, ...)`, where `...` denotes only parameters with
+default initializers.
 
 ```c++
 // with: void foo(non_null<unique_ptr<T>>)
@@ -934,7 +941,8 @@ constructor, destroying the source object in the process. However, `reloc` does
 not force the use of the relocation constructor. The constructor which will be used
 to create the temporary is selected by overload resolution. `reloc` merely enables
 the relocation constructor to be selected because of the value category change
-(the relocation constructor has the signature `T(T reloc)`, meaning it will be preferred
+(the relocation constructor, conventionally written `T(T reloc)` in this paper,
+will be preferred
 when constructed from a prvalue, with our new [overload resolution rules](#overload-resolution)).
 
 ### Relocation constructor discardment with function parameters ### {#reloc-with-function-param}
@@ -2909,8 +2917,8 @@ introduce the relocation constructor, which is built upon those new concepts.
 As relocation happens from prvalues,
 the constructor takes a prvalue as parameter.
 The relocation constructor must also relocate the resources of the source object
-and will rely on *object decomposition* for that purpose. Its signature logically
-follows: `T(T reloc)`.
+and will rely on *object decomposition* for that purpose. Its simplest spelling
+is `T(T reloc)`; the full general form is given [below](#reloc-ctor-declaration).
 
 This signature was picked as it completes the C++ tripartite value system.
 The copy constructor creates a new instance from an lvalue, the move constructor
@@ -2956,11 +2964,13 @@ valid state.
 The relocation constructor can be declared (implicitly or explicitly), defaulted
 and deleted like any other constructor.
 
-The relocation constructor must take a decomposed source object of same type
+As noted above, `T(T reloc)` is used in this paper as shorthand.
+Formally, the relocation constructor must take a decomposed source object of same type
 (modulo cv-qualifiers) as first parameter.
 Extra, defaulted parameters [are authorized](#reloc-ctor-additional-params).
-Hence its signature must be `T(T cv src reloc, [...])`, with `cv` the cv-qualifiers
-of `src`. In particular, the signature `T(T)` (without `reloc`)
+Hence its general form is `T(T cv src reloc, [...])`, with `cv` the cv-qualifiers
+of `src`, and where `[...]` denotes only parameters with default initializers.
+In particular, the signature `T(T)` (without `reloc`)
 remains illegal as of today.
 
 A class-type that provides a relocation constructor has some impact on the program
