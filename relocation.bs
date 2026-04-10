@@ -1534,6 +1534,11 @@ and thus no impact on the type of its address.
 
 When a function which decomposes one or more of its parameters is invoked through a
 function pointer, the parameter decomposition must still be honored.
+Every call to that function, whether direct or indirect, is interpreted using
+the decomposition traits attached to its declaration.
+An implementation may introduce an additional entry point for indirect calls,
+but that entry point does not denote a distinct function, does not participate
+in overload resolution, and does not change the function type.
 
 ```c++
 void foobar(T reloc obj);
@@ -3865,6 +3870,11 @@ not needed.
 If the address of the assignment operator is queried, then the address of the
 non-eliding version is returned. If the assignment operator is virtual, then only
 the non-eliding version is considered to be `virtual` and is added to the vtable entry.
+Calls through that non-eliding version, including through a pointer-to-member
+or virtual dispatch, are still calls to the same relocation assignment
+operator. They therefore either forward the original source object to the
+eliding definition when it is *early destructible*, or otherwise perform the
+wrapper steps above.
 
 ### Definition ### {#reloc-assign-definition}
 
