@@ -2559,66 +2559,51 @@ Let us formally introduce the new states a local variable can have:
 Those states are evaluated *at compile-time*, and their primary use is to verify
 the well-formedness of expressions.
 
-The state of a given variable (including function parameters) is evaluated as follows:
+This section specifies the required diagnostic outcome, not a mandated
+implementation strategy. Any equivalent analysis is valid if it diagnoses as
+ill-formed every examined *id-expression* that designates a tracked variable in
+a state other than **A**.
+
+The state of a given variable (including function parameters) can be evaluated as follows:
 
 For lambda closures that are decomposed in their own body, the same tracking
 applies to capture subobjects that are captured by value when named through the
 decomposed closure object.
 
 - The variable starts in the **A** state.
-- The state of the variable is tracked by *examining* potentially-evaluated expressions,
-    from one expression to the next, following the evaluation order.
-    - If two or more expressions have an unspecified evaluation order with
-        one another, then
-        expressions containing a `reloc` operator with the tracked variable as
-        operand are examined first (in any order).
-    - Expressions that are part of [unevaluated operands](https://eel.is/c++draft/expr.context#1)
+- Track state by examining potentially-evaluated expressions in evaluation order.
+    - If two or more expressions have unspecified relative evaluation order,
+        examine expressions containing `reloc` on the tracked variable first
+        (in any order).
+    - Expressions in [unevaluated operands](https://eel.is/c++draft/expr.context#1)
         are not examined.
-    - Expressions that are part of a
+    - Expressions in a
         [discarded statement](https://eel.is/c++draft/stmt.if#def:discarded_statement)
-        of a `constexpr if` statement are not examined.
+        of `constexpr if` are not examined.
 
-- The *id-expression* designating the tracked variable is ill-formed
-    if the expression is examined and the variable's state is not **A**.
+- An examined *id-expression* designating the tracked variable is ill-formed
+    unless the variable state is **A**.
     - If the *id-expression* designates a non-direct subobject of a decomposed
-        object, then its state refers to the state of the direct base that contains it.
-    - If the *id-expression* is used as operand of the `reloc` operator,
-        then the variable transitions to the **R** state after the
-        `reloc` expression examination.
+        object, its state is that of the direct base that contains it.
+    - If the *id-expression* is used as operand of `reloc`, the variable
+        transitions to **R** after that `reloc` expression is examined.
 
-- If the code path forks (for instance because of an if statement), then all the
-    different code branches need to be examined.
-- If two or more code paths rejoin, then the resulting state of the variable
-    is the **OR**-combination of the state it had in all the joined code branches.
-- On a code jump:
+- At control-flow joins (for example after branching), the resulting state is
+    the **OR**-combination of incoming states.
 
-    - if the code jumps before the variable declaration or after the variable
-        enclosing scope, then the state analysis for this code branch stops here
-        for this variable.
-    - otherwise the state of the variable after the jump is the **OR**-combination
-        of the state it had before the jump, and the state it would have had at the
-        destination code location without taking the jump.
-        If the destination code location cannot be reached without jump, then
-        the jump does not change the state the variable.
-        The state of the variable prior to the jump is memorized for this code jump.
-    - if a same code jump needs to be taken an extra time, then the state of the variable
-        is compared to the one previously memorized. If they are identical then
-        the state analysis for this code branch stops here for this variable.
-        Otherwise the new state prior the jump is updated and the jump re-examined.
+- For a code jump within the variable scope, the destination state after the
+    jump is the **OR**-combination of:
+    - the state before taking the jump, and
+    - the state at the destination without taking the jump, if such a path is reachable.
+    If the destination is not otherwise reachable, the jump does not change the
+    state. Jump effects are re-evaluated until the jump-state information reaches
+    a fixed point (no further state changes).
 
-- In a try block, if the variable was declared before the block: at the end of
-    an expression that may throw,
-    a code jump to each catch block may be examined.
-    This code jump is necessary:
+- In a `try` block, for variables declared before the `try`, each potentially
+    throwing expression may induce jumps to each `catch` block, using the same
+    jump rules above.
 
-    - if the state of the variable has changed prior to when the last jumps
-        to the catch blocks were made.
-    - or if no last jumps to catch blocks were made, then compare the state
-        the variable had when entering the try block against the current state
-        and perform the jumps if they differ.
-
-- This state analysis stops until code reaches the natural end of scope of the
-    variable.
+- State analysis for a variable ends at the natural end of that variable scope.
 
 NOTE: We don't expect this analysis to be costly. It is only necessary in functions
 for the variables that are relocated. If there are none,
