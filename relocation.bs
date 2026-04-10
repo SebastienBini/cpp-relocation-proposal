@@ -4691,6 +4691,52 @@ already familiar with modern constraint syntax.
 
 # Discussions # {#discuss}
 
+## Reviewer FAQ ## {#reviewer-faq}
+
+This subsection is non-normative. It summarizes common review concerns for this
+revision, with an implementation-first scope.
+
+1. **Why trust this direction?**
+    It addresses concrete long-standing pain points, improves safety over
+    moved-from usage, preserves fallback paths, and keeps unresolved domains
+    explicitly deferred.
+
+1. **Why not just improve move semantics?**
+    Move does not express destructive transfer. Relocation models transfer where
+    the source lifetime ends, including cases where moved-from states are
+    undesirable or impossible.
+
+1. **Is this too hard to teach?**
+    The user-facing rule stays simple: `reloc` transfers and the source cannot
+    be reused. Most additional complexity is specification machinery to ensure
+    safety and composability across generic code.
+
+1. **Is this an ABI gamble?**
+    The proposal is ABI-aware and incremental. ABI-sensitive points are explicit,
+    and implementation strategies remain open.
+
+1. **Is static state tracking too compiler-specific?**
+    The proposal specifies required diagnostics and allows equivalent
+    implementation analyses, rather than mandating one algorithm.
+
+1. **Do indirect calls preserve decomposition semantics?**
+    Yes. Direct and indirect calls follow the decomposition traits of the
+    selected declaration. ABI-facing wrappers do not denote distinct functions.
+
+1. **Is `obj.this` unsafe?**
+    `obj.this` yields a `void cv*` to former storage identity only. It does not
+    make the former object accessible.
+
+1. **Is `get_all` too implementation-magic?**
+    Mechanisms remain implementation-defined, but observable behavior is
+    constrained: after recursion, the resulting expression must match the
+    data-members protocol with one direct member per tuple/array element in
+    index order.
+
+1. **What about coroutines?**
+    Coroutine semantics are intentionally deferred. A future revision can address
+    coroutine-specific relocation rules after implementation feedback.
+
 ## Potential ABI changes ## {#abi}
 
 As noted above ([[#early-destructible]]), some platforms have a *caller-destroy* ABI
