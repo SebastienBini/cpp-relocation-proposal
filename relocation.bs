@@ -1032,6 +1032,11 @@ this another way, although the effect is the same:
     may be discarded during overload resolution. Whether the relocation constructor
     is discarded is *implementation-defined*.
 
+This discard decision is made before viable-candidate selection and before
+evaluating `requires` clauses / constraints. It depends only on source-context
+properties (notably whether relocation is possible in that implementation,
+e.g. early-destruction support), and not on overload constraints.
+
 Note: *eligible* is defined in
 <a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>.
 
@@ -4154,10 +4159,11 @@ The `reloc` operator can be used to turn not-ref-qualified
 automatic variables into prvalues, which allows the user to force the right
 overload.
 
-The only situation where the overload being selected is implementation-defined,
-is when a function parameter passed by value is being relocated. Whether the
-relocation constructor is considered in the overload resolution is
-implementation-defined, as it depends on the ABI capabilities. Consider:
+The only situation where behavior is implementation-defined is when a function
+parameter passed by value is being relocated. In that case, whether relocation
+construction is discarded is implementation-defined (ABI capability). This
+discard step occurs before viable-candidate filtering and constraint
+(`requires`) evaluation. Consider:
 
 ```c++
 void foo(T);
@@ -4654,6 +4660,11 @@ with function parameters passed by value, we established the following rule:
 type provides an eligible move constructor, then the relocation constructor
 (if any) may be discarded during overload resolution. Whether the relocation
 constructor is discarded is implementation-defined.
+
+This discard decision is made before viable-candidate selection and before
+evaluating `requires` clauses / constraints. It depends only on source-context
+properties (notably whether relocation is possible in that implementation,
+e.g. early-destruction support), and not on overload constraints.
 
 If the ABI is not already compliant, then this rule will force an ABI change
 on functions which have parameters passed by value,
