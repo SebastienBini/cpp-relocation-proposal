@@ -5489,6 +5489,13 @@ We removed some of the changes we initilialy had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for
 relocate-only types.
 
+### Coroutines ### {#future-coroutines}
+
+Coroutine support is intentionally deferred in this revision.
+It may be introduced by a future revision once we have feedback from an initial
+Clang implementation and can validate that the current proposal remains viable
+as specified.
+
 ### STL support for relocation and relocate-only types ### {#stl-support}
 
 The current proposal focuses mainly on the core language changes.
