@@ -3685,7 +3685,7 @@ A possible implementation of the virtual slicing function is:
     1. Upon exit, the destructors of all non-relocated subobjects
         of `src` are implicitly invoked.
 
-The slicing function is defined in the same translation units of the destructors.
+The slicing function is defined in the same translation units as the destructor.
 If the destructor is inline, then so is the slicing function.
 
 #### Ill-formed definition #### {#virtual-slicing-def-ill-formed}
