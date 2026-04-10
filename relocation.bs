@@ -2631,11 +2631,18 @@ Such expressions are ignored by the code analysis described
 If `reloc`  is used in an unevaluated operands,
 then (a) their operands are always considered to have the *alive* state,
 and (b) the state of their operands do not change.
+These rules do not broaden the set of expressions permitted for decomposed
+objects, which remains specified in
+[decomposed object as an unevaluated operand](#decomposed-unevaluated).
+
+NOTE: `typeid(reloc obj)` does not evaluate `obj`, and therefore has no
+effect on its tracked state.
 
 For instance:
 ```c++
 void foo(T x)
 {
+    typeid(reloc x); // well-formed, x remains alive afterwards
     decltype(reloc x) y = reloc x; // well-formed
     decltype((reloc x, (reloc x).m)) z = y.m; // well-formed
 }
