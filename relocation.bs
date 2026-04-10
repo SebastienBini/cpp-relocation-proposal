@@ -1380,6 +1380,11 @@ the temporary created by the `reloc` expression may not be materialized if
 the implementation can ensure that the source object shares
 the same address as the one to be occupied by the target object.
 
+Relocation elision is permitted only if it preserves the required volatile
+accesses and the observable behavior of the non-elided program. In particular,
+if the source object or any accessed subobject is `volatile`, elision shall not
+remove, merge, or reorder required volatile accesses.
+
 Of course, if relocation elision happens then the rules that impact the
 lifetime of the source object still applies.
 
@@ -3182,6 +3187,10 @@ optimization (i.e. identical to a `memcpy` call) if the class-type is not trivia
 relocatable because of virtual inheritance or polymorphism (should their
 implementation of such class traits be compatible with trivial relocation).
 
+For `volatile` class types (or class types with `volatile` subobjects), any
+trivial-relocation optimization is permitted only if it preserves the required
+volatile accesses and their observable behavior.
+
 C++26 defines **trivial relocatability**. We amend this definition to account
 for the relocation constructor.
 A *trivially relocatable class* is one which:
@@ -4577,6 +4586,10 @@ As with existing copy/move traits, these relocation traits are behavioral:
 they test whether the corresponding construction or assignment expression is
 well-formed (and whether it is trivial or non-throwing), not whether a
 specific relocation special member function is explicitly declared.
+
+The traits are evaluated for the type exactly as written, including cv
+qualifiers (such as `volatile`). Likewise, the proposed concepts in this paper
+are interpreted through these traits for the exact cv-qualified type supplied.
 
 - `std::is_relocation_constructible<T>`: same as `std::is_constructible<T, T>` ;
 - `std::is_trivially_relocation_constructible<T>`: same as
