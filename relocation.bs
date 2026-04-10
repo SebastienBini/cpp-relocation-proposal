@@ -4553,11 +4553,10 @@ specific relocation special member function is explicitly declared.
 - `std::is_nothrow_relocation_constructible<T>` same as
     `std::is_nothrow_constructible<T, T>` ;
 - `std::is_relocation_assignable<T>`: same as `std::is_assignable<T, T>` ;
-- `std::is_trivially_relocation_assignable<T>`: same as `std::is_trivially_assignable<T, T>` ;
-- `std::is_nothrow_relocation_assignable<T>`: same as `std::is_nothrow_assignable<T, T>` ;
-- `std::is_decomposable<T>`: derives from `std::true_type`
-    if and only if `std::is_class_v<T>` is true, and `T` decomposition is legal ;
-    Derives from `std::false_type` otherwise ;
+- `std::is_trivially_relocation_assignable<T>`: same as
+    `std::is_trivially_assignable<T, T>` ;
+- `std::is_nothrow_relocation_assignable<T>`: same as
+    `std::is_nothrow_assignable<T, T>` ;
 
 The existing trait `std::is_trivially_relocatable<T>` shall be amended to take
 into account the [updated definition](#trivial-relocation).
@@ -4569,6 +4568,65 @@ template< class T >
 inline constexpr bool is_relocation_constructible_v = is_relocation_constructible<T>::value;
 // along with the rest
 ```
+
+## Concepts header ## {#std-concepts-header}
+
+We propose to introduce the following concepts to express relocation
+constraints in a modern, composable way:
+
+**Basic relocation constructibility concept:**
+
+```c++
+template<class T>
+concept relocation_constructible = std::is_relocation_constructible_v<T>;
+```
+
+**Special-purpose concept:**
+
+```c++
+template<class T>
+concept trivially_relocatable = std::is_trivially_relocatable_v<T>;
+```
+
+**Composite concept for common patterns:**
+
+Following the precedent set by `std::copyable` and `std::movable`, we propose a
+composite concept that represents the full relocation interface:
+
+```c++
+// A type that can be relocated (requires both construction and assignment)
+template<class T>
+concept relocatable = relocation_constructible<T> && std::is_relocation_assignable_v<T>;
+```
+
+This structure mirrors `std::copyable` (which requires both copy construction
+and assignment) and `std::movable` (which requires both move construction and
+assignment). Fine-grained control over nothrow and trivial properties is
+available through type traits when needed in more specialized generic code.
+
+These concepts enable cleaner, more idiomatic generic code:
+
+```c++
+// Before (using type traits)
+template<class T>
+requires std::is_relocation_constructible_v<T> &&
+         std::is_relocation_assignable_v<T>
+void process(T&& value);
+
+// After (using concepts)
+template<relocatable T>
+void process(T&& value);
+
+// For specialized cases requiring nothrow guarantees
+template<class T>
+requires relocatable<T> &&
+         std::is_nothrow_relocation_constructible_v<T>
+void process_nothrow(T&& value);
+```
+
+The concepts mirror the structure of existing C++20 concepts such as
+`std::copyable` and `std::movable`, making them intuitive for C++ developers
+already familiar with modern constraint syntax.
 
 # Discussions # {#discuss}
 
