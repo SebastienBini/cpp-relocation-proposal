@@ -1549,7 +1549,7 @@ When a complete object is defined as *decomposed*, then:
 
 - The object is *initialized* using the existing rules ;
 - All its direct bases and non-static data members are now considered as
-    distinct *complete* (or [semi-complete](#decompose-virtual-semi-complete)) objects:
+    distinct *complete* (or [virtual-base-aliasing](#decompose-virtual-aliasing-object)) objects:
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
     - for all of the virtual and direct bases which have a runtime type information, they
@@ -2026,7 +2026,7 @@ it would create even more of them...
 We propose a twofold solution:
 
 - Virtual bases cannot be relocated ;
-- We introduce the notion of [semi-complete](#decompose-virtual-semi-complete) objects.
+- We introduce the notion of [virtual-base-aliasing](#decompose-virtual-aliasing-object) objects.
 
 #### Virtual bases cannot be relocated #### {#decompose-virtual-no-reloc}
 
@@ -2049,35 +2049,43 @@ void foo(D reloc obj)
 
 At #1 and #2, the new rule ensures that the virtual base is not relocated,
 but it states nothing of the lifetime of the virtual base. This is where
-[semi-complete](#decompose-virtual-semi-complete) objects come in handy.
+[virtual-base-aliasing](#decompose-virtual-aliasing-object) objects come in handy.
 
-#### Semi-complete objects #### {#decompose-virtual-semi-complete}
+#### Virtual-base-aliasing objects #### {#decompose-virtual-aliasing-object}
 
-We introduce the notion of *semi-complete* objects. A *semi-complete* object is a
-direct base of a decomposed object, and which inherits (maybe indirectly) of at
+We introduce the notion of *virtual-base-aliasing* objects. A *virtual-base-aliasing* object is a
+direct base subobject of a decomposed object, and which inherits (maybe indirectly) of at
 least one virtual base.
+
+Here, *aliasing* means that the object refers to virtual-base storage owned by
+the decomposed complete-object context, rather than owning that storage itself.
 
 ```c++
 // Given D definition in the above section
 void foo(D reloc obj)
 {
-    // obj.base<B> and obj.base<C> are semi-complete objects
+    // obj.base<B> and obj.base<C> are virtual-base-aliasing objects
     // obj.base<A>, obj.base<V>, and obj._d are complete objects.
 }
 ```
 
-*semi-complete* objects do not own their virtual bases. This means that:
+A *virtual-base-aliasing* object does not own any of its virtual base
+subobjects. The following rules apply:
 
-- when they are destroyed, they do not invoke the destructor of their virtual
-    bases ;
-- when they are passed as parameters of a relocation constructor, it
-    will not implicitly invoke the destructor of their virtual
-    bases.
-    (Using relocation semantics on the virtual bases is also forbidden,
-    as [seen above](#decompose-virtual-no-reloc)) ;
-- no relocation, move or copy elision can happen from a *semi-complete* object.
-    Whether an object is *semi-complete* is established by a static analysis,
-    which remains local to the scope of the object.
+- destroying a *virtual-base-aliasing* object shall not destroy any virtual
+    base subobject ;
+- when a *virtual-base-aliasing* object is used as a relocation constructor
+    parameter, relocation semantics shall not be applied to its virtual base
+    subobjects ;
+- relocation elision, copy elision, and move elision shall not be performed
+    from a *virtual-base-aliasing* object ;
+- if a `reloc` operand designates a virtual base subobject of a
+    *virtual-base-aliasing* object, the program is ill-formed ;
+- implementations shall diagnose violations of the rules above where the
+    corresponding expression is formed.
+
+Whether an object is *virtual-base-aliasing* is established by static
+analysis local to the scope of the decomposed object.
 
 ```c++
 void foo(D reloc obj)
@@ -2093,12 +2101,12 @@ B bar(D reloc obj)
 
 Expressions such as #1 may simply, thanks to relocation elision,
 further decompose `obj.base<C>` without actually performing any relocation.
-But because `obj.base<C>` is *semi-complete*, then no relocation elision can happen,
+But because `obj.base<C>` is *virtual-base-aliasing*, then no relocation elision can happen,
 and `c` object is initialized
 using relocation semantics. `c.base<V>` is move-constructed from the virtual base of
-`obj.base<C>`. `c.base<B>` is *semi-complete* (as `obj.base<B>`).
+`obj.base<C>`. `c.base<B>` is *virtual-base-aliasing* (as `obj.base<B>`).
 
-Return value optimization cannot happen in #2 as `obj.base<B>` is *semi-complete*.
+Return value optimization cannot happen in #2 as `obj.base<B>` is *virtual-base-aliasing*.
 This ensures that the returned
 value of `bar` is a *complete* object.
 
