@@ -1465,6 +1465,11 @@ Note that `reloc` is not part of the C++ type system.
 - `T` is a non-union class-type ;
 - `T` is not ref-qualified.
 
+Arrays are therefore not eligible for explicit object decomposition through
+`reloc` declarations. Array decomposition is only provided by
+[structured decomposition array protocol](#structured-decomposition-array)
+and by [implicit decomposition](#implicit-decomposition).
+
 If any of the above conditions is not verified, then the definition is ill-formed.
 For instance:
 
@@ -2290,6 +2295,8 @@ the resulting expression can be converted to a prvalue with *implicit decomposit
     It's only if that array element is relocated or further implicitly decomposed
     that its destructor will not
     be implicitly invoked (for that element only).
+    This does not contradict the explicit-decomposition rule: arrays are still
+    not eligible for explicit `reloc` declarations.
 - In [6.5](https://eel.is/c++draft/class.temporary#6.5), the pointer to data
     member case, **the pointer to data member must be constant-evaluated**.
     The language will identify which data member is pointed at.
@@ -4329,6 +4336,8 @@ If this protocol applies, then `e` is initialized from the *initialization*
 expression. The *i*-th identifier is bound to the *i*-th array element of `e`
 (yields the same result and value category as the `e[i]` expression,
 except that it is now a complete object).
+
+Each introduced identifier is thus an lvalue denoting a complete object.
 
 NOTE: This is the only proposed way to decompose an array.
 
