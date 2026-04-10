@@ -4868,6 +4868,15 @@ This section will compare the performance differences between `std::move` and
 As `std::move` cannot be used with parameters passed by constant references,
 this form will be left out.
 
+In this section, performance statements should be read as follows:
+
+- the language guarantees semantic correctness (lifetime and well-formedness)
+    under the rules established in this proposal ;
+- implementations are permitted to apply relocation elision and ABI-specific
+    optimizations when their preconditions are met ;
+- end-to-end object-creation counts across call chains are not guaranteed by
+    the proposal except where elision is explicitly mandated.
+
 Let's consider a common scenario. We have an automatic variable `src`, and we
 want to transfer its resources to some other system. This is achieved by a series
 of function calls, where each function will forward the source object to the next,
@@ -4981,13 +4990,11 @@ We have a single object creation.
 
 </table>
 
-You can see that in the worst case, `reloc` is not worse than `std::move` if all
-functions are "by value".
-It has the same performance as `std::move` if all
-functions are "by rvalue reference" (but then no relocation can be done),
-or if all functions are "by value" and the implementation can elide all the
-relocations. This is why we say that `reloc` and `std::move` provide overall
-a similar performance, one performing better than the other in specific situations.
+These examples illustrate plausible outcomes under common ABIs and optimization
+strategies. They are not a normative promise of identical performance in all
+cases. In particular, cross-function object-creation counts remain
+implementation-dependent unless a specific elision rule in this proposal
+requires otherwise.
 
 ### Achieving 0-copy transfer with a cooperative ABI ### {#0-copy}
 
@@ -5006,9 +5013,9 @@ Now, let us say that `T` has migrated to relocation semantics: it has a
 relocation constructor, but no move constructor. This alone makes any object of
 type `T` *early destructible*, and eligible to relocation elision.
 Hence, with the Itanium ABI and relocation elision,
-the expression `f(reloc obj)` translates
-into a call to `f`, merely forwarding the address of `obj`. No temporaries are
-created.
+the expression `f(reloc obj)` can translate
+into a call to `f` that forwards the address of `obj`, with no intermediate
+temporary materialization.
 
 For instance, in the following snippet:
 ```c++
