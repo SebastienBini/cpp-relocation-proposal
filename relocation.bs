@@ -4419,6 +4419,9 @@ and thus denotes an lvalue complete object).
 of `get_all`. The return type is *implementation-defined* (may rely on compiler
 magic, which will return a flat structure containing all the tuple or array
 elements as data members).
+The observable effect must be that, after unrolling the `get_all` recursion,
+the resulting expression matches the *data members* protocol and exposes
+exactly one direct data member per tuple/array element, in index order.
 
 `std::pair` already complies with the *data member* protocol and does not need a
 `get_all` implementation.
