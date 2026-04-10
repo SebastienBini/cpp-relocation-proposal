@@ -2206,6 +2206,8 @@ occupied prior to its decomposition as a *prvalue*, with type `void cv *`,
     Note that `this` today is already a prvalue.
 - The return type is a void pointer. As the object has ceased to exist, the
     returned pointer cannot be a pointer of the former object type.
+    It merely designates the former storage address, and does not make the
+    former object accessible.
 
 Hence our example becomes:
 
