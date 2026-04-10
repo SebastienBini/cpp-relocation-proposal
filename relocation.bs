@@ -917,7 +917,7 @@ If the source object is ref-qualified, then it performs the following cast:
 
 This makes `reloc` the one operator to use to perfectly forward objects, whether
 they are ref-qualified or not.
-It also prevents from use-after-move and use-after-relocation errors.
+It also prevents use-after-move and use-after-relocation errors.
 
 ### reloc in constexpr ### {#reloc-constexpr}
 
@@ -1496,7 +1496,7 @@ void foo(T const reloc obj) // well-formed if T is a class-type
 }
 ```
 
-NOTE: We do not foresee any technical limitation that would prevent from
+NOTE: We do not foresee any technical limitation that would prevent
 decomposing objects with static storage.
 However since the point of the decomposition is to allow
 the relocation of the subobjects, and that the relocation of objects with non-automatic
@@ -1574,7 +1574,7 @@ When a complete object is defined as *decomposed*, then:
     distinct *complete* (or [virtual-base-aliasing](#decompose-virtual-aliasing-object)) objects:
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
-    - for all of the virtual and direct bases which have a runtime type information, they
+    - for all virtual and direct bases that have runtime type information, they
         now point to that of the base class, and no longer point to the type
         of the *decomposed* object. This step is identical as to what happens with
         the runtime type information of base classes once the destructor body
@@ -2890,7 +2890,7 @@ void reloc_showcase_15()
     do_smth_else(reloc y); // well-formed
 }
 ```
-`reloc` does not prevent from reusing the names of anonymous union members.
+`reloc` does not prevent reusing the names of anonymous union members.
 ```cpp
 void reloc_showcase_16()
 {
@@ -3098,7 +3098,7 @@ and all of the following is true:
 * there are no user-declared move assignment operators ;
 * there are no user-declared relocation assignment operators ;
 * there is no user-declared destructor ;
-* there are no base class of `T` which has a virtual destructor but no
+* there are no base classes of `T` that have a virtual destructor but no
     [virtual slicing function](#virtual-slicing).
 
 Then the compiler will declare a relocation constructor as a non-explicit inline
@@ -3111,12 +3111,12 @@ The implicitly-declared or defaulted relocation constructor for class `T` is def
 - if `T` has subobjects that explicitly declare a deleted relocation constructor ;
 - or `T` has subobjects with missing relocation and move constructors (i.e.
     that are deleted, inaccessible, or ambiguous).
-- or `T` has subobjects with deleted or unaccessible destructor.
+- or `T` has subobjects with deleted or inaccessible destructor.
 
 As for move constructors, a defaulted relocation constructor that is deleted is
 ignored by overload resolution.
 
-Note: this means that a class with an explictly deleted relocation constructor
+Note: this means that a class with an explicitly deleted relocation constructor
 will still be relocated if necessary, but through the move (or copy) constructor
 and destructor.
 
@@ -3765,7 +3765,7 @@ The implicitly-declared or defaulted relocation assignment operator for class `T
 
 - if `T` has subobjects that have an implicitly or explicitly deleted relocation assignment operator ;
 - or `T` has subobjects that have inaccessible relocation, move or copy assignment operators ;
-- or `T` has subobjects with deleted or unaccessible destructor.
+- or `T` has subobjects with deleted or inaccessible destructor.
 
 A defaulted relocation assignment operator that is deleted is ignored by overload
 resolution.
@@ -4738,7 +4738,7 @@ relocate-only, while it wasn't before, and may cause a potential ABI break.
 
 There is zero value of passing a `gsl::non_null<std::unique_ptr>` by value
 to a function today, so we doubt anyone would write such a function.
-However those functions might theoritically exist, and might have an ABI change.
+However those functions might theoretically exist, and might have an ABI change.
 
 Also, library vendors are encouraged to migrate to an ABI where any function that
 takes non-trivial parameters by value are responsible for their destruction.
@@ -4749,7 +4749,7 @@ We believe it's up to the implementation to choose what they want to do with the
 - *full break*, use callee-destroy or equivalent for all non-trivial relocatable types
     passed by value (for those who don't care about ABI) ;
 - *break with opt-out*: a relocation constructor attribute to opt-out of the ABI
-    break on functions where it is passed be value.
+    break on functions where it is passed by value.
     This solution should also provide propagation mechanisms suitable for composition
     (these could be standardized at a later date) ;
 - *likely no break, but opt-in*: an improved `[[trivial_abi]]` that actually checks that
@@ -4776,7 +4776,7 @@ As mentioned above, if the class-type is relocatable but immovable, then it may 
 impact on existing prvalue-assignment operators (like it does to any function).
 However this change is purely opt-in. If there is an existing prvalue-assignment
 operator in a class, then it will prevent the implicit declaration of the
-relocation constructor, which will in turn prevent from the potential ABI break.
+relocation constructor, which will in turn prevent the potential ABI break.
 
 Also, the relocation assignment operator may be aliased.
 If aliasing occurs, then the ABI does not break as aliasing happens only on a
@@ -4787,7 +4787,7 @@ new hidden function.
 The introduction of a new virtual function is an ABI break. For this reason,
 the new virtual slicing function is entirely opt-in. It can only be triggered
 by an explicit declaration of a relocation constructor. This seems suitable,
-as a declaring a relocation constructor may already have an impact on existing
+as declaring a relocation constructor may already have an impact on existing
 ABIs.
 
 We identified two areas of concern about virtual slicing functions:
@@ -4844,7 +4844,7 @@ automatically declared if the criteria are met.
 
 ## Impact of relocation on input parameter passing ## {#parameter-passing}
 
-C++ provides multple ways to pass parameters to functions, and we expect
+C++ provides multiple ways to pass parameters to functions, and we expect
 relocation to have a small impact on the existing practices.
 We will focus only on the input parameter passing, as output parameters are
 unaffected by relocation.
@@ -5098,7 +5098,7 @@ should they wish to benefit from this optimization.
 ### About clang's trivial_abi ### {#clang-trivial-abi}
 
 Consider the following `void foo(T obj);`. `foo` takes `obj` by value.
-In Itanium ABI, it translate differently in terms of ABI
+In Itanium ABI, it translates differently in terms of ABI
 depending whether `T` is trivial or not:
 
 - If trivial, then `obj` is passed by value as expected, meaning that a copy of
@@ -5151,7 +5151,7 @@ You will have noticed the bunch of requirements:
 - The relocation constructor must not throw. Should an exception be emitted
     by a relocation constructor, then `exchange` would leave `obj` in an
     uninitialized state, opening the door for future disasters.
-- To prevent from reconstructing over `obj` with a different type, `T` must be final.
+- To prevent reconstructing over `obj` with a different type, `T` must be final.
     For instance this is prohibited:
     ```c++
     class D : public B { std::string _str; };
@@ -5473,7 +5473,7 @@ code will break as `reloc` will become a keyword in a next C++ version.
 
 ## Future directions ## {#future-directions}
 
-We removed some of the changes we initilialy had in mind, to keep for future
+We removed some of the changes we initially had in mind, to keep for future
 extensions. This proposal aims to be the bare minimum to bring support for
 relocate-only types.
 
@@ -5562,7 +5562,7 @@ value category prvalue, lvalue or xvalue, and forward by relocation.
 
 ### discarded reloc expression ### {#solve-discarded-reloc-expr}
 
-Initilialy, discarded reloc expressions such as `reloc obj;` would simply
+Initially, discarded reloc expressions such as `reloc obj;` would simply
 translate to a call to the destructor of `obj`, while ensuring that the
 destructor won't be called again at the end of its scope.
 
