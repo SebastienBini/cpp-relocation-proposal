@@ -1031,6 +1031,7 @@ this another way, although the effect is the same:
     provides an eligible move constructor, then the relocation constructor (if any)
     may be discarded during overload resolution. Whether the relocation constructor
     is discarded is *implementation-defined*.
+    During constant evaluation, this discard is not performed.
 
 This discard decision is made before viable-candidate selection and before
 evaluating `requires` clauses / constraints. It depends only on source-context
@@ -4709,6 +4710,7 @@ with function parameters passed by value, we established the following rule:
 type provides an eligible move constructor, then the relocation constructor
 (if any) may be discarded during overload resolution. Whether the relocation
 constructor is discarded is implementation-defined.
+During constant evaluation, this discard is not performed.
 
 This discard decision is made before viable-candidate selection and before
 evaluating `requires` clauses / constraints. It depends only on source-context
