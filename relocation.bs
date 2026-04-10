@@ -3095,6 +3095,21 @@ call is *potentially-throwing*.
 A non-defaulted user-declared relocation constructor with unspecified noexcept
 specification is *potentially-throwing*.
 
+If a relocation constructor exits by throwing an exception, then:
+
+- the destination complete object is not considered constructed ;
+- any destination subobject that was fully constructed before the throw is
+    destroyed in reverse construction order ;
+- the source complete object lifetime had already ended at relocation entry,
+    and is not resumed ;
+- source subobjects that were already relocated stay ended, and source
+    subobjects not yet relocated are cleaned up by normal unwinding of the
+    decomposed source state.
+
+Note: During such a failure path, destination subobjects may exist
+transiently before being destroyed by unwinding, even though the destination
+complete object never exists.
+
 #### Trivial relocation #### {#trivial-relocation}
 
 A class-type that has virtual bases or is polymorphic cannot be trivially
@@ -3715,15 +3730,36 @@ resolution.
 #### Exception specification #### {#reloc-assign-op-noexcept}
 
 Just like the relocation constructor, the relocation assignment operator is
-allowed to terminate  by throwing an exception.
+allowed to terminate by throwing an exception.
 
 A relocation assignment operator that is implicitly declared or defaulted on its first
 declaration has a `noexcept(true)` noexcept specification unless any assignment operator
 or destructor of a subobject that the default definition would call is
 *potentially-throwing*.
 
-A non-defaulted user-declared relocation constructor with unspecified noexcept
+A non-defaulted user-declared relocation assignment operator with unspecified noexcept
 specification is *potentially-throwing*.
+
+If a relocation assignment operator exits by throwing an exception, then:
+
+- the destination complete object remains alive (it was already constructed),
+    but no rollback is implied by default ;
+- destination subobjects assigned before the throw keep their updated state,
+    and destination subobjects not yet assigned keep their former state ;
+- if the assignment parameter is decomposed (`T::operator=(T reloc src)`), then
+    the parameter complete object lifetime had already ended at relocation
+    entry, and is not resumed ;
+- otherwise (`T::operator=(T src)`), the parameter remains an ordinary complete
+    object and its lifetime follows normal parameter-lifetime rules ;
+- if the assignment parameter is decomposed, source subobjects that were already
+    relocated stay ended, and source subobjects not yet relocated are cleaned
+    up by normal unwinding of the decomposed source state ;
+- otherwise, cleanup follows ordinary unwinding rules for the non-decomposed
+    parameter object (plus any later decomposition explicitly performed by the
+    operator body).
+
+Note: As with throwing copy/move assignment operators, users should not infer
+strong exception safety unless it is provided by a specific implementation.
 
 ### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
 
