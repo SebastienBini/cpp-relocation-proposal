@@ -1185,7 +1185,8 @@ A `reloc` expression is ill-formed if any of the following conditions is met:
     then the source object is permitted to have none of the 3 constructors ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-decomposition">structured decomposition declaration</a>) ;
-- the source object is a lambda capture (unless the lambda closure object has been [decomposed](#decompose-lambda)) ;
+- the source object is a lambda capture (unless the lambda closure object has
+    been [decomposed](#decompose-lambda), as specified in that section) ;
 - the source object is a virtual base of a [decomposed object](#decomposed-state) ;
 
 
@@ -2220,9 +2221,18 @@ The decomposition can only happen from the lambda body and not from outside
 the lambda, as if its captures had private access.
 
 All the lambda captures are accessible through the decomposed lambda.
-In practice only the objects captured by value can be relocated.
-The objects captured by reference being ref-qualified, if they are used as
- a `reloc` operand, they will then merely be forwarded.
+The following rules apply:
+
+- captures by value (including init-captures by value) are closure subobjects
+    and may be relocated through the decomposed lambda object, subject to the
+    usual complete-object and state-tracking rules ;
+- captures by reference (including init-captures by reference) are treated as
+    ref-qualified for `reloc` legality. If used as `reloc` operands, they are
+    forwarded and do not relocate their referents ;
+- decomposing a lambda closure object outside the body of that same lambda is
+    ill-formed ;
+- relocating one capture subobject does not end the lifetime of unrelated
+    capture subobjects.
 
 The following is well-formed:
 
@@ -2530,6 +2540,10 @@ Those states are evaluated *at compile-time*, and their primary use is to verify
 the well-formedness of expressions.
 
 The state of a given variable (including function parameters) is evaluated as follows:
+
+For lambda closures that are decomposed in their own body, the same tracking
+applies to capture subobjects that are captured by value when named through the
+decomposed closure object.
 
 - The variable starts in the **A** state.
 - The state of the variable is tracked by *examining* potentially-evaluated expressions,
