@@ -4330,10 +4330,11 @@ The returned type is tested recursively:
 
 1. If *get_all* matches for the returned type, then we reapply it again using
     the returned value as new parameter ;
-1. If *data members* protocol matches for the returned type, then it is applied ;
-1. If no protocol matches for the returned type, then the expression is
-    **ill-formed**. The expression is no longer a candidate for a structured
-    bindings declaration as long as one *get_all* protocol matched.
+1. Otherwise, if *data members* protocol matches for the returned type, then
+    it is applied ;
+1. Otherwise the expression is **ill-formed**. Once the *get_all* protocol
+    matched, the declaration no longer falls back to an ordinary structured
+    bindings declaration.
 
 This follows the same recursive logic as `operator->()`.
 We recursively call `get_all` as long as the *get_all* protocol applies.
@@ -4366,12 +4367,14 @@ For this protocol to apply, all the following conditions must be satisfied:
 
 If this protocol applies, then `e` is initialized with `t`. If `T` is different
 from `B`, then `e` is recursively *implicitly* decomposed until the base class
-`B` is reached. All the *implicit* decompositions must be
-[legal](#implicit-decomposition-ill-formed) or else the declaration is ill-formed.
+`B` is reached. Each such *implicit* decomposition must be
+[legal](#implicit-decomposition-ill-formed) at the point where it is
+performed, or else the declaration is ill-formed.
 
 Finally, let's call `b` the decomposed object that contains the data members.
 The *i*-th identifier is bound to the *i*-th non-static data member of `b`
-(it yields the same result and value category as the `b.i` expression).
+(it yields the same result and value category as the `b.i` expression,
+and thus denotes an lvalue complete object).
 
 #### Implementation-defined library support #### {#structured-decomposition-tuple}
 
