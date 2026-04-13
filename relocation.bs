@@ -899,6 +899,10 @@ identifiers introduced through the syntax of structured binding declarations).
 
 - if `obj` is ref-qualified, then performs perfect-forwarding
     (as if by `static_cast<decltype(obj)>(obj)`) ;
+- otherwise, if `obj` is a C-array, then produces an array prvalue with the
+    same element type and bound. Materialization or initialization from that
+    prvalue performs element-wise relocation, move or copy construction of the
+    array elements, according to element type rules ;
 - otherwise returns a temporary obtained from the source object, constructed
     from the relocation, move or copy constructor.
     - If the relocation constructor
@@ -946,6 +950,19 @@ the relocation constructor to be selected because of the value category change
 (the relocation constructor, conventionally written `T(T reloc)` in this paper,
 will be preferred
 when constructed from a prvalue, with our new [overload resolution rules](#overload-resolution)).
+
+If the source object is a C-array, then `reloc` still produces a prvalue.
+Initialization of a C-array from such a same-bound array prvalue is performed
+element-wise, using relocation, move or copy construction for each element.
+
+For instance:
+```c++
+void array_init_from_reloc_prvalue()
+{
+    std::string src[2] = {"x", "y"};
+    std::string dst[2] = reloc src; // element-wise relocation/move/copy initialization
+}
+```
 
 ### Relocation constructor discardment with function parameters ### {#reloc-with-function-param}
 
@@ -1180,10 +1197,15 @@ A `reloc` expression is ill-formed if any of the following conditions is met:
 - the source object is not ref-qualified and does not have local storage
     (i.e. not a local function variable and not a function parameter passed by
     value) ;
-- the source object is not ref-qualified and does not have an accessible relocation,
-    move, or copy constructor. **Exception**: if the source object is not a function
-    parameter, and the `reloc` expression is [discarded](#discarded-reloc-expr),
-    then the source object is permitted to have none of the 3 constructors ;
+- the source object is not ref-qualified and:
+    - if it is a non-array type, it does not have an accessible relocation,
+        move, or copy constructor ;
+    - if it is a C-array, its element type does not have an accessible
+        relocation, move, or copy constructor ;
+    **Exception**: if the source object is not a function parameter, and the
+    `reloc` expression is [discarded](#discarded-reloc-expr), then the source
+    object (or each array element type for C-arrays) is permitted to have none
+    of the 3 constructors ;
 - the source object is a structured binding (and not an identifier introduced in a
     <a href="#structured-decomposition">structured decomposition declaration</a>) ;
 - the source object is a lambda capture (unless the lambda closure object has
@@ -1199,6 +1221,7 @@ For instance:
 void foo(std::string str);
 std::string get_string();
 std::pair<std::string, std::string> get_strings();
+void foo_arr(std::string const (&)[2]);
 
 std::string gStr = "static string";
 
@@ -1213,6 +1236,9 @@ void bar(void)
 
     foo(reloc get_string()); // ill-formed: not the name of variable
     foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
+
+    std::string arr[2] = {"a", "b"};
+    foo_arr(reloc arr); // OK: array operand; element-wise relocation/move/copy applies
 }
 
 void foobar(const std::string& str)
@@ -1277,8 +1303,8 @@ Note that, if the temporary is materialized and that the source object:
     all the owned resources of the source object will be *copied* to the temporary.
     This is very likely a useless operation.
 3. Other cases need not to be considered, as if materialized,
-    the `reloc` expression requires the
-    source object to declare one of the three constructors.
+    the `reloc` expression requires either the source object to declare one of
+    the three constructors, or (for C-arrays) the array element type to do so.
 
 NOTE: If the source object is a copy-only function parameter, then implementations
 are encouraged to emit a warning on discarded reloc statements, as if `reloc`
@@ -3882,6 +3908,10 @@ decomposed, and for all its subobjects `s` of type `S`:
 
 - if `S` is a virtual base, then `S` is move-or-copy-assigned as if by:
     `static_cast<S&>(*this) = std::move(src.base<S>);` ;
+- otherwise, if `S` is a C-array of known bound `N`, then assignment is
+    performed element-wise for `i` in `[0, N)`, as if by
+    `s[i] = reloc src.s[i];` . This performs an implicit decomposition of the
+    source array subobject ;
 - otherwise we construct `s` (or `S`) by calling its own relocation, move or copy
     assignment operator, as if by: `s = reloc src.s;`
     (or `static_cast<S&>(*this) = reloc src.base<S>;` for base classes);
