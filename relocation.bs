@@ -890,10 +890,13 @@ direction.
 ## reloc operator ## {#reloc-operator}
 
 This paper suggests to introduce a new keyword, named `reloc`. `reloc` acts as a
-unary operator that can be applied to named, local, complete objects (in other
-words: function-local non-static variables and, with some restrictions,
-function parameters and
-identifiers introduced through the syntax of structured binding declarations).
+unary operator that can be applied to:
+
+- names of local variables ;
+- member accesses naming union members (`u.m`) ;
+- direct subobjects of decomposed objects ;
+- with some restrictions, function parameters and identifiers introduced through
+    the syntax of structured binding declarations.
 
 `reloc obj` does the following:
 
@@ -1104,8 +1107,12 @@ Thus it is unsafe to reuse it after the `reloc` expression completes.
 
 To prevent uses of a potentially destructed object, we state that the program is
 **ill-formed** if the source object is reused after being passed to `reloc`,
-regardless of whether the relocation constructor was called. For a detailed
-explanation of how this is enforced, please refer to [the dedicated section](#ill-formed-reuse).
+regardless of whether the relocation constructor was called.
+For union members, this compile-time reuse rule does not apply: once such a
+member has been relocated, reinitialization before reuse is the responsibility
+of the user.
+For a detailed explanation of how this is enforced, please refer to
+[the dedicated section](#ill-formed-reuse).
 
 NOTE: The rest of this section only applies to `reloc` operands that are
 not ref-qualified.
@@ -1191,12 +1198,17 @@ implementations. However please keep in mind that:
 
 A `reloc` expression is ill-formed if any of the following conditions is met:
 
-- its parameter is not the name of a variable, or a direct subobject of a
-    decomposed object ;
-- the source object is not a *complete object* ;
+- its parameter is neither:
+    - the name of a variable ;
+    - a member access naming a union member (`u.m`) ;
+    - nor a direct subobject of a decomposed object ;
+- the source object is not a *complete object*, unless it is a union member
+    selected by `u.m` as above ;
 - the source object is not ref-qualified and does not have local storage
     (i.e. not a local function variable and not a function parameter passed by
     value) ;
+    For permitted `u.m` operands and direct subobjects of decomposed objects,
+    this local-storage requirement is evaluated on the containing variable ;
 - the source object is not ref-qualified and:
     - if it is a non-array type, it does not have an accessible relocation,
         move, or copy constructor ;
@@ -1211,10 +1223,19 @@ A `reloc` expression is ill-formed if any of the following conditions is met:
 - the source object is a lambda capture (unless the lambda closure object has
     been [decomposed](#decompose-lambda), as specified in that section) ;
 - the source object is a virtual base of a [decomposed object](#decomposed-state) ;
+- the source object is a member of a named union type that has a user-provided
+    destructor ;
 
 
-In particular, the `reloc` expression is well-formed if the source object is a
-member of a function-local anonymous union.
+In particular:
+
+- a member of an anonymous union may be relocated if that member type is
+    relocatable under the rules above ;
+- a member of a named union may be relocated if that member type is relocatable
+    and the union type has no user-provided destructor.
+
+If a `reloc` operand designates a union member that is not the active member,
+the behavior is undefined.
 
 For instance:
 ```cpp
@@ -1222,6 +1243,10 @@ void foo(std::string str);
 std::string get_string();
 std::pair<std::string, std::string> get_strings();
 void foo_arr(std::string const (&)[2]);
+union NamedU {
+    std::string s;
+    int i;
+};
 
 std::string gStr = "static string";
 
@@ -1239,6 +1264,9 @@ void bar(void)
 
     std::string arr[2] = {"a", "b"};
     foo_arr(reloc arr); // OK: array operand; element-wise relocation/move/copy applies
+
+    NamedU u{std::string{"u member"}};
+    foo(reloc u.s); // OK if NamedU has no user-provided destructor (UB if u.s is not active)
 }
 
 void foobar(const std::string& str)
@@ -2592,6 +2620,10 @@ a state other than **A**.
 
 The state of a given variable (including function parameters) can be evaluated as follows:
 
+Union members are not state-tracked by this analysis. Once a union member has
+been relocated, reinitialization before reuse is the responsibility of the
+user.
+
 For lambda closures that are decomposed in their own body, the same tracking
 applies to capture subobjects that are captured by value when named through the
 decomposed closure object.
@@ -2913,10 +2945,11 @@ void reloc_showcase_15()
         do_smth_else(reloc y); // well-formed
         x = getT(); // well-formed
     }
-    do_smth_else(reloc y); // well-formed
+    do_smth_else(reloc y); // well-formed but UB as y is not the active member on this path
 }
 ```
-`reloc` does not prevent reusing the names of anonymous union members.
+`reloc` does not prevent reusing the names of anonymous union members, but
+the relocated member must be active (otherwise behavior is undefined).
 ```cpp
 void reloc_showcase_16()
 {
