@@ -2688,12 +2688,19 @@ Such expressions are ignored by the code analysis described
 If `reloc`  is used in an unevaluated operands,
 then (a) their operands are always considered to have the *alive* state,
 and (b) the state of their operands do not change.
+This does not apply to `typeid` when its operand is a glvalue of polymorphic
+class type: in that case, the operand is potentially-evaluated and is analyzed
+as a regular expression by the state-tracking rules.
 These rules do not broaden the set of expressions permitted for decomposed
 objects, which remains specified in
 [decomposed object as an unevaluated operand](#decomposed-unevaluated).
 
-NOTE: `typeid(reloc obj)` does not evaluate `obj`, and therefore has no
-effect on its tracked state.
+NOTE: `typeid(reloc obj)` is unevaluated, except when `reloc obj` is a glvalue
+of polymorphic class type (in which case it is evaluated to determine the
+dynamic type). In that evaluated case, `reloc` may transition the tracked state
+of its operand (for example from **A** to **R**, or to **A-R** at joins).
+For non-ref-qualified operands, `reloc obj` is a prvalue, so `obj` is not
+evaluated and its tracked state is unchanged.
 
 For instance:
 ```c++
