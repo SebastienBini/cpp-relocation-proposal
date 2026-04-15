@@ -2342,7 +2342,7 @@ auto ptr2 = reloc getPtr.p;
 ### Implicit decomposition of temporaries ### {#implicit-decomposition}
 
 Temporary objects can be implicitly decomposed to allow relocations in the following
-scenarios (but non exclusively):
+scenarios:
 
 ```c++
 struct D : public B {};
@@ -2364,13 +2364,13 @@ In all the expressions listed in [6](https://eel.is/c++draft/class.temporary#6.s
 the resulting expression can be converted to a prvalue with *implicit decomposition*:
 
 - In [6.3](https://eel.is/c++draft/class.temporary#6.3), the C-array case,
-    the array decomposition is always legal and each of its elements are considered
-    as complete objects (their destructor will be implicitly invoked).
-    It's only if that array element is relocated or further implicitly decomposed
-    that its destructor will not
-    be implicitly invoked (for that element only).
-    This does not contradict the explicit-decomposition rule: arrays are still
-    not eligible for explicit `reloc` declarations.
+    the array decomposition is always legal and each of its elements is considered
+    a complete object (its destructor will be implicitly invoked).
+    It is only if that array element is relocated or further implicitly decomposed
+    that its destructor will not be implicitly invoked (for that element only).
+    Note that C-arrays cannot be initialized from a C-array prvalue; only
+    materializations (e.g. binding to a reference or passing to a function
+    expecting an array reference) are permitted.
 - In [6.5](https://eel.is/c++draft/class.temporary#6.5), the pointer to data
     member case, **the pointer to data member must be constant-evaluated**.
     The language will identify which data member is pointed at.
@@ -2397,6 +2397,21 @@ below, or else the *implicit decomposition* is
 illegal. In particular, if any virtual base is to be decomposed,
 then the *implicit decomposition* is illegal.
 
+NOTE: This conversion to prvalue only applies in contexts where the language
+already performs such a conversion for a subobject of a temporary (the
+contexts listed above from [class.temporary]/6). It does not apply to arbitrary
+uses of xvalues. In particular, `typeid(expr)` with `expr` a polymorphic
+glvalue is still evaluated according to existing rules and inspects `expr`
+as a glvalue; implicit decomposition does not force that operand to become a
+prvalue.
+
+NOTE: A polymorphic subobject selected by value from a temporary may still be
+implicitly decomposed in initialization contexts where conversion to prvalue is
+already required (for example, initializing an object from `getOuter().member`).
+This does not create a dynamic-type ambiguity for that selected subobject:
+being a by-value subobject, its dynamic type is its static type. Therefore, the
+resulting behavior remains consistent with the existing `typeid` model.
+
 #### Ill-formed implicit decomposition #### {#implicit-decomposition-ill-formed}
 
 An *implicit decomposition* of an object of type `T` is ill-formed
@@ -2405,8 +2420,8 @@ if any of the following conditions is not satisfied:
 - all subobjects of `T` are accessible. They all need to be
     since their destructor will be called if not relocated ;
 - `T`'s eligible destructor is not user-provided.
-    Unlike in the explicit decomposition, private access privilege does not
-    allow to bypass this check.
+    Unlike in the [explicit decomposition](#ill-formed-decomposition), private
+    access privilege does not allow to bypass this check.
 
 #### Examples #### {#implicit-decomposition-examples}
 
