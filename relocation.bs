@@ -903,9 +903,9 @@ unary operator that can be applied to:
 - if `obj` is ref-qualified, then performs perfect-forwarding
     (as if by `static_cast<decltype(obj)>(obj)`) ;
 - otherwise, if `obj` is a C-array, then produces an array prvalue with the
-    same element type and bound. Materialization or initialization from that
-    prvalue performs element-wise relocation, move or copy construction of the
-    array elements, according to element type rules ;
+    same element type and bound. Materialization from that prvalue performs
+    element-wise relocation, move or copy construction of the array elements,
+    according to element type rules ;
 - otherwise returns a temporary obtained from the source object, constructed
     from the relocation, move or copy constructor.
     - If the relocation constructor
@@ -955,15 +955,27 @@ will be preferred
 when constructed from a prvalue, with our new [overload resolution rules](#overload-resolution)).
 
 If the source object is a C-array, then `reloc` still produces a prvalue.
-Initialization of a C-array from such a same-bound array prvalue is performed
-element-wise, using relocation, move or copy construction for each element.
+Materialization from such an array prvalue is performed element-wise, using
+relocation, move or copy construction for each element. A C-array itself cannot
+be initialized from a C-array prvalue.
+
+NOTE: If users want relocation semantics for array values in regular code
+(outside the default relocation constructor and relocation assignment operator
+of a containing class), `std::array` provides the intended behavior through the
+default implementation of both special members.
+
+NOTE: If users want explicit element-wise or element-specific relocation, they
+can use [structured decomposition](#structured-decomposition) and relocate the
+selected array elements directly.
 
 For instance:
 ```c++
-void array_init_from_reloc_prvalue()
+void foo_arr(std::string const (&)[2]);
+
+void array_prvalue_materialization_from_reloc()
 {
     std::string src[2] = {"x", "y"};
-    std::string dst[2] = reloc src; // element-wise relocation/move/copy initialization
+    foo_arr(reloc src); // materialization is element-wise relocation/move/copy
 }
 ```
 
@@ -1263,7 +1275,7 @@ void bar(void)
     foo(reloc get_strings().first); // ill-formed: not a complete object, and not the name of variable
 
     std::string arr[2] = {"a", "b"};
-    foo_arr(reloc arr); // OK: array operand; element-wise relocation/move/copy applies
+    foo_arr(reloc arr); // OK: array operand; materialization is element-wise relocation/move/copy
 
     NamedU u{std::string{"u member"}};
     foo(reloc u.s); // OK if NamedU has no user-provided destructor (UB if u.s is not active)
@@ -3403,6 +3415,9 @@ for each subobject `s` (of type `S`) of `T`, in declaration order:
 
 - if `S` is a virtual base, then `S` is move-or-copy-constructed as if by:
     `S{std::move(src.base<S>)}` ;
+- otherwise, if `S` is a C-array of known bound `N`, then construction is
+    performed element-wise for `i` in `[0, N)`, by constructing each `s[i]`
+    from `reloc src.s[i]` ;
 - otherwise we construct `s` (or `S` for direct base classes)
     by calling its own relocation, move or copy
     constructor, as if by: `s{reloc src.s}` (or `S{reloc src.base<S>}`);
