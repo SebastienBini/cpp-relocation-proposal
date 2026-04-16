@@ -3177,6 +3177,50 @@ of `src`, and where `[...]` denotes only parameters with default initializers.
 In particular, the signature `T(T)` (without `reloc`)
 remains illegal as of today.
 
+Note: Although for regular functions `f(T)` and `f(T reloc)` refer to the same
+function ([§](#decomposed-func-def)), constructors are an exception: `T(T)` is
+ill-formed per [class.copy.ctor]/5 and this proposal does not change that.
+This special-case is justified because the `reloc` keyword on the parameter
+enables object decomposition (`reloc src.member`) in the constructor body;
+without it, subobject relocation would not be available and the user would have
+to fall back to move semantics, undermining a core benefit of this proposal.
+Requiring `reloc` also makes the destructive nature of the operation
+syntactically visible and keeps the design space of `T(T)` available for
+potential future use.
+One could argue that `T(T src)` (without `reloc`) would enable *delayed
+decomposition*, where the source is used as a complete object before being
+decomposed:
+```c++
+T::T(T src) {
+    src.do_stuff();
+    auto reloc dsrc = reloc src;
+    // memberwise relocation from dsrc
+}
+```
+This pattern enables calling member functions on the source before tearing it
+apart — something that `T(T reloc)` does not allow, since the parameter is
+immediately decomposed. Note that `auto reloc dsrc = reloc src` does not
+trigger infinite regress: relocation elision allows the prvalue produced by
+`reloc src` to directly initialize `dsrc` without invoking the relocation
+constructor again. While this is a genuine capability gap, we consider the
+use case niche enough to defer to a future extension if experience shows
+demand, rather than complicating the initial proposal.
+Another workaround with `T(T)` would be to use anonymous unions to access the
+source object:
+```c++
+T::T(T src) {
+    union { T tmp = reloc src; };
+    delegate_relocation(&tmp, some_extra_parameter());
+}
+```
+While relocation elision makes this mechanically valid, placing the source in
+a union means its destructor will not run automatically. The user is then
+responsible for manually managing the lifetime of `tmp`, which is error-prone
+in the presence of exceptions and loses the automatic cleanup that object
+decomposition provides.
+These considerations further justify keeping `T(T)` ill-formed and requiring
+`T(T reloc)`.
+
 A class-type that provides a relocation constructor has some impact on the program
 ABI. See the [ABI section](#abi).
 
