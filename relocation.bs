@@ -3918,6 +3918,8 @@ allowed to terminate by throwing an exception.
 A relocation assignment operator that is implicitly declared or defaulted on its first
 declaration has a `noexcept(true)` noexcept specification unless any assignment operator
 or destructor of a subobject that the default definition would call is
+*potentially-throwing*, or the move or copy constructor of the class type itself
+that the [non-eliding wrapper](#aliased-reloc-assign) may invoke is
 *potentially-throwing*.
 
 A non-defaulted user-declared relocation assignment operator with unspecified noexcept
@@ -4033,8 +4035,10 @@ decomposed, and for all its subobjects `s` of type `S`:
 Thanks to the relocation-assignment operator special eliding,
 no copies or relocations of the source subobjects are performed.
 
-Also note that this implementation has a strong exception safety, which
-guarantees to leave the object in a valid state if left by throwning an exception.
+Note that this default implementation only provides *basic* exception safety:
+if a subobject assignment throws, subobjects assigned before the throw keep
+their updated state while those not yet assigned retain their former state.
+The destination object remains in a valid but partially-updated state.
 
 #### Possible user definitions #### {#reloc-assign-user-definition}
 
