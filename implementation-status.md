@@ -283,9 +283,9 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 ---
 
-## Known gap — relocation assignment operator ⚠️ Mostly implemented
+## Known gap — relocation assignment operator ✅ Fully implemented
 
-**Description:** `T& T::operator=(T [reloc])` is a new special member function (§"relocation assignment operator"). Phases 7a–7e (recognition, implicit declaration, body synthesis, codegen, exception specification) and Phase 9a (call-site elision, aliased reloc-assign dual-function scheme) are implemented. Remaining: C-array member element-wise assignment in defaulted body, virtual base handling in defaulted reloc assign body, and interaction with `= delete` / triviality tracking beyond what is already done.
+**Description:** `T& T::operator=(T [reloc])` is a new special member function (§"relocation assignment operator"). All sub-phases implemented: recognition, implicit declaration, body synthesis (including C-array members and virtual bases), codegen, exception specification, and aliased reloc-assign dual-function scheme.
 
 ---
 
@@ -631,17 +631,17 @@ No new code needed — the body synthesis in 7c produces correct IR through exis
 - `ComputeDefaultedSpecialMemberExceptionSpec`: after visiting subobject assignment operators and destructors, now also folds in the move constructor (or copy constructor) of the class itself — per §"reloc-assign-op-noexcept", the non-eliding wrapper may invoke it
 - Verified: noexcept propagates correctly for trivial, composite, derived, throwing-member, throwing-base, mixed, and explicitly-defaulted cases; throwing move ctor correctly makes reloc assign potentially-throwing
 
+### Phase 7f — C-array element-wise reloc-assign ✅ `81a13b4`
+
+- `buildSingleCopyAssignRecursively`: added `Relocating` parameter; when true, array elements are wrapped in `RelocCastBuilder` (producing `CXXRelocExpr` prvalues) instead of `MoveCastBuilder` (xvalues), so the element type's reloc-assign operator is selected via P2785 overload resolution
+- Virtual base handling verified: already correctly implemented (move-assign semantics, same as reloc-ctor)
+
 ### Lit tests
 
-- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp`: trivial memcpy, non-trivial memberwise, base-class in derived body
+- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp`: trivial memcpy, non-trivial memberwise, base-class in derived body, C-array element-wise reloc-assign
 - `clang/test/SemaCXX/p2785-reloc-operator.cpp`: 10 `static_assert` noexcept tests (trivial, composite, derived, throwing member/base/mixed, explicitly-defaulted, throwing/noexcept move ctor)
 
-### Not yet implemented
-
-- C-array member element-wise assignment in defaulted body
-- Virtual base handling in defaulted reloc assign body
-
-**Proposal coverage:** §"relocation assignment operator" (recognition, implicit declaration, default definition, exception specification, aliased reloc-assign)
+**Proposal coverage:** §"relocation assignment operator" (recognition, implicit declaration, default definition, exception specification, aliased reloc-assign, C-array members)
 
 ---
 
