@@ -139,8 +139,8 @@ parameter **must** have control over its lifetime. This might break some ABIs
 on rare occasions, but in a controlled way.
 
 In R4, we take a slightly less conservative approach: *any function
-that takes a parameter by value, whose type provides a relocation constructor*
-**but no move constructor**, *must have control over the lifetime of that parameter.*
+that takes a parameter by value, whose type is [relocatable non-movable](#relocatable-non-movable)*
+*must have control over the lifetime of that parameter.*
 
 Discussion about this change is detailed in the
 [reloc with function parameters](#reloc-with-function-param)
@@ -738,6 +738,22 @@ Likewise, with callee-destroy, all of its value parameters are
 And last, regardless of the convention, all not ref-qualified, local variables
 with automatic storage are *early destructible*.
 
+## Relocatable non-movable ## {#relocatable-non-movable}
+
+A class type is *relocatable non-movable* if it has an eligible relocation
+constructor and no eligible move constructor.
+
+When a value parameter of *relocatable non-movable* type is the operand of
+`reloc`, the implementation must guarantee that the relocation constructor is
+selected. In practice this means the
+parameter must be *early destructible*, which may require an ABI that gives the
+callee control over the parameter's lifetime (e.g. callee-destroy).
+
+For *relocatable non-movable* types, relocation from a function parameter is
+always guaranteed, whereas for types that also have a move constructor the
+choice between relocation and move is *implementation-defined*
+(see [§](#reloc-with-function-param) for the rationale behind this design).
+
 # Comparison with existing proposals # {#compare}
 
 This proposal introduces the `reloc` keyword, which allows users to explicitly
@@ -776,11 +792,10 @@ Here, under the terms of [[P0023R0]], relocation may not happen because of ABI
 constraints (if `x` is not *early destructible*).
 This will cause `foo` to fallback to a move+deferred destroy paradigm.
 
-This proposal has another take on this issue: if `T` has a relocation constructor
-but no move constructor, then any function
+This proposal has another take on this issue: if `T` is
+*[relocatable non-movable](#relocatable-non-movable)*, then any function
 that takes a `T` parameter by value is required to have an ABI that allows it to
-relocate
-its input parameter (e.g. callee-destroy ABI).
+relocate its input parameter (e.g. callee-destroy ABI).
 
 This proposal also introduces the `reloc` keyword that is here to trigger
 the relocation, and protect against the reuse of the relocated object.
@@ -1040,7 +1055,7 @@ void foo(A a)
 </tr>
 </table>
 
-Since `A` has a copy constructor, it is not relocate-only. With the conservative
+Since `A` has a copy constructor, it is not *relocate-only*. With the conservative
 approach, we have no guarantee
 that `foo` has the ownership of `a`. Hence `reloc a` here may simply call the copy
 constructor, as the ABI may not permit otherwise.
@@ -1054,16 +1069,20 @@ to avoid pitfalls.
 
 Thus in an attempt to make a compromise between ABI compatibility and acceptable
 support for relocation, we take a slightly less conservative approach.
-We would like function parameters passed by value, whose type declares
-a relocation constructor but no move constructor, to be *early destructible*.
+We would like function parameters passed by value, whose type is
+*[relocatable non-movable](#relocatable-non-movable)*), to be *early destructible*.
 As the C++ standard leaves this area implementation-defined, we are going to force
 this another way, although the effect is the same:
 
-> **Rule:** In a temporary materialization, if the `reloc` operand is a function parameter passed by value, and its type
-    provides an eligible move constructor, then the relocation constructor (if any)
-    may be discarded during overload resolution. Whether the relocation constructor
-    is discarded is *implementation-defined*.
-    During constant evaluation, this discard is not performed.
+> **Rule:** In a temporary materialization, if the `reloc` operand is a function
+    parameter passed by value:
+    - if its type is *[relocatable non-movable](#relocatable-non-movable)*, then
+        the relocation constructor is always selected ;
+    - otherwise, the relocation constructor (if any) may be discarded during
+        overload resolution in favor of the move or copy constructor. Whether the
+        relocation constructor is discarded is *implementation-defined*.
+>
+>   During constant evaluation, the discard is not performed.
 
 This discard decision is made before viable-candidate selection and before
 evaluating `requires` clauses / constraints. It depends only on source-context
@@ -1080,12 +1099,11 @@ As consequences of that rule, we get the following:
 - source objects which are not *early destructible*, and have both an eligible move
     and relocation constructor, will not be relocated. Instead the move constructor
     will be invoked by `reloc`.
-- source objects which are function parameters, and have an eligible relocation
-    constructor but no move constructor, are forcibly *early destructible*.
+- source objects which are function parameters, and whose type is
+    *relocatable non-movable*, are forcibly *early destructible*.
 
-NOTE: Types which have a relocation constructor but no move constructor
-still don't exist today, so the likelihood of breaking existing ABIs is still
-small.
+NOTE: *Relocatable non-movable* types don't exist today, so the likelihood of
+breaking existing ABIs is still small.
 
 With this updated rule, `reloc a` from our previous example will effectively
 call the relocation constructor. And users can safely migrate away from the move
@@ -2488,6 +2506,13 @@ may silently relocate its argument to some local storage before the function
 body is entered. *This is a putative
 workaround and is not part of the proposal.* Nonetheless it is made possible
 in the [object decomposition requirements](#ill-formed-decomposition).
+
+Note: If the parameter is not *early destructible*, this silent relocation
+will odr-use the move or copy constructor.
+For *[relocatable non-movable](#relocatable-non-movable)* types, the parameter
+is forcibly *early destructible*, so this never applies.
+Likewise, this does not apply to the first parameter of the relocation
+constructor, which is inherently decomposed and always callee-destroy.
 
 For instance:
 
@@ -3918,8 +3943,10 @@ allowed to terminate by throwing an exception.
 A relocation assignment operator that is implicitly declared or defaulted on its first
 declaration has a `noexcept(true)` noexcept specification unless any assignment operator
 or destructor of a subobject that the default definition would call is
-*potentially-throwing*, or the move or copy constructor of the class type itself
-that the [non-eliding wrapper](#aliased-reloc-assign) may invoke is
+*potentially-throwing*, or — if the class type is not
+*[relocatable non-movable](#relocatable-non-movable)* — the move or copy
+constructor of the class type itself that the
+[non-eliding wrapper](#aliased-reloc-assign) may invoke is
 *potentially-throwing*.
 
 A non-defaulted user-declared relocation assignment operator with unspecified noexcept
@@ -4892,16 +4919,20 @@ where the *calling* function expects to destroy nontrivial parameters passed by
 value. This poses a problem for functions that wish to relocate from such
 parameters, and a potential ABI break.
 
-### relocate-only function parameters ### {#callee-destroy-abi}
+### Relocatable non-movable function parameters ### {#callee-destroy-abi}
 
 In the [case study](#reloc-with-function-param) of how `reloc` should behave
 with function parameters passed by value, we established the following rule:
 
-> **Rule:** In a temporary materialization, if the `reloc` operand is a function parameter passed by value, and its
-type provides an eligible move constructor, then the relocation constructor
-(if any) may be discarded during overload resolution. Whether the relocation
-constructor is discarded is implementation-defined.
-During constant evaluation, this discard is not performed.
+> **Rule:** In a temporary materialization, if the `reloc` operand is a function
+parameter passed by value:
+> - if its type is *[relocatable non-movable](#relocatable-non-movable)*, then
+    the relocation constructor is always selected ;
+> - otherwise, the relocation constructor (if any) may be discarded during
+    overload resolution in favor of the move or copy constructor. Whether the
+    relocation constructor is discarded is *implementation-defined*.
+>
+> During constant evaluation, the discard is not performed.
 
 This discard decision is made before viable-candidate selection and before
 evaluating `requires` clauses / constraints. It depends only on source-context
@@ -4909,8 +4940,8 @@ properties (notably whether relocation is possible in that implementation,
 e.g. early-destruction support), and not on overload constraints.
 
 If the ABI is not already compliant, then this rule will force an ABI change
-on functions which have parameters passed by value,
-and whose type declares a relocation constructor but no move constructor.
+on functions which have parameters passed by value of
+*relocatable non-movable* type.
 
 The good news is as of today, there are no such types, so no existing function
 should suffer from an ABI break. However, some types may accidently gain a relocation
@@ -4918,17 +4949,17 @@ constructor and may trigger an ABI break nonetheless.
 
 In a future library changes proposal to support relocation (separate from this one),
 we must be careful not to
-make any existing type relocate-only, especially for that concern.
+make any existing type *relocatable non-movable*, especially for that concern.
 However we will add a relocation constructor on many classes, alongside their
 existing copy and move constructors. In doing so,
-some of them may fit the criteria for ABI break, should their copy and move constructors
+some of them may fit the criteria for ABI break, should their move constructors
 be deleted.
 
 One example is a function with signature: `void foo(gsl::non_null<std::unique_ptr<int>>);`,
 supposing `unique_ptr` gets a relocation constructor.
 In turn GSL developers will
 likely add a relocation constructor too. That makes `gsl::non_null<std::unique_ptr<int>>`
-relocate-only, while it wasn't before, and may cause a potential ABI break.
+*relocatable non-movable*, while it wasn't before, and may cause a potential ABI break.
 
 There is zero value of passing a `gsl::non_null<std::unique_ptr>` by value
 to a function today, so we doubt anyone would write such a function.
@@ -5221,8 +5252,8 @@ chooses to pass the parameter by address. The following happens in the caller:
 1. when the function returns (normally or through an exception), the temporary
     object is destroyed.
 
-Now, let us say that `T` has migrated to relocation semantics: it has a
-relocation constructor, but no move constructor. This alone makes any object of
+Now, let us say that `T` has migrated to relocation semantics: it is
+*relocatable non-movable*. This alone makes any object of
 type `T` *early destructible*, and eligible to relocation elision.
 Hence, with the Itanium ABI and relocation elision,
 the expression `f(reloc obj)` can translate
@@ -5316,9 +5347,8 @@ and give ownership). This enables both relocation and its elision, ... but at th
 cost of having to dereference the `obj` pointer when the object is accessed.
 
 Note that this paper does not enforce one parameter passing or the other, we
-only mandate `obj` to be *early destructible* if `T` has a relocation constructor
-and no move constructor (so the second call convention is amended for those
-types).
+only mandate `obj` to be *early destructible* if `T` is *relocatable non-movable*
+(so the second call convention is amended for those types).
 
 ## std::exchange and std::swap ## {#std-exchange-swap}
 
