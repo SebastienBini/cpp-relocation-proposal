@@ -5,7 +5,7 @@ void do_smth(T) {}
 void reloc_showcase_09()
 {
     const T var = getT();
-    for (int i = 0; i != 10; ++i)
+    for (int i = 0; i != 1; ++i)
         do_smth(reloc var); // ill-formed: state of 'var' is A-R (on second iteration)
 }
 

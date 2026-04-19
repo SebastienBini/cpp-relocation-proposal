@@ -168,10 +168,11 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
 
     # --- Compare output (if any expected lines are present) ---
     if expected_lines:
-        actual_lines = actual_output_raw.splitlines()
-        # Expected output is already normalized; only normalize the actual output.
+        # Normalize the actual output as a whole (so address indices are
+        # assigned in order of first appearance across all lines, matching
+        # the behaviour of --bless which also normalizes the whole output).
         norm_expected = "\n".join(expected_lines).rstrip()
-        norm_actual   = "\n".join(normalize_output(l, cpp_path) for l in actual_lines).rstrip()
+        norm_actual   = normalize_output(actual_output_raw, cpp_path).rstrip()
 
         if norm_actual != norm_expected:
             return (
