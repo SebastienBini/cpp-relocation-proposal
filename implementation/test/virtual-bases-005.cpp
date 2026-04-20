@@ -1,21 +1,24 @@
 #include "virtual-bases.h"
 
+
 void decomp_d(D reloc d)
 {
-    std::cout << "decomp_d body" << std::endl;
+    std::cout << "decomp_d beg" << std::endl;
+    reloc d.base<B1>;
+    std::cout << "after: reloc d.base<B1>;" << std::endl;
+    auto b2 = reloc d.base<B2>;
+    std::cout << "decomp_d end" << std::endl;
 }
 
 int main(int, char**)
 {
-    std::cout << "main begin" << std::endl;
     D d;
-    std::cout << "After D ctor" << std::endl;
+    std::cout << "D initialized" << std::endl;
     decomp_d(reloc d);
     std::cout << "main end" << std::endl;
 }
 
 ////// BUILD SUCCESS
-// main begin
 // vb_m() 0x1
 // VBase() 0x1
 // b1_m() 0x2
@@ -26,7 +29,7 @@ int main(int, char**)
 // C() 0x6
 // d_m() 0x7
 // D() 0x3
-// After D ctor
+// D initialized
 // vb_m(vb_m&&) 0x8 <- 0x1
 // VBase(VBase&&) 0x8 <- 0x1
 // b1_m(b1_m&&) 0x9 <- 0x2
@@ -37,15 +40,23 @@ int main(int, char**)
 // C(C&&) 0x13 <- 0x6
 // d_m(d_m&&) 0x14 <- 0x7
 // D(D&&) 0x10 <- 0x3
-// decomp_d body
+// decomp_d beg
+// ~B1() 0x10
+// ~b1_m() 0x9
+// after: reloc d.base<B1>;
+// vb_m(vb_m&&) 0x15 <- 0x8
+// VBase(VBase&&) 0x15 <- 0x8
+// b2_m(b2_m reloc) 0x16 <- 0x11
+// B2(B2 reloc) 0x17 <- 0x12
+// decomp_d end
+// ~B2() 0x17
+// ~b2_m() 0x16
+// ~VBase() 0x15
+// ~vb_m() 0x15
 // ~VBase() 0x8
 // ~vb_m() 0x8
 // ~C() 0x13
 // ~c_m() 0x13
-// ~B2() 0x12
-// ~b2_m() 0x11
-// ~B1() 0x10
-// ~b1_m() 0x9
 // ~d_m() 0x14
 // main end
 // ~D() 0x3
