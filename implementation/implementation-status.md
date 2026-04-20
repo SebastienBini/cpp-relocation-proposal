@@ -412,6 +412,58 @@ err_decomposed_user_provided_dtor
 
 ---
 
+## Phase 5d+ — 4 reloc ctor variants for VBA handling ✅ `2b55010`
+
+**Scope:** Introduce two new `CXXCtorType` values (`Ctor_CompleteVBA`, `Ctor_BaseNonVBA`) to encode whether the relocation constructor source parameter's virtual bases are owned by the source (non-VBA) or by an enclosing decomposed object (VBA). This is orthogonal to the existing Complete/Base axis.
+
+### Design — 4 combinations
+
+| | Source owns VBases (non-VBA) | Source is VBA |
+|---|---|---|
+| **Init dest VBases (complete)** | C1 (`Ctor_Complete`): regular `T b = reloc a;` | C1v (`Ctor_CompleteVBA`): `auto b1 = reloc d.base<B1>;` |
+| **Skip dest VBases (base)** | C2v (`Ctor_BaseNonVBA`): theoretical | C2 (`Ctor_Base`): `D`'s reloc ctor calling `B`'s reloc ctor |
+
+### Implemented (13 files changed)
+
+- ✅ `ABI.h`: `Ctor_CompleteVBA = 6`, `Ctor_BaseNonVBA = 7` added to `CXXCtorType`; 4 inline helpers: `isCtorVariantComplete()`, `isCtorVariantBase()`, `isCtorSourceOwnsVBases()`, `isCtorSourceVBA()`
+- ✅ `ItaniumMangle.cpp`: C1v / C2v vendor-suffix mangling
+- ✅ `Mangle.cpp`: enumerate VBA variant manglings for reloc ctors with vbases
+- ✅ `ItaniumCXXABI.cpp`: `EmitCXXConstructors` emits C1v/C2v for reloc ctors with vbases; `NeedsVTTParameter` uses `isCtorVariantBase()`; `HasThisReturn` handles new variants; `buildStructorSignature` adds VTT for base variants
+- ✅ `CGClass.cpp`: `EmitCtorPrologue` — `ConstructVBases` uses `!isCtorVariantBase(CtorType)`; source VBase cleanup guarded by `isCtorSourceOwnsVBases(CtorType)` (so C2v can also push VBase cleanup)
+- ✅ `CGExprCXX.cpp`: variant selection logic in `EmitCXXRelocExpr` based on `IsBase` and `SourceIsVBA` flags; VBase cleanup NOT deactivated for VBA base relocs
+- ✅ `CGDecl.cpp`: `EmitParmDecl` skips VBase cleanups for reloc ctors
+- ✅ Tests updated: `p2785-virtual-base-cleanup.cpp` expects `@_ZN2B1C1vES_` mangling
+
+### Fix — segfault in virtual-bases-003.cpp
+
+The original code called C1 for `reloc d.base<B1>`, which destroyed the source's VBase immediately. Now C1v is called instead: it move-constructs the dest VBase but does NOT destroy the source's VBase. The source's VBase cleanup remains active and fires at scope exit.
+
+**Proposal coverage:** §"virtual-base-aliasing objects", §"decompose-virtual-ctor-variants" (new)
+
+---
+
+## Fix — Discarded reloc on VBA base ✅ `0237827`
+
+**Scope:** `reloc d.base<B1>;` (discarded expression) was calling `Dtor_Complete` on the source, destroying the shared virtual base that the VBA object doesn't own.
+
+### Root cause
+
+The discarded-reloc path in `EmitCXXRelocExpr` took a shortcut: call the source's destructor directly instead of materializing a temporary. But it used `Dtor_Complete`, which destroys virtual bases — incorrect for VBA objects.
+
+### Fix
+
+When the source is a `CXXDecomposedBaseExpr` whose type has virtual bases (i.e. it is VBA), use `Dtor_Base` with the appropriate VTT from the decomposed object's derived class. This destroys only the non-virtual parts, leaving the shared virtual base alive.
+
+### Tests
+
+- ✅ Lit test: `vba_discarded_reloc_b1` in `p2785-virtual-base-cleanup.cpp` — verifies `B1D2Ev` (Dtor_Base with VTT) emitted, not `B1D1Ev`
+- ✅ Unit test: `VbaseCleanup_VbaDiscardedReloc` — end-to-end compilation of discarded reloc on VBA base followed by reloc of another VBA base
+- ✅ Runtime test: `virtual-bases-005.cpp` — no crash, correct destruction order
+
+**Proposal coverage:** §"virtual-base-aliasing objects", §"discarded-reloc-expr"
+
+---
+
 ## Phase 5 CodeGen — Per-subobject cleanup deactivation tests ✅ `02e40b9`
 
 **Scope:** LLVM IR-level FileCheck tests verifying per-subobject destructor cleanup deactivation for Phases 5a and 5b.
