@@ -31,6 +31,12 @@ void reloc_showcase_18()
 }
 
 ////// BUILD FAILURE
+// use-after-reloc-020.cpp:16:31: error: multiple relocations of 'x' are unsequenced
+//    16 |     { T x; auto y = reloc x + reloc x; } // ill-formed
+//       |                               ^
+// use-after-reloc-020.cpp:16:21: note: relocation of 'x' is here
+//    16 |     { T x; auto y = reloc x + reloc x; } // ill-formed
+//       |                     ^
 // use-after-reloc-020.cpp:17:21: error: use of 'x' is unsequenced with its relocation
 //    17 |     { T x; auto y = x + reloc x; }       // ill-formed
 //       |                     ^
@@ -49,6 +55,18 @@ void reloc_showcase_18()
 // use-after-reloc-020.cpp:19:23: note: relocation of 'x' is here
 //    19 |     { T x; auto y = x[reloc x]; }        // ill-formed
 //       |                       ^
+// use-after-reloc-020.cpp:23:31: error: use of 'x' after it has been relocated
+//    23 |     { T x; auto y = (reloc x, x); }      // ill-formed
+//       |                               ^
+// use-after-reloc-020.cpp:23:22: note: relocated here
+//    23 |     { T x; auto y = (reloc x, x); }      // ill-formed
+//       |                      ^
+// use-after-reloc-020.cpp:25:32: error: use of 'x' after it has been relocated
+//    25 |     { T x; auto y = reloc x or x; }      // ill-formed
+//       |                                ^
+// use-after-reloc-020.cpp:25:21: note: relocated here
+//    25 |     { T x; auto y = reloc x or x; }      // ill-formed
+//       |                     ^
 // use-after-reloc-020.cpp:28:16: error: use of 'x' is unsequenced with its relocation
 //    28 |     { T x; foo(x, reloc x); }                        // ill-formed
 //       |                ^
@@ -67,4 +85,4 @@ void reloc_showcase_18()
 // use-after-reloc-020.cpp:23:22: warning: left operand of comma operator has no effect [-Wunused-value]
 //    23 |     { T x; auto y = (reloc x, x); }      // ill-formed
 //       |                      ^
-// 2 warnings and 5 errors generated.
+// 2 warnings and 8 errors generated.

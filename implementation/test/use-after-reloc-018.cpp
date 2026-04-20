@@ -22,7 +22,7 @@ void reloc_showcase_16()
 }
 
 ////// BUILD FAILURE
-// use-after-reloc-018.cpp:17:20: error: decomposed object must have a non-union class type; 'const auto' is not a class type
-//    17 |         auto const reloc y = reloc x;
-//       |                    ^
+// use-after-reloc-018.cpp:21:22: error: use of 'x' after it has been relocated
+//    21 |     do_another_thing(x); // ill-formed: state is now R
+//       |                      ^
 // 1 error generated.

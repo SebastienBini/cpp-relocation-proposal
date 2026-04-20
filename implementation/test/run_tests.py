@@ -138,11 +138,34 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
                 timeout=30,
             )
             actual_output_raw = run_result.stdout + run_result.stderr
+            program_exit_code = run_result.returncode
         finally:
             out_binary.unlink(missing_ok=True)
     else:
         actual_outcome = "BUILD FAILURE"
         actual_output_raw = compile_result.stderr + compile_result.stdout
+        program_exit_code = None
+
+    # --- Check for unexpected non-zero exit codes ---
+    # The compiler should always exit cleanly (rc=0 for success, rc=1 for
+    # diagnosed errors). Any other code (e.g. crash / signal) is reported.
+    compiler_rc = compile_result.returncode
+    if compiler_rc not in (0, 1):
+        return (
+            name,
+            False,
+            f"COMPILER CRASHED (exit code {compiler_rc}):\n"
+            + "\n".join(f"    {l}" for l in actual_output_raw.splitlines()),
+        )
+
+    # The program must exit with code 0.
+    if program_exit_code is not None and program_exit_code != 0:
+        return (
+            name,
+            False,
+            f"PROGRAM CRASHED OR FAILED (exit code {program_exit_code}):\n"
+            + "\n".join(f"    {l}" for l in actual_output_raw.splitlines()),
+        )
 
     # --- Bless mode: update the file and return ---
     if bless:
