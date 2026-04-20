@@ -1655,7 +1655,7 @@ When a complete object is defined as *decomposed*, then:
 
 - The object is *initialized* using the existing rules ;
 - All its direct bases and non-static data members are now considered as
-    distinct *complete* (or [virtual-base-aliasing](#decompose-virtual-aliasing-object)) objects:
+    distinct *complete* (or [*VBA*](#decompose-virtual-aliasing-object)) objects:
     - the decomposition does not odr-use any of the copy, move or relocation
         constructor of the subobjects. In particular, their address remains unchanged ;
     - for all virtual and direct bases that have runtime type information, they
@@ -2132,7 +2132,7 @@ it would create even more of them...
 We propose a twofold solution:
 
 - Virtual bases cannot be relocated ;
-- We introduce the notion of [virtual-base-aliasing](#decompose-virtual-aliasing-object) objects.
+- We introduce the notion of [*virtual-base-aliasing* (VBA)](#decompose-virtual-aliasing-object) objects.
 
 #### Virtual bases cannot be relocated #### {#decompose-virtual-no-reloc}
 
@@ -2155,11 +2155,11 @@ void foo(D reloc obj)
 
 At #1 and #2, the new rule ensures that the virtual base is not relocated,
 but it states nothing of the lifetime of the virtual base. This is where
-[virtual-base-aliasing](#decompose-virtual-aliasing-object) objects come in handy.
+[VBA](#decompose-virtual-aliasing-object) objects come in handy.
 
 #### Virtual-base-aliasing objects #### {#decompose-virtual-aliasing-object}
 
-We introduce the notion of *virtual-base-aliasing* objects. A *virtual-base-aliasing* object is a
+We introduce the notion of *virtual-base-aliasing* (*VBA*) objects. A *VBA* object is a
 direct base subobject of a decomposed object, and which inherits (maybe indirectly) of at
 least one virtual base.
 
@@ -2170,28 +2170,88 @@ the decomposed complete-object context, rather than owning that storage itself.
 // Given D definition in the above section
 void foo(D reloc obj)
 {
-    // obj.base<B> and obj.base<C> are virtual-base-aliasing objects
+    // obj.base<B> and obj.base<C> are VBA objects
     // obj.base<A>, obj.base<V>, and obj._d are complete objects.
 }
 ```
 
-A *virtual-base-aliasing* object does not own any of its virtual base
+A *VBA* object does not own any of its virtual base
 subobjects. The following rules apply:
 
-- destroying a *virtual-base-aliasing* object shall not destroy any virtual
+- destroying a *VBA* object shall not destroy any virtual
     base subobject ;
-- when a *virtual-base-aliasing* object is used as a relocation constructor
+- when a *VBA* object is used as a relocation constructor
     parameter, relocation semantics shall not be applied to its virtual base
     subobjects ;
 - relocation elision, copy elision, and move elision shall not be performed
-    from a *virtual-base-aliasing* object ;
+    from a *VBA* object ;
 - if a `reloc` operand designates a virtual base subobject of a
-    *virtual-base-aliasing* object, the program is ill-formed ;
+    *VBA* object, the program is ill-formed ;
 - implementations shall diagnose violations of the rules above where the
     corresponding expression is formed.
 
-Whether an object is *virtual-base-aliasing* is established by static
+Whether an object is *VBA* is established by static
 analysis local to the scope of the decomposed object.
+
+#### Implementation note: relocation constructor variants #### {#decompose-virtual-ctor-variants}
+
+The VBA rules above interact with the existing complete/base constructor
+distinction (Itanium ABI's C1/C2) to produce four combinations for a
+relocation constructor of a class with virtual bases.  The two orthogonal
+axes are:
+
+1. **Destination virtual bases**: whether the constructor initializes the
+    target object's virtual bases (complete-object variant) or skips them
+    (base-object variant, because a more-derived constructor handles them).
+2. **Source virtual bases**: whether the source parameter owns its virtual
+    bases (non-VBA, so the constructor must destroy them after the body) or
+    does not own them (VBA, so the caller is responsible for their lifetime).
+
+These axes are independent and yield four cases:
+
+<table>
+<tr>
+<th></th>
+<th>Source owns VBases (non-VBA)</th>
+<th>Source is VBA</th>
+</tr>
+<tr>
+<th>Init dest VBases (complete)</th>
+<td>**Combo 1**: regular complete relocation.<br>
+`T a; T b = reloc a;`</td>
+<td>**Combo 2**: VBA base relocation to a complete object.<br>
+`void f(D reloc d) { auto b1 = reloc d.base<B>; }`</td>
+</tr>
+<tr>
+<th>Skip dest VBases (base)</th>
+<td>**Combo 3**: base relocation where source owns VBases.<br>
+(Theoretical; included for completeness.)</td>
+<td>**Combo 4**: base relocation where source is VBA.<br>
+This is what `D`'s relocation constructor uses when<br>
+invoking `B`'s relocation constructor.</td>
+</tr>
+</table>
+
+For combos 1 and 2 (complete variants), the default relocation constructor
+move-constructs the target's virtual bases from the source's virtual bases.
+A user-provided relocation constructor may initialize virtual bases by any
+means (e.g. copy, or a custom exchange), but relocation semantics are never
+applied to virtual bases, per the rules above.
+
+For combos 1 and 3 (non-VBA source), the constructor destroys the
+source's (now moved-from) virtual bases after the constructor body
+completes.
+
+For combos 2 and 4 (VBA source), the constructor does **not** destroy
+the source's virtual bases.  The source's virtual bases remain in a
+moved-from state and are destroyed when the enclosing decomposed object
+goes out of scope.
+
+A user-provided relocation constructor's body is identical across all
+four variants; only the prologue (virtual base initialization) and
+epilogue (source virtual base destruction) differ.  An implementation
+may emit up to four entry points for a single relocation constructor
+declaration, or use any equivalent mechanism.
 
 ```c++
 void foo(D reloc obj)
@@ -2207,12 +2267,12 @@ B bar(D reloc obj)
 
 Expressions such as #1 may simply, thanks to relocation elision,
 further decompose `obj.base<C>` without actually performing any relocation.
-But because `obj.base<C>` is *virtual-base-aliasing*, then no relocation elision can happen,
+But because `obj.base<C>` is *VBA*, then no relocation elision can happen,
 and `c` object is initialized
 using relocation semantics. `c.base<V>` is move-constructed from the virtual base of
-`obj.base<C>`. `c.base<B>` is *virtual-base-aliasing* (as `obj.base<B>`).
+`obj.base<C>`. `c.base<B>` is *VBA* (as `obj.base<B>`).
 
-Return value optimization cannot happen in #2 as `obj.base<B>` is *virtual-base-aliasing*.
+Return value optimization cannot happen in #2 as `obj.base<B>` is *VBA*.
 This ensures that the returned
 value of `bar` is a *complete* object.
 
