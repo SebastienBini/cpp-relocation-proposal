@@ -1518,6 +1518,24 @@ elision can only happen when the source object is *early destructible*.
 
 You can read more on relocation elision in the [discussion section](#0-copy).
 
+### Implicit relocation in return statements ### {#return-reloc}
+
+In current C++, when a `return` statement names a move-eligible variable
+(as defined by
+<a href="https://eel.is/c++draft/class.copy.elision#3">[class.copy.elision]/3</a>),
+the operand is implicitly treated as an rvalue. We extend this mechanism
+to also consider the relocation constructor, with the following preference
+order: relocation, then move, then copy.
+
+If a non-deleted, eligible relocation constructor is found, then the return
+expression is treated as if the operand were wrapped in an implicit `reloc`
+expression. If no eligible relocation constructor is available (or if it is
+deleted), the existing implicit move / copy rules apply unchanged.
+NRVO still takes priority and may elide the constructor call entirely.
+
+The [discardment rule](#reloc-with-function-param) for function parameters
+applies to this context as well.
+
 ## Object decomposition ## {#decomposed-object}
 
 This proposal introduces the concept of object decomposition.
