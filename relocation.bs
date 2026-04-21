@@ -1510,6 +1510,14 @@ NRVO still takes priority and may elide the constructor call entirely.
 The [discardment rule](#reloc-with-function-param) for function parameters
 applies to this context as well.
 
+This implicit relocation also applies when the return operand designates a
+direct subobject of a [decomposed object](#decomposed-object): a direct base
+access (`d.base<B>`) or a direct data member access (`d.m`). After
+decomposition, such subobjects are complete objects with automatic storage and
+are semantically equivalent to local variables; requiring explicit `reloc`
+in this position would be inconsistent and would silently fall back to copy
+construction.
+
 ## Object decomposition ## {#decomposed-object}
 
 This proposal introduces the concept of object decomposition.
