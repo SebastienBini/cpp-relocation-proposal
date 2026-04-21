@@ -1452,7 +1452,7 @@ void do_something_05(non_null<shared_ptr<int>> copyOnlyObj)
 Relocation may be elided. This is intended to work in much the same way as the
 named return value optimization; for example:
 
-```c+
+```c++
 void f(std::string s);
 void g() {
     std::string s;  // may be created in f's argument slot
@@ -1473,50 +1473,24 @@ remove, merge, or reorder required volatile accesses.
 Of course, if relocation elision happens then the rules that impact the
 lifetime of the source object still applies.
 
-For instance,
-given the following function `void sink(T)`, let us observe the effects of the
-`sink(reloc obj)` expression (`obj` being not ref-qualified) across different
-ABIs and object lifetime ownerships:
+In summary, relocation elision is only possible when the source object is
+*early destructible*. For a detailed case analysis across different ABIs,
+parameter-passing conventions (`sink(reloc obj)`, `xvsink(reloc obj)`,
+`lvsink(reloc obj)`), see the
+[discussion on relocation elision](#reloc-elision-cases).
+You can also read about achieving
+[0-copy transfer with a cooperative ABI](#0-copy).
 
-- If `obj` is *early destructible* and `sink` is callee-destroy:
-    relocation elision may happen, in which case `obj` occupies the same storage
-    as `sink` parameter slot. No new instance is created, and as `sink` is
-    callee-destroy, it will take care of the lifetime of `obj`.
-- If `obj` is *early destructible* and `sink` is caller-destroy:
-    relocation elision may happen, in which case `obj` occupies the same storage
-    as `sink` parameter slot. No new instance is created. As `sink` is caller-destroy,
-    **the destructor of** `obj` **is implicitly invoked** at the end of the
-    full-expression evaluation which invoked `sink`.
-- If `obj` is not *early destructible* and `sink` is caller-destroy:
-    relocation elision may not happen.
-    Right before the invocation of `sink` in the expression `sink(reloc obj)`,
-    `obj` is expected to be in a moved-from state. Indeed, because it is not
-    *early destructible*, `reloc` will invoke the move constructor, and the
-    destruction of `obj` is deferred until control returns to the caller-site.
-    But should elision happen, hence bypassing the call to the move constructor,
-    then `obj` cannot be left in its moved-from state...
-    Hence if `obj` is not *early destructible*, then relocation elision cannot
-    happen.
-- If `obj` is not *early destructible* and `sink` is callee-destroy: this
-    configuration cannot happen in practice.
+Relocation elision also applies to `return` statements: if `return reloc obj;`
+appears in a function whose return type matches the type of `obj`, the
+temporary produced by `reloc` may share the same storage as the return slot,
+eliding the constructor call. Likewise, when a `return` statement triggers an
+[implicit relocation](#return-reloc), NRVO may elide the relocation
+constructor call entirely, just as it does for move or copy constructors today.
 
-Likewise, we can observe when elisions are possible given the following
-function `void xvsink(T&&)`, invoked through the `xvsink(reloc obj)` expression:
-
-- If `obj` is *early destructible*:
-    relocation elision may happen, in which case an rvalue reference of `obj`
-    is sent to `xvsink` and the destructor of `obj` is implicitly invoked
-    at the end of the full-expression evaluation.
-- If `obj` is not *early destructible*:
-    Same as above. When `obj` is not *early destructible*, then relocation
-    elision loses its interest. A new instance is move-or-copy-constructed from `obj`,
-    whose rvalue reference is passed to `xvsink`.
-
-
-The same kind of elision will happen with an `lvsink(T const&)` function:
-elision can only happen when the source object is *early destructible*.
-
-You can read more on relocation elision in the [discussion section](#0-copy).
+NOTE: Relocation elision, copy elision, and move elision are not performed
+from a [*VBA*](#decompose-virtual-aliasing-object) object
+(see [§](#decompose-virtual-aliasing-object)).
 
 ### Implicit relocation in return statements ### {#return-reloc}
 
@@ -5316,6 +5290,50 @@ strategies. They are not a normative promise of identical performance in all
 cases. In particular, cross-function object-creation counts remain
 implementation-dependent unless a specific elision rule in this proposal
 requires otherwise.
+
+### Relocation elision case analysis ### {#reloc-elision-cases}
+
+Given the following function `void sink(T)`, let us observe the effects of the
+`sink(reloc obj)` expression (`obj` being not ref-qualified) across different
+ABIs and object lifetime ownerships:
+
+- If `obj` is *early destructible* and `sink` is callee-destroy:
+    relocation elision may happen, in which case `obj` occupies the same storage
+    as `sink` parameter slot. No new instance is created, and as `sink` is
+    callee-destroy, it will take care of the lifetime of `obj`.
+- If `obj` is *early destructible* and `sink` is caller-destroy:
+    relocation elision may happen, in which case `obj` occupies the same storage
+    as `sink` parameter slot. No new instance is created. As `sink` is caller-destroy,
+    **the destructor of** `obj` **is implicitly invoked** at the end of the
+    full-expression evaluation which invoked `sink`.
+- If `obj` is not *early destructible* and `sink` is caller-destroy:
+    relocation elision may not happen.
+    Right before the invocation of `sink` in the expression `sink(reloc obj)`,
+    `obj` is expected to be in a moved-from state. Indeed, because it is not
+    *early destructible*, `reloc` will invoke the move constructor, and the
+    destruction of `obj` is deferred until control returns to the caller-site.
+    But should elision happen, hence bypassing the call to the move constructor,
+    then `obj` cannot be left in its moved-from state...
+    Hence if `obj` is not *early destructible*, then relocation elision cannot
+    happen.
+- If `obj` is not *early destructible* and `sink` is callee-destroy: this
+    configuration cannot happen in practice.
+
+Likewise, we can observe when elisions are possible given the following
+function `void xvsink(T&&)`, invoked through the `xvsink(reloc obj)` expression:
+
+- If `obj` is *early destructible*:
+    relocation elision may happen, in which case an rvalue reference of `obj`
+    is sent to `xvsink` and the destructor of `obj` is implicitly invoked
+    at the end of the full-expression evaluation.
+- If `obj` is not *early destructible*:
+    Same as above. When `obj` is not *early destructible*, then relocation
+    elision loses its interest. A new instance is move-or-copy-constructed from `obj`,
+    whose rvalue reference is passed to `xvsink`.
+
+
+The same kind of elision will happen with an `lvsink(T const&)` function:
+elision can only happen when the source object is *early destructible*.
 
 ### Achieving 0-copy transfer with a cooperative ABI ### {#0-copy}
 
