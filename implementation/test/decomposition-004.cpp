@@ -26,11 +26,12 @@ int main(int, char**)
     std::cout << obj.*pb << std::endl;
     std::cout << obj.*pd << std::endl;
     obj.sprint();
-    constexpr auto bprint = &base::print;
-    constexpr auto dprint = &D::print;
+    // PMF calls on decomposed objects are ill-formed (P2785 §"decomposed-static-member-func"):
+    // constexpr auto bprint = &base::print;
+    // constexpr auto dprint = &D::print;
+    // (obj.*bprint)();   // error: member function calls not permitted
+    // (obj.*dprint)();   // error: member function calls not permitted
     constexpr auto dsprint = &D::sprint;
-    (obj.*bprint)();
-    (obj.*dprint)();
     (*dsprint)();
 
     return 0;
@@ -44,6 +45,4 @@ int main(int, char**)
 // 10
 // 20
 // D print static
-// base print
-// D print
 // D print static
