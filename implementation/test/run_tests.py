@@ -189,24 +189,23 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
             + "\n".join(f"    {l}" for l in actual_output_raw.splitlines()),
         )
 
-    # --- Compare output (if any expected lines are present) ---
-    if expected_lines:
-        # Normalize the actual output as a whole (so address indices are
-        # assigned in order of first appearance across all lines, matching
-        # the behaviour of --bless which also normalizes the whole output).
-        norm_expected = "\n".join(expected_lines).rstrip()
-        norm_actual   = normalize_output(actual_output_raw, cpp_path).rstrip()
+    # --- Compare output ---
+    # Normalize the actual output as a whole (so address indices are
+    # assigned in order of first appearance across all lines, matching
+    # the behaviour of --bless which also normalizes the whole output).
+    norm_expected = "\n".join(expected_lines).rstrip()
+    norm_actual   = normalize_output(actual_output_raw, cpp_path).rstrip()
 
-        if norm_actual != norm_expected:
-            return (
-                name,
-                False,
-                f"OUTPUT MISMATCH:\n"
-                f"  Expected:\n"
-                + "\n".join(f"    {l}" for l in norm_expected.splitlines())
-                + "\n  Actual:\n"
-                + "\n".join(f"    {l}" for l in norm_actual.splitlines()),
-            )
+    if norm_actual != norm_expected:
+        return (
+            name,
+            False,
+            f"OUTPUT MISMATCH:\n"
+            f"  Expected:\n"
+            + "\n".join(f"    {l}" for l in norm_expected.splitlines())
+            + "\n  Actual:\n"
+            + "\n".join(f"    {l}" for l in norm_actual.splitlines()),
+        )
 
     return name, True, f"OK ({actual_outcome})"
 

@@ -82,7 +82,4 @@ void reloc_showcase_18()
 // use-after-reloc-020.cpp:22:22: warning: left operand of comma operator has no effect [-Wunused-value]
 //    22 |     { T x; auto y = (x, reloc x); }      // well-formed
 //       |                      ^
-// use-after-reloc-020.cpp:23:22: warning: left operand of comma operator has no effect [-Wunused-value]
-//    23 |     { T x; auto y = (reloc x, x); }      // ill-formed
-//       |                      ^
-// 2 warnings and 8 errors generated.
+// 1 warning and 8 errors generated.

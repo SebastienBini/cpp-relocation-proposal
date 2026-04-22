@@ -12,3 +12,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-021.cpp:10:18: error: 'reloc' on a class data member requires the containing object to be declared as a decomposed object ('T reloc name')
+//    10 |     (void)(reloc s.x);
+//       |                  ^
+// 1 error generated.

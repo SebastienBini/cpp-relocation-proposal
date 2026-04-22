@@ -24,3 +24,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-018.cpp:22:16: error: cannot relocate 'bx': it is declared in base class 'B'; use 'reloc obj.base<B>' to relocate the base subobject instead
+//    22 |     sink(reloc d.bx);
+//       |                ^
+// 1 error generated.

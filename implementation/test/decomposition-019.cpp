@@ -15,3 +15,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-019.cpp:13:11: error: 'base<>' access requires a decomposed object ('T reloc name'); ''d'' is not a decomposed object
+//    13 |     (void)d.base<B>;
+//       |           ^
+// 1 error generated.

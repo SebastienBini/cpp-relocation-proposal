@@ -23,3 +23,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-025.cpp:21:10: error: cannot relocate virtual base 'V' of a decomposed object
+//    21 |     sink(reloc d.base<V>);
+//       |          ^
+// 1 error generated.

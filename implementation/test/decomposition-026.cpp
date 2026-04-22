@@ -30,3 +30,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-026.cpp:28:10: error: cannot relocate indirect base 'A'; only direct bases of the decomposed type may be relocated
+//    28 |     sink(reloc d.base<A>);
+//       |          ^
+// 1 error generated.

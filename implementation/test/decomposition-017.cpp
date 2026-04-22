@@ -14,3 +14,7 @@ int main(int, char**) {
 }
 
 ////// BUILD FAILURE
+// decomposition-017.cpp:9:13: error: pointer-to-member access on decomposed object requires a constant-evaluated pointer; 'int S::*' is not constant-evaluated
+//     9 |     (void)(s.*p);
+//       |             ^ ~
+// 1 error generated.
