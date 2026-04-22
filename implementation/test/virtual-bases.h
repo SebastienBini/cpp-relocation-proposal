@@ -68,4 +68,5 @@ struct D : public B1, public B2, public C
     ~D() { std::cout << "~D() " << this << std::endl; }
     snoop d_m;
     friend void decomp_d(D reloc);
+    friend B1 getB1(D reloc d);
 };
