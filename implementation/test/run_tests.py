@@ -107,6 +107,31 @@ def write_annotation(cpp_path: Path, outcome: str, output_raw: str) -> None:
     cpp_path.write_text(text + annotation, encoding="utf-8")
 
 
+def build_only(cpp_path: Path, compiler: Optional[Path] = None) -> tuple:
+    """
+    Build *cpp_path* and keep the resulting binary. Does not run, bless, or compare.
+
+    Returns (filename, passed, message).
+    """
+    name = cpp_path.name
+    clangpp = compiler if compiler is not None else DEFAULT_CLANGPP
+    out_binary = cpp_path.with_suffix("")
+    compile_result = subprocess.run(
+        [str(clangpp)] + CXX_FLAGS + ["-o", str(out_binary), str(cpp_path)],
+        capture_output=True,
+        text=True,
+    )
+    if compile_result.returncode == 0:
+        return name, True, f"BUILT -> {out_binary}"
+    else:
+        output = (compile_result.stderr + compile_result.stdout).rstrip()
+        return (
+            name,
+            False,
+            f"BUILD FAILED:\n" + "\n".join(f"    {l}" for l in output.splitlines()),
+        )
+
+
 def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = None) -> tuple:
     """
     Build and (if successful) run a single .cpp file.
@@ -224,6 +249,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--build",
+        action="store_true",
+        help=(
+            "Build the listed source file(s) and keep the resulting binary. "
+            "Does not run the program, update annotations, or compare output. "
+            "Requires explicit FILE argument(s)."
+        ),
+    )
+    parser.add_argument(
         "--bless",
         action="store_true",
         help=(
@@ -240,6 +274,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.build and not args.files:
+        parser.error("--build requires at least one FILE argument")
+
+    if args.build and args.bless:
+        print("error: --build and --bless are mutually exclusive.")
+        return 1
+
     clangpp = Path(args.compiler) if args.compiler else DEFAULT_CLANGPP
 
     if args.files:
@@ -255,13 +296,16 @@ def main() -> int:
         print(f"Compiler not found: {clangpp.resolve()}")
         return 1
 
-    mode = "Blessing" if args.bless else "Running"
+    mode = "Building" if args.build else "Blessing" if args.bless else "Running"
     print(f"{mode} {len(cpp_files)} test(s) with {clangpp.resolve()}\n")
 
     results: list[tuple] = []
     max_workers = min(len(cpp_files), os.cpu_count() or 4)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(run_test, p, args.bless, clangpp): p for p in cpp_files}
+        if args.build:
+            futures = {pool.submit(build_only, p, clangpp): p for p in cpp_files}
+        else:
+            futures = {pool.submit(run_test, p, args.bless, clangpp): p for p in cpp_files}
         for fut in concurrent.futures.as_completed(futures):
             results.append(fut.result())
 
@@ -281,6 +325,10 @@ def main() -> int:
     if args.bless:
         print(f"\n{passed} file(s) blessed.")
         return 0
+
+    if args.build:
+        print(f"\n{passed} built, {failed} failed out of {len(results)} file(s).")
+        return 0 if failed == 0 else 1
 
     print(f"\n{passed} passed, {failed} failed out of {len(results)} test(s).")
     return 0 if failed == 0 else 1

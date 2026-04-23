@@ -5,6 +5,7 @@
 
 struct snoop
 {
+    snoop() : snoop{"snoop"} {}
     snoop(std::string_view name) : name{name} { std::cout << name << "()" << " " << this << std::endl; }
     snoop(snoop const& rhs) : name(rhs.name) { std::cout << name << "(" << name << " const&)" << "; " << this << " <- " << &rhs << std::endl; }
     snoop(snoop&& rhs) : name(rhs.name) { std::cout << name << "(" << name << "&&)" << " " << this << " <- " << &rhs << std::endl; }
