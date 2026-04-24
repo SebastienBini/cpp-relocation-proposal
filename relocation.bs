@@ -1649,6 +1649,29 @@ void X::bar(T reloc obj) // ill-formed, not matching its declaration
 static_assert(std::is_same_v<decltype(&X::foo), void (X::*)(T)>); // ok
 ```
 
+The same consistency requirement extends to virtual functions and their
+overriders. If a virtual function declares a parameter as decomposed, every
+overriding function in a derived class must also declare that parameter as
+decomposed, and vice versa. A mismatch between the decomposition trait of a
+virtual function and any of its overriders makes the program ill-formed.
+
+```c++
+struct B
+{
+    virtual void foo(T reloc obj);
+    virtual void bar(T obj);
+};
+struct D : B
+{
+    void foo(T reloc obj) override; // well-formed
+    void bar(T reloc obj) override; // ill-formed, not matching B::bar
+};
+struct E : B
+{
+    void foo(T obj) override; // ill-formed, not matching B::foo
+};
+```
+
 ### Decomposition operation ### {#decomposed-state}
 
 When a complete object is defined as *decomposed*, then:
