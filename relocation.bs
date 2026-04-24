@@ -4582,7 +4582,7 @@ a structured bindings declaration.
 The protocols are tested in the following order:
 
 1. The *array* protocol ;
-1. The *get_all* protocol ;
+1. The *customized decomposition* protocol ;
 1. The *data members* protocol ;
 
 In what follows, let `S` be the type of the *initialization* expression,
@@ -4614,41 +4614,48 @@ void foo()
 }
 ```
 
-#### get_all protocol #### {#structured-decomposition-get_all}
+#### Customized decomposition protocol #### {#structured-decomposition-custom}
 
-The function `get_all(S)` is looked-up using ADL-lookup. If there is
+##### `operator reloc[]` ##### {#operator-reloc-brackets}
+
+`operator reloc[]` is a member operator function. It cannot be defined as a
+non-member (free) function.
+It takes no arguments other than the implicit object parameter, and
+may accept any implicit object parameter type
+(e.g. `this T reloc self`, `this T const& self`, etc.).
+The choice of qualifier determines whether the operation consumes the source
+object or merely observes it.
+
+There are no constraints on the return type of `operator reloc[]` in general.
+When used in the context of a structured decomposition declaration, the
+returned type must satisfy the *data members* protocol (see
+[protocol rules](#structured-decomposition-custom-rules) below).
+
+Note: The brackets in `operator reloc[]` are intentional. The spelling
+`operator reloc()` is reserved for a potential future extension (for instance a
+possible customization point invoked immediately before an object is decomposed.)
+
+##### Protocol rules ##### {#structured-decomposition-custom-rules}
+
+`operator reloc[]` is looked up as a member of `S`. If there is
 no match, then this protocol does not apply.
 
-If there is a match, then this function is called using the *initialization*
-expression to initialize the function parameter.
-The returned type is tested recursively:
-
-1. If *get_all* matches for the returned type, then we reapply it again using
-    the returned value as new parameter ;
-1. Otherwise, if *data members* protocol matches for the returned type, then
-    it is applied ;
-1. Otherwise the expression is **ill-formed**. Once the *get_all* protocol
-    matched, the declaration no longer falls back to an ordinary structured
-    bindings declaration.
-
-This follows the same recursive logic as `operator->()`.
-We recursively call `get_all` as long as the *get_all* protocol applies.
-When the recursion ends, we end up with a type which
-matches the *data member* protocol, or else the expression is ill-formed.
+If there is a match, then `operator reloc[]` is called on the *initialization*
+expression.
+The returned type must satisfy the *data members* protocol, or else
+the expression is **ill-formed**. Once the *customized decomposition* protocol
+matched, the declaration no longer falls back to an ordinary structured
+bindings declaration.
 
 This protocol does not say how `e` is initialized and how the identifiers are
-bound. Those will happen at the end of the recursion by the *data member*
-protocol.
-
-NOTE: If there are concerns that `get_all` may clash with existing functions,
-then other names may be used, such as `__get_all__` or `__decompose__` or
-even `operator[]reloc`.
+bound. Those will happen by the *data member* protocol applied on the
+returned object.
 
 #### data members protocol #### {#structured-decomposition-dm}
 
-Let `t` be the resulting expression after unrolling the `get_all` recursion
-(`t` is the *initialization* expression if the *get_all* protocol was not
-applied) and `T` the type `t`,
+Let `t` be the *initialization* expression if the *customized decomposition*
+protocol was not applied, or the result of the `operator reloc[]` call
+otherwise. Let `T` be the type of `t`,
 deprived of its reference and cv qualifiers.
 
 For this protocol to apply, all the following conditions must be satisfied:
@@ -4673,16 +4680,16 @@ and thus denotes an lvalue complete object).
 
 #### Implementation-defined library support #### {#structured-decomposition-tuple}
 
-`std::tuple`, and `std::array` shall provide their own implementation
-of `get_all`. The return type is *implementation-defined* (may rely on compiler
+`std::tuple` and `std::array` shall provide their own `operator reloc[]`.
+The return type is *implementation-defined* (may rely on compiler
 magic, which will return a flat structure containing all the tuple or array
 elements as data members).
-The observable effect must be that, after unrolling the `get_all` recursion,
-the resulting expression matches the *data members* protocol and exposes
+The observable effect must be that the returned type satisfies the
+*data members* protocol, exposing
 exactly one direct data member per tuple/array element, in index order.
 
-`std::pair` already complies with the *data member* protocol and does not need a
-`get_all` implementation.
+`std::pair` already complies with the *data member* protocol and does not need
+an `operator reloc[]`.
 
 This allows us to write things like:
 ```c++
@@ -4699,10 +4706,20 @@ void foo(std::vector<T>& v)
 
 This code works even if `T` is relocate-only.
 
-#### Possible get_all implementations #### {#structured-decomposition-implem}
+#### Possible `operator reloc[]` implementations #### {#structured-decomposition-implem}
 
-Thanks to `std::tuple`'s `get_all` we can easily write
-a `get_all` implementation for a custom class:
+A generic utility class leveraging C++26 pack indexing can serve as a
+convenient return type for `operator reloc[]`:
+
+```c++
+template <class... Ts>
+struct decomposable { Ts... m; };
+```
+
+Note: `decomposable` is shown for exposition; it is not proposed for
+standardization.
+
+With this, writing `operator reloc[]` for a custom class is straightforward:
 
 ```c++
 class MyType
@@ -4711,10 +4728,9 @@ public:
     MyType();
     MyType(MyType reloc);
 
-    // Possible implementation:
-    auto get_all(this MyType reloc self)
+    auto operator reloc[](this MyType reloc self)
     {
-        return std::tuple{_rep, reloc self._name, reloc self._box};
+        return decomposable{self._rep, reloc self._name, reloc self._box};
     }
 
 private:
@@ -4725,20 +4741,17 @@ private:
 };
 ```
 
-Advisement: The implementation relies on a putative new constructor for `std::tuple`
-(not proposed) which captures the tuple elements by value category,
-which allows to relocate objects into a tuple.
+The returned `decomposable` satisfies the *data members* protocol directly.
 
 Then, in the following snippet:
 ```c++
 MyType tp;
 auto [rep, name, box] = reloc tp;
-// equivalent to: auto [rep, name, box] = get_all(get_all(reloc tp));
+// equivalent to: auto [rep, name, box] = (reloc tp).operator reloc[]();
 ```
 
-`MyType`'s `get_all` returns a tuple. `get_all` is defined for tuples as well, so
-it is called again. The second return type won't have a `get_all` defined, hence
-the recursion stops and the *data member* protocol is used.
+`MyType`'s `operator reloc[]` returns a `decomposable` which matches the
+*data member* protocol, and the identifiers are bound to its members.
 
 And we have:
 ```c++
@@ -4985,11 +4998,6 @@ revision, with an implementation-first scope.
     `obj.this` yields a `void cv*` to former storage identity only. It does not
     make the former object accessible.
 
-1. **Is `get_all` too implementation-magic?**
-    Mechanisms remain implementation-defined, but observable behavior is
-    constrained: after recursion, the resulting expression must match the
-    data-members protocol with one direct member per tuple/array element in
-    index order.
 
 1. **What about coroutines?**
     Coroutine semantics are intentionally deferred. A future revision can address
