@@ -1,45 +1,46 @@
-/// Trivially relocatable, relocatable-non-movable, user-provided destructor.
-/// A has no user-declared copy/reloc ctors (trivially relocatable) but move
-/// is deleted -> relocatable-non-movable -> early-destructible parameter.
-/// Chain: main -> bar -> baz, forwarding by value with reloc at each step.
-/// Only one destructor call (no moved-from leftover).
+/// All 3 ctors: reloc assignment through a chain.
+/// main creates a and b, then a = bar(reloc b) where bar returns reloc obj.
 
 #include <iostream>
+#include <string_view>
+#include "snoop.h"
 
-struct A {
-    int value;
-
-    A(int v) : value(v) { std::cout << "A(" << value << ") " << this << std::endl; }
-    A(A const&) = default;
+struct A : public snoop {
+    A() : snoop("snoop") { std::cout << "A() " << this << std::endl; }
+    A(A const& rhs) : snoop(rhs) { std::cout << "A(A const&) " << this << " <- " << &rhs << std::endl; }
     A(A&& rhs) = delete;
-    A(A reloc) = default;
-    ~A() { std::cout << "~A(" << value << ") " << this << std::endl; }
+    A(A reloc rhs) : snoop(reloc rhs.base<snoop>) { std::cout << "A(A reloc) " << this << " <- " << rhs.this << std::endl; }
+    A& operator=(A reloc rhs) { static_cast<snoop&>(*this) = reloc rhs.base<snoop>; std::cout << "A::operator=(A reloc) " << this << " = " << rhs.this << std::endl; return *this; }
+    ~A() { std::cout << "~A() " << this << std::endl; }
 };
 
-void baz(A obj)
+A bar(A obj)
 {
-    std::cout << "baz " << obj.value << std::endl;
-}
-
-void bar(A obj)
-{
-    std::cout << "bar " << obj.value << std::endl;
-    baz(reloc obj);
+    std::cout << "bar" << std::endl;
+    return reloc obj;
 }
 
 int main(int, char**)
 {
-    A a{42};
+    A a;
+    A b;
     std::cout << "---" << std::endl;
-    bar(reloc a);
+    a = bar(reloc b);
     std::cout << "---" << std::endl;
     return 0;
 }
 
 ////// BUILD SUCCESS
-// A(42) 0x1
+// snoop() 0x1
+// A() 0x1
+// snoop() 0x2
+// A() 0x2
 // ---
-// bar 42
-// baz 42
-// ~A(42) 0x1
+// bar
+// snoop(snoop reloc) 0x3 <- 0x2
+// A(A reloc) 0x3 <- 0x2
+// snoop& snoop::operator=(snoop reloc) 0x1 = 0x3
+// A::operator=(A reloc) 0x1 = 0x3
 // ---
+// ~A() 0x1
+// ~snoop() 0x1
