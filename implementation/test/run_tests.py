@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 # Keep as clang++ (not resolved) so the C++ driver wrapper is used, which
 # automatically links the C++ standard library.
 DEFAULT_CLANGPP = SCRIPT_DIR / ".." / ".." / ".." / "build-make" / "bin" / "clang++"
+DEFAULT_VALGRIND = Path("/opt/1A/toolchain/x86_64-v25.0.14/build-pack/25.0.14.0/bin/valgrind")
 CXX_FLAGS = ["-std=c++23", "-frelocation"]
 
 # Matches a hex address like 0x7ffd3b3815c0
@@ -132,12 +134,16 @@ def build_only(cpp_path: Path, compiler: Optional[Path] = None) -> tuple:
         )
 
 
-def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = None) -> tuple:
+def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = None,
+             valgrind: Optional[Path] = None) -> tuple:
     """
     Build and (if successful) run a single .cpp file.
 
     When *bless* is True, update the file's annotation with the actual
     (normalized) output instead of comparing.
+    When *valgrind* is set, the program is run under valgrind memcheck and
+    the valgrind log is checked for memory errors; the program output is
+    still compared against the expected output.
 
     Returns (filename, passed, message).
     """
@@ -154,22 +160,51 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
 
     if compile_result.returncode == 0:
         actual_outcome = "BUILD SUCCESS"
-        # Run the binary to capture its output
+        # Run the binary (optionally under valgrind) to capture its output
         try:
-            run_result = subprocess.run(
-                [str(out_binary)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            actual_output_raw = run_result.stdout + run_result.stderr
-            program_exit_code = run_result.returncode
+            if valgrind is not None:
+                vg_log_fd, vg_log_path_str = tempfile.mkstemp(suffix=".log", prefix="vg_")
+                os.close(vg_log_fd)
+                vg_log_path = Path(vg_log_path_str)
+                try:
+                    run_result = subprocess.run(
+                        [
+                            str(valgrind),
+                            "--tool=memcheck",
+                            "--leak-check=full",
+                            f"--log-file={vg_log_path}",
+                            str(out_binary),
+                        ],
+                        capture_output=True,
+                        timeout=120,
+                    )
+                    actual_output_raw = (
+                        run_result.stdout.decode("utf-8", errors="replace")
+                        + run_result.stderr.decode("utf-8", errors="replace")
+                    )
+                    program_exit_code = run_result.returncode
+                    vg_log = vg_log_path.read_text(encoding="utf-8", errors="replace") if vg_log_path.exists() else ""
+                finally:
+                    vg_log_path.unlink(missing_ok=True)
+            else:
+                run_result = subprocess.run(
+                    [str(out_binary)],
+                    capture_output=True,
+                    timeout=30,
+                )
+                actual_output_raw = (
+                    run_result.stdout.decode("utf-8", errors="replace")
+                    + run_result.stderr.decode("utf-8", errors="replace")
+                )
+                program_exit_code = run_result.returncode
+                vg_log = None
         finally:
             out_binary.unlink(missing_ok=True)
     else:
         actual_outcome = "BUILD FAILURE"
         actual_output_raw = compile_result.stderr + compile_result.stdout
         program_exit_code = None
+        vg_log = None
 
     # --- Check for unexpected non-zero exit codes ---
     # The compiler should always exit cleanly (rc=0 for success, rc=1 for
@@ -191,6 +226,19 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
             f"PROGRAM CRASHED OR FAILED (exit code {program_exit_code}):\n"
             + "\n".join(f"    {l}" for l in actual_output_raw.splitlines()),
         )
+
+    # --- Valgrind check ---
+    if vg_log is not None:
+        # valgrind always writes "ERROR SUMMARY: N errors" at the end of the log.
+        # With --leak-check=full, definitely/indirectly lost bytes are counted.
+        m = re.search(r"ERROR SUMMARY:\s*(\d+)\s*error", vg_log)
+        if m is None or int(m.group(1)) != 0:
+            return (
+                name,
+                False,
+                f"VALGRIND ERRORS DETECTED:\n"
+                + "\n".join(f"    {l}" for l in vg_log.splitlines()),
+            )
 
     # --- Bless mode: update the file and return ---
     if bless:
@@ -249,6 +297,24 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--valgrind",
+        action="store_true",
+        help=(
+            "Run successfully-built binaries under valgrind memcheck. "
+            "Program output is still compared against the expected output. "
+            "Memory errors (leaks, corruption, …) cause the test to fail."
+        ),
+    )
+    parser.add_argument(
+        "--valgrind-path",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Path to the valgrind binary (default: {DEFAULT_VALGRIND}). "
+            "Implies --valgrind."
+        ),
+    )
+    parser.add_argument(
         "--build",
         action="store_true",
         help=(
@@ -281,7 +347,19 @@ def main() -> int:
         print("error: --build and --bless are mutually exclusive.")
         return 1
 
+    if args.build and args.valgrind:
+        print("error: --build and --valgrind are mutually exclusive.")
+        return 1
+
     clangpp = Path(args.compiler) if args.compiler else DEFAULT_CLANGPP
+    valgrind: Optional[Path] = None
+    if args.valgrind_path:
+        valgrind = Path(args.valgrind_path)
+    elif args.valgrind:
+        valgrind = DEFAULT_VALGRIND
+    if valgrind is not None and not valgrind.exists():
+        print(f"Valgrind not found: {valgrind}")
+        return 1
 
     if args.files:
         cpp_files = sorted(Path(f).resolve() for f in args.files)
@@ -297,7 +375,8 @@ def main() -> int:
         return 1
 
     mode = "Building" if args.build else "Blessing" if args.bless else "Running"
-    print(f"{mode} {len(cpp_files)} test(s) with {clangpp.resolve()}\n")
+    vg_suffix = f" (valgrind {valgrind})" if valgrind else ""
+    print(f"{mode} {len(cpp_files)} test(s) with {clangpp.resolve()}{vg_suffix}\n")
 
     results: list[tuple] = []
     max_workers = min(len(cpp_files), os.cpu_count() or 4)
@@ -305,7 +384,7 @@ def main() -> int:
         if args.build:
             futures = {pool.submit(build_only, p, clangpp): p for p in cpp_files}
         else:
-            futures = {pool.submit(run_test, p, args.bless, clangpp): p for p in cpp_files}
+            futures = {pool.submit(run_test, p, args.bless, clangpp, valgrind): p for p in cpp_files}
         for fut in concurrent.futures.as_completed(futures):
             results.append(fut.result())
 
