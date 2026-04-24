@@ -55,11 +55,11 @@ int main(int, char**)
 // ~VBase() 0x18
 // ~vb_m() 0x18
 // ~b1_m() 0x19
-// decomp_d end
 // ~B1() 0x17
 // ~b1_m() 0x16
 // ~VBase() 0x15
 // ~vb_m() 0x15
+// decomp_d end
 // ~VBase() 0x8
 // ~vb_m() 0x8
 // ~C() 0x13
@@ -67,7 +67,6 @@ int main(int, char**)
 // ~B2() 0x12
 // ~b2_m() 0x11
 // ~d_m() 0x14
-// main end
 // ~D() 0x3
 // ~d_m() 0x7
 // ~C() 0x6
@@ -78,3 +77,4 @@ int main(int, char**)
 // ~b1_m() 0x2
 // ~VBase() 0x1
 // ~vb_m() 0x1
+// main end

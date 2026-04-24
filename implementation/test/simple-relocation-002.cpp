@@ -36,6 +36,6 @@ int main(int, char**)
 // A(A&&) 0x2 <- 0x1
 // foo body
 // ~snoop() 0x2
-// main end
 // ~A() 0x1
 // ~snoop() 0x1
+// main end

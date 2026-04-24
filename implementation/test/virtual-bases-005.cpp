@@ -58,7 +58,6 @@ int main(int, char**)
 // ~C() 0x13
 // ~c_m() 0x13
 // ~d_m() 0x14
-// main end
 // ~D() 0x3
 // ~d_m() 0x7
 // ~C() 0x6
@@ -69,3 +68,4 @@ int main(int, char**)
 // ~b1_m() 0x2
 // ~VBase() 0x1
 // ~vb_m() 0x1
+// main end

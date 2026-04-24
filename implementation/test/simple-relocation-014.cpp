@@ -1,7 +1,6 @@
-/// All 3 ctors: reloc + move + copy.
-/// Chain: main -> bar -> baz, forwarding by value with reloc at each step.
-/// A has all three constructors, so it is NOT relocatable-non-movable.
-/// The parameter is not early-destructible, so reloc on the param uses move.
+/// Reloc-assign where RHS is a function return value (not a CXXRelocExpr).
+/// Tests Bug A fix: the moved-from temporary must be destroyed after operator=.
+/// a = make_a() — non-eliding variant selected, caller-side cleanup fires.
 
 #include <iostream>
 #include <string_view>
@@ -12,25 +11,22 @@ struct A : public snoop {
     A(A const& rhs) : snoop(rhs) { std::cout << "A(A const&) " << this << " <- " << &rhs << std::endl; }
     A(A&& rhs) : snoop(std::move(rhs)) { std::cout << "A(A&&) " << this << " <- " << &rhs << std::endl; }
     A(A reloc rhs) : snoop(reloc rhs.base<snoop>) { std::cout << "A(A reloc) " << this << " <- " << rhs.this << std::endl; }
+    A& operator=(A reloc rhs) { static_cast<snoop&>(*this) = reloc rhs.base<snoop>; std::cout << "A::operator=(A reloc) " << this << " = " << rhs.this << std::endl; return *this; }
     ~A() { std::cout << "~A() " << this << std::endl; }
 };
 
-void baz(A obj)
+A make_a()
 {
-    std::cout << "baz" << std::endl;
-}
-
-void bar(A obj)
-{
-    std::cout << "bar" << std::endl;
-    baz(reloc obj);
+    A tmp;
+    std::cout << "make_a" << std::endl;
+    return tmp;
 }
 
 int main(int, char**)
 {
     A a;
     std::cout << "---" << std::endl;
-    bar(reloc a);
+    a = make_a();
     std::cout << "---" << std::endl;
     return 0;
 }
@@ -39,12 +35,15 @@ int main(int, char**)
 // snoop() 0x1
 // A() 0x1
 // ---
-// bar
-// snoop(snoop&&) 0x2 <- 0x1
-// A(A&&) 0x2 <- 0x1
-// baz
+// snoop() 0x2
+// A() 0x2
+// make_a
+// snoop(snoop&&) 0x3 <- 0x2
+// A(A&&) 0x3 <- 0x2
+// snoop& snoop::operator=(snoop reloc) 0x1 = 0x3
+// A::operator=(A reloc) 0x1 = 0x3
 // ~A() 0x2
 // ~snoop() 0x2
+// ---
 // ~A() 0x1
 // ~snoop() 0x1
-// ---
