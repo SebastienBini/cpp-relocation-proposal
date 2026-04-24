@@ -204,9 +204,9 @@ All seven `A←B←D` member/base combinations at top level; all seven under one
 
 ## ExprWithCleanups tightening — source destructor at end-of-full-expression ✅ `e09a28e`
 
-**Description:** When `reloc` selects the move/copy path (not a relocation constructor), the source object's destructor now fires at the end of the enclosing full-expression (§"early end of scope"), not at end-of-scope.
+**Description:** When `reloc` selects the move/copy path (not a relocation constructor), the source object's destructor fires at the end of the enclosing full-expression (§"early end of scope"), not at end-of-scope. When `reloc` selects the relocation constructor, the source is consumed — no destructor fires (the scope-exit cleanup is simply deactivated).
 
-**Implementation:** For non-parameter locals with non-trivial destructors, `EmitCXXRelocExpr` deactivates the scope-exit cleanup and pushes a `pushDestroy(NormalAndEHCleanup, ...)` as a full-expression cleanup. `Cleanup.setExprNeedsCleanups(true)` ensures `ExprWithCleanups` wrapping.
+**Implementation:** For non-parameter locals with non-trivial destructors, `EmitCXXRelocExpr` deactivates the scope-exit cleanup and pushes a `pushDestroy(NormalAndEHCleanup, ...)` as a full-expression cleanup (move/copy path only). `Cleanup.setExprNeedsCleanups(true)` in `ActOnRelocExpr` (SemaRelocation.cpp) ensures `ExprWithCleanups` wrapping whenever the source type has a non-trivial destructor. This wrapping is needed even for the relocation constructor path because CodeGen's CanElide optimization (Phase 9) may bypass the ctor and push a caller-side cleanup instead — that cleanup must fire at the end of the full expression, not at scope exit.
 
 **Proposal coverage:** §"reloc-src-obj-lifetime", §"early end of scope"
 
@@ -849,14 +849,24 @@ Key sub-features:
 | Param reloc ctor discardment (§reloc-with-function-param) | 9 |
 | Decomposed param silent relocation (§decompose-value-param) | 4 |
 | EH-aware use-after-reloc (try/catch) | 6 |
-| **Total** | **345** |
+| Phase 9 (relocation elision, aliased reloc-assign) | 67 |
+| Phase 9 fixes (callee-destroy, decomposed base elision) | 38 |
+| **Total** | **450** |
 
-345 unit tests pass. All tests run cleanly in a single invocation.
+450 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 3 lit test files pass:
-- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` (FileCheck IR tests)
-- `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (FileCheck IR tests for relocation elision + aliased reloc-assign)
+Additionally, 11 lit test files pass:
+- `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
+- `clang/test/CodeGenCXX/p2785-reloc-arg-temp-cleanup.cpp` (argument temporary cleanup)
+- `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (relocation elision + aliased reloc-assign + cleanup timing)
+- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` (scalar, pointer, class, decomposition, discard, conditional, silent relocation)
+- `clang/test/CodeGenCXX/p2785-virtual-base-cleanup.cpp` (VBA ctor variants, base dtor with VTT)
+- `clang/test/SemaCXX/p2785-decomposed-reject.cpp` (decomposition rejection diagnostics)
 - `clang/test/SemaCXX/p2785-reloc-operator.cpp` (Sema diagnostics + noexcept static_asserts)
+- `clang/test/SemaCXX/p2785-reloc-unused-value.cpp` (unused reloc value warnings)
+- `clang/test/SemaCXX/p2785-unsequenced-reloc.cpp` (unsequenced reloc + use diagnostics)
+- `clang/test/SemaCXX/p2785-use-after-reloc.cpp` (CFG-based use-after-reloc diagnostics)
+- `clang/test/SemaCXX/p2785-virtual-call-decomposed-base.cpp` (virtual call on decomposed base)
 
 ---
 
