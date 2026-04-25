@@ -25,9 +25,9 @@ int main(int, char**)
 // snoop() 0x5
 // snoop() 0x6
 // c init-ed
-// snoop& snoop::operator=(snoop reloc) 0x4 = 0x1
-// snoop& snoop::operator=(snoop reloc) 0x5 = 0x2
-// snoop& snoop::operator=(snoop reloc) 0x6 = 0x3
+// snoop& snoop::operator=(snoop reloc) 0x4 <- 0x1
+// snoop& snoop::operator=(snoop reloc) 0x5 <- 0x2
+// snoop& snoop::operator=(snoop reloc) 0x6 <- 0x3
 // c assigned
 // ~snoop() 0x6
 // ~snoop() 0x5

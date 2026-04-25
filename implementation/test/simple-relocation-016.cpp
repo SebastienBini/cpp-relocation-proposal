@@ -11,7 +11,7 @@ struct A : public snoop {
     A(A const& rhs) : snoop(rhs) { std::cout << "A(A const&) " << this << " <- " << &rhs << std::endl; }
     A(A&& rhs) = delete;
     A(A reloc rhs) : snoop(reloc rhs.base<snoop>) { std::cout << "A(A reloc) " << this << " <- " << rhs.this << std::endl; }
-    A& operator=(A reloc rhs) { static_cast<snoop&>(*this) = reloc rhs.base<snoop>; std::cout << "A::operator=(A reloc) " << this << " = " << rhs.this << std::endl; return *this; }
+    A& operator=(A reloc rhs) { static_cast<snoop&>(*this) = reloc rhs.base<snoop>; std::cout << "A::operator=(A reloc) " << this << " <- " << rhs.this << std::endl; return *this; }
     ~A() { std::cout << "~A() " << this << std::endl; }
 };
 
@@ -38,8 +38,8 @@ int main(int, char**)
 // snoop() 0x2
 // A() 0x2
 // make_a
-// snoop& snoop::operator=(snoop reloc) 0x1 = 0x2
-// A::operator=(A reloc) 0x1 = 0x2
+// snoop& snoop::operator=(snoop reloc) 0x1 <- 0x2
+// A::operator=(A reloc) 0x1 <- 0x2
 // ---
 // ~A() 0x1
 // ~snoop() 0x1

@@ -25,9 +25,9 @@ int main(int, char**)
 // epsilon() 0x5
 // zeta() 0x6
 // c init-ed
-// alpha& alpha::operator=(alpha reloc) 0x4 = 0x1
-// beta& beta::operator=(beta reloc) 0x5 = 0x2
-// gamma& gamma::operator=(gamma reloc) 0x6 = 0x3
+// alpha& alpha::operator=(alpha reloc) 0x4 <- 0x1
+// beta& beta::operator=(beta reloc) 0x5 <- 0x2
+// gamma& gamma::operator=(gamma reloc) 0x6 <- 0x3
 // c assigned
 // ~gamma() 0x6
 // ~beta() 0x5
