@@ -1,3 +1,6 @@
+/// Same as decomposition-030 but sink is called through a runtime function
+/// pointer instead of directly.
+
 #include <iostream>
 #include <string_view>
 #include "snoop.h"
@@ -26,9 +29,10 @@ void sink(D reloc d)
 
 int main(int, char**)
 {
+    void (*fp)(D) = &sink;
     D d;
     std::cout << "---" << std::endl;
-    sink(reloc d);
+    fp(reloc d);
     std::cout << "---" << std::endl;
     return 0;
 }
