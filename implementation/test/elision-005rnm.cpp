@@ -21,8 +21,7 @@ int main()
 // snoop() 0x1
 // ---
 // foo ---beg
-// snoop(snoop reloc) 0x2 <- 0x1
 // bar
-// ~snoop() 0x2
+// ~snoop() 0x1
 // foo ---end
 // ---

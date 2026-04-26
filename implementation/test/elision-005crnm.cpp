@@ -1,8 +1,8 @@
 #include "snoop-rnm.h"
 
-void bar(snoop const&) {std::cout << __func__ << std::endl;}
+void bar(snoop&&) {std::cout << __func__ << std::endl;}
 
-void foo(snoop s)
+void foo(snoop const s)
 {
     std::cout << __func__ << " ---beg" << std::endl;
     bar(reloc s);
@@ -11,7 +11,7 @@ void foo(snoop s)
 
 int main()
 {
-    snoop s;
+    snoop const s;
     std::cout << "---" << std::endl;
     foo(reloc s);
     std::cout << "---" << std::endl;
