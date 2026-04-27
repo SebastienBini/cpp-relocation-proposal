@@ -1449,14 +1449,77 @@ void do_something_05(non_null<shared_ptr<int>> copyOnlyObj)
 
 ### Relocation elision ### {#reloc-elision}
 
-Relocation may be elided. This is intended to work in much the same way as the
+#### Mandatory relocation elision #### {#reloc-elision-mandatory}
+
+When a `reloc` expression produces a prvalue that directly initializes
+an object of the same cv-unqualified type, and the source object is:
+
+- a local variable that is not a function parameter ; or
+- a direct subobject of a [decomposed object](#decomposed-object)
+    (data member or direct base),
+    provided the source is not a [*VBA*](#decompose-virtual-aliasing-object)
+    object ;
+
+the relocation constructor, move constructor, or copy constructor
+**shall not be called**. The target object occupies the same storage
+as the source object. No temporary is materialized.
+
+NOTE: For decomposed function parameters, the direct subobjects are
+always managed by the callee (if necessary through
+[silent relocation to local storage](#decompose-value-param)).
+Mandatory elision therefore applies to their subobjects as well.
+
+This rule parallels <a href="https://eel.is/c++draft/class.temporary#3">[class.temporary]/3</a>
+(mandatory copy/move elision for prvalues in C++17), adapted to the `reloc` context.
+
+Mandatory relocation elision also applies during constant evaluation.
+
+NOTE: This rule is implementable on all known ABIs. Non-trivial types are
+passed by invisible reference (Itanium, MSVC, ARM AAPCS): the caller
+allocates storage, constructs the argument, and passes a pointer. With
+mandatory elision, the caller simply passes the address of the source
+object — no constructor is invoked, regardless of whether the callee or
+caller is responsible for destruction. For types that are trivial for the
+purposes of calls (passed in registers), all constructors and destructors
+are no-ops, so elision is unobservable and imposes no implementation burden.
+
+```c++
+struct S {
+    int val;
+    constexpr S(int v) : val(v) {}
+    constexpr S(S reloc src) : val(src.val + 1) {}
+    constexpr ~S() {}
+};
+
+constexpr int f() {
+    S s(10);
+    S t = reloc s;   // mandatory elision: reloc ctor is not called
+    return t.val;    // 10, not 11
+}
+static_assert(f() == 10, "");
+
+void sink(S);
+void g() {
+    S s(10);
+    sink(reloc s);   // mandatory elision: reloc ctor is not called
+}
+
+void h(std::pair<std::string, int> reloc p) {
+    std::string s = reloc p.first;  // mandatory elision
+    int n = reloc p.second;         // mandatory elision
+}
+```
+
+#### Optional relocation elision #### {#reloc-elision-optional}
+
+In cases not covered by mandatory relocation elision, relocation
+may still be elided. This is intended to work in much the same way as the
 named return value optimization; for example:
 
 ```c++
 void f(std::string s);
-void g() {
-    std::string s;  // may be created in f's argument slot
-    f(reloc s);  // relocation may be elided
+void g(std::string s) {
+    f(reloc s);  // optional: s is a function parameter
 }
 ```
 
@@ -1465,31 +1528,37 @@ the temporary created by the `reloc` expression may not be materialized if
 the implementation can ensure that the source object shares
 the same address as the one to be occupied by the target object.
 
-Relocation elision is permitted only if it preserves the required volatile
-accesses and the observable behavior of the non-elided program. In particular,
-if the source object or any accessed subobject is `volatile`, elision shall not
-remove, merge, or reorder required volatile accesses.
+As with copy/move elision
+(<a href="https://eel.is/c++draft/class.copy.elision">[class.copy.elision]</a>),
+optional relocation elision is permitted even if the elided constructor or
+destructor has side effects.
+However, if the source object or any accessed subobject is `volatile`,
+elision shall not remove, merge, or reorder required volatile accesses.
 
 Of course, if relocation elision happens then the rules that impact the
 lifetime of the source object still applies.
 
-In summary, relocation elision is only possible when the source object is
-*early destructible*. For a detailed case analysis across different ABIs,
+For a detailed case analysis across different ABIs and
 parameter-passing conventions (`sink(reloc obj)`, `xvsink(reloc obj)`,
 `lvsink(reloc obj)`), see the
 [discussion on relocation elision](#reloc-elision-cases).
 You can also read about achieving
 [0-copy transfer with a cooperative ABI](#0-copy).
 
-Relocation elision also applies to `return` statements: if `return reloc obj;`
-appears in a function whose return type matches the type of `obj`, the
-temporary produced by `reloc` may share the same storage as the return slot,
-eliding the constructor call. Likewise, when a `return` statement triggers an
-[implicit relocation](#return-reloc), NRVO may elide the relocation
-constructor call entirely, just as it does for move or copy constructors today.
+Optional relocation elision also applies to `return` statements:
+if `return reloc obj;` appears in a function whose return type matches the
+type of `obj`, the temporary produced by `reloc` may share the same storage
+as the return slot, eliding the constructor call. Likewise, when a `return`
+statement triggers an [implicit relocation](#return-reloc), NRVO may elide the
+relocation constructor call entirely, just as it does for move or copy
+constructors today.
 
-NOTE: Relocation elision, copy elision, and move elision are not performed
-from a [*VBA*](#decompose-virtual-aliasing-object) object
+NOTE: Optional relocation elision is not performed during constant evaluation,
+consistent with the treatment of NRVO in <a href="https://eel.is/c++draft/expr.const">[expr.const]</a>.
+
+NOTE: Relocation elision (whether mandatory or optional), copy elision, and
+move elision are not performed from a
+[*VBA*](#decompose-virtual-aliasing-object) object
 (see [§](#decompose-virtual-aliasing-object)).
 
 ### Implicit relocation in return statements ### {#return-reloc}
