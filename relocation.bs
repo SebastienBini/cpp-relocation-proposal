@@ -1647,6 +1647,9 @@ void X::bar(T reloc obj) // ill-formed, not matching its declaration
 {}
 
 static_assert(std::is_same_v<decltype(&X::foo), void (X::*)(T)>); // ok
+
+void (*a)(T) = &foobar;        // ok, reloc is not part of the function type
+void (*b)(T reloc) = &foobar;  // ill-formed, reloc not allowed in function pointer types
 ```
 
 The same consistency requirement extends to virtual functions and their
