@@ -224,9 +224,9 @@ Added `BindsToPRValue` bit to `StandardConversionSequence` (in `Overload.h`) to 
 
 ---
 
-## Known gap — `constexpr` / constant-evaluation support ⚠️ Not yet implemented
+## Known gap — `constexpr` / constant-evaluation support ✅ Implemented
 
-**Description:** The proposal explicitly permits `reloc` in constexpr functions (§"reloc in constexpr") and object decomposition in constant-evaluated expressions (§"decomposition in constexpr"). No handling of `CXXRelocExpr` or `CXXDecomposedBaseExpr` exists in `ExprConstant.cpp` (Clang's constant expression evaluator). No tests exercise `constexpr` relocation.
+**Description:** The proposal explicitly permits `reloc` in constexpr functions (§"reloc in constexpr") and object decomposition in constant-evaluated expressions (§"decomposition in constexpr"). Implemented in Phase 10 (`885717f87cf7`). See Phase 10 section for details.
 
 ---
 
@@ -261,19 +261,19 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 ---
 
-## Known gap — relocation elision ⚠️ Partially implemented
+## Known gap — relocation elision ✅ Implemented
 
 **Description:** The proposal describes relocation elision (§"relocation elision") analogous to NRVO: the source object may share storage with the target, avoiding the constructor call entirely. Key to achieving zero-copy transfer chains (§"achieving 0-copy transfer").
 
-**Implemented:** Phase 9a — call-site elision for by-value parameters and reloc-assign operators, MemberExpr elision in synthesized reloc-assign bodies, aliased reloc-assign dual-function scheme (§"aliased-reloc-assign"). See Phase 9 section for details.
+**Implemented:** Phase 9a — call-site elision for by-value parameters and reloc-assign operators, MemberExpr elision in synthesized reloc-assign bodies, aliased reloc-assign dual-function scheme (§"aliased-reloc-assign"). Phase 9c — reference binding elision (`04bcfa91f5cd`). See Phase 9 section for details.
 
-**Remaining:** NRVO-style elision for return statements, general function parameter elision beyond reloc-assign.
+**Remaining:** NRVO-style elision for `return reloc x;` (note: `return x;` already gets NRVO, making this largely redundant per proposal line 3680).
 
 ---
 
 ## Known gap — structured decomposition ⚠️ Not yet implemented
 
-**Description:** The proposal introduces "structured decomposition" (§"structured decomposition") as an alternative to structured bindings: `auto [x, y] = expr;` with implicit decomposition, allowing `reloc y`. Includes three protocols (array, `get_all`, data members) and implementation-defined library support for `std::tuple` / `std::array`. No implementation exists.
+**Description:** The proposal introduces "structured decomposition" (§"structured decomposition") as an alternative to structured bindings: `auto [x, y] = expr;` with implicit decomposition, allowing `reloc y`. Includes three protocols (array, customized decomposition via `operator reloc[]`, data members) and implementation-defined library support for `std::tuple` / `std::array`. No implementation exists.
 
 ---
 
@@ -724,7 +724,7 @@ For callee-destroy ABIs (MSVC, or forced for relocate-only types), the parameter
 
 ---
 
-## Phase 9 — Relocation elision ✅ `3fea413` + `a132463`
+## Phase 9 — Relocation elision ✅ `3fea413` + `a132463` + `04bcfa91f5cd`
 
 **Scope:** Allow the compiler to elide relocation when source and target can share storage (§"relocation elision").
 
@@ -757,28 +757,47 @@ This works for both `CXXOperatorCallExpr` (user-written `a = reloc b`) and `CXXM
 - `CodeGenFunction.h`: `EmittingRelocAssignEliding`, `CallingRelocAssignOperator` flags
 - `CGCall.cpp`: caller-side dtor suppression for elision path
 
+### Phase 9c — Reference binding elision ✅ `04bcfa91f5cd`
+
+When `reloc x` is passed to a `T&&` parameter, the compiler skips temporary materialization and binds the reference directly to `x`, destroying `x` at end of full-expression. This avoids an unnecessary move-construct + destroy pair. The source's scope-exit cleanup is conditionally deactivated; a full-expression cleanup destroys the source after the callee returns.
+
 ### Not yet implemented
 
 - NRVO-style elision for `return reloc x;` (note: `return x;` already gets NRVO via end-of-life optimization, making `return reloc x;` largely redundant per proposal line 3680)
-- General function parameter elision beyond reloc-assign
-
-**Potential future optimization (not in proposal):** When `reloc x` is passed to a `T&&` parameter, the compiler could skip temporary materialization and bind the reference directly to `x`, destroying `x` at end of full-expression. This is technically sound for the same reason by-value elision is (elision is allowed to skip constructor side effects), but the payoff is smaller: the callee receives a reference, not ownership, so it still needs to move-from the referent to take ownership. By contrast, by-value elision eliminates the entire ctor+dtor pair and gives the callee direct access to the source storage.
 
 **Proposal coverage:** §"relocation elision", §"aliased-reloc-assign", §"achieving 0-copy transfer"
 
 ---
 
-## Phase 10 — `constexpr` support (planned)
+## Phase 10 — `constexpr` support ✅ `885717f87cf7`
 
 **Scope:** Enable `reloc` and object decomposition in constant-evaluated expressions.
 
-Key sub-features:
-- Handle `CXXRelocExpr` in `ExprConstant.cpp` constant expression evaluator
-- Handle `CXXDecomposedBaseExpr` and `CXXDecomposedThisExpr` in constant evaluation
-- `constexpr` decomposition (§"decomposition in constexpr")
-- Relocation constructor discard not performed during constant evaluation (§"relocation constructor discardment with function parameters")
+### Implemented
+
+- ✅ `CXXRelocExpr` handled in `ExprConstant.cpp`: relocates the source object in the constant evaluator by ending its lifetime and constructing the result from the source value
+- ✅ `CXXDecomposedBaseExpr` handled: base-subobject access in constant evaluation via `HandleBasePath`
+- ✅ `CXXDecomposedThisExpr` handled: returns the address of the decomposed object’s storage as `void cv*`
+- ✅ `constexpr` decomposition (§"decomposition in constexpr"): `T reloc` variables work in `constexpr` functions
+- ✅ Relocation constructor discard not performed during constant evaluation (§"relocation constructor discardment with function parameters")
+- ✅ 33 unit tests covering: scalar reloc, class reloc (move path), reloc ctor path, trivial reloc, cv-qualified, decomposition + member access, `.base<B>`, `.this`, reloc in loop, decomposed-this identity
 
 **Proposal coverage:** §"reloc in constexpr", §"decomposition in constexpr"
+
+---
+
+## `reloc` in function types rejected ✅ `85c3818d94ad`
+
+**Scope:** `reloc` is a body-level property of a parameter (decomposed object declaration), not part of the function type. The proposal now explicitly states this: `void (*b)(T reloc) = &foobar;` is ill-formed (§"reloc-param-not-function-type").
+
+### Implemented
+
+- ✅ New diagnostic `err_reloc_in_function_type` in `DiagnosticParseKinds.td`
+- ✅ `ParseParameterDeclarationClause` (ParseDecl.cpp): after parsing each parameter declarator, if `reloc` was consumed but the enclosing declarator is not a function declaration context, the diagnostic fires
+- ✅ `IsFunctionDeclaration` flag threaded through `ParseParameterDeclarationClause` overloads (Parser.h) to distinguish function declarations/definitions (where `reloc` is valid) from function types in pointers, typedefs, using aliases, reference-to-function types, and template arguments (where it is rejected)
+- ✅ 9 unit tests (6 rejection: function pointer, init, template arg, typedef, using alias, function ref; 3 acceptance: declaration, definition, pointer without reloc)
+
+**Proposal coverage:** §"reloc-param-not-function-type"
 
 ---
 
@@ -787,12 +806,138 @@ Key sub-features:
 **Scope:** `auto [x, y] = expr;` with implicit decomposition, enabling relocation from structured bindings.
 
 Key sub-features:
-- Three initialization and binding protocols: array, `get_all`, data members (§"structured decomposition protocols")
+- Three initialization and binding protocols: array, customized decomposition (`operator reloc[]`), data members (§"structured decomposition protocols")
+- `operator reloc[]` member operator function returning a type satisfying the data members protocol (§"customized decomposition protocol")
 - Implicit decomposition rules (§"implicit decomposition of temporaries")
-- Implementation-defined library support for `std::tuple` / `std::array` (§"implementation-defined library support")
+- Implementation-defined library support for `std::tuple` / `std::array` via `operator reloc[]` (§"implementation-defined library support")
 - ~~Lambda closure decomposition from within lambda body (§"decomposition of a lambda closure type")~~ — **done** (`864cae7`)
 
 **Proposal coverage:** §"structured decomposition", §"implicit decomposition of temporaries", §"decomposition of a lambda closure type"
+
+### Existing Clang infrastructure (structured bindings)
+
+Structured bindings flow: `ParseDecompositionDeclarator` (ParseDecl.cpp:6918) → `ActOnDecompositionDeclarator` (SemaDeclCXX.cpp:722) → `DecompositionDecl::Create` (SemaDecl.cpp:8030) → `CheckCompleteDecompositionDeclaration` (SemaDeclCXX.cpp:1602) → three protocol checks: `checkArrayDecomposition` (SemaDeclCXX.cpp:1047), `isTupleLike` + `checkTupleLikeDecomposition` (SemaDeclCXX.cpp:1175/1283), `checkMemberDecomposition` (SemaDeclCXX.cpp:1547). CodeGen: `MaybeEmitDeferredVarDeclInit` (CGDecl.cpp:2179) emits holding vars for tuple-like; `EmitLValue` (CGExpr.cpp:3666) recurses into `BD->getBinding()` for all protocols.
+
+AST: `DecompositionDecl` inherits `VarDecl` (the unnamed `e`); `BindingDecl` stores `Binding` (expression) and optional `HoldingVar`. Currently no P2785 flags on either class. `DecompositionDecl` inherits `VarDecl::IsDecomposedByReloc` but it is unused for structured bindings.
+
+No `OO_Reloc*` operator kind exists in `OperatorKinds.def`. No `operator reloc[]` lookup infrastructure. No implicit decomposition validation. Phase 11 is entirely unimplemented.
+
+### Implementation plan — 5 stages
+
+#### Stage 1 — `DecompositionDecl` flag: distinguish structured decomposition from structured bindings
+
+**Goal:** Detect when `auto [x, y] = expr;` qualifies as a structured decomposition candidate (no ref-qualifiers, automatic storage) and mark it.
+
+**Where:** `ActOnDecompositionDeclarator` (SemaDeclCXX.cpp:722), `CheckCompleteDecompositionDeclaration` (SemaDeclCXX.cpp:1602).
+
+**Changes:**
+- Add `IsStructuredDecomposition` flag on `DecompositionDecl` (or reuse `DecompositionDecl` + existing `VarDecl::IsDecomposedByReloc` bit)
+- In `ActOnDecompositionDeclarator`: if no ref-qualifier (`&`/`&&`) and automatic storage → set the flag (candidate)
+- Final determination happens in `CheckCompleteDecompositionDeclaration` once the initializer type is known: if no decomposition protocol matches → clear the flag, fall back to ordinary structured bindings
+- Add `IsCompleteObject` flag on `BindingDecl` to distinguish relocation-eligible bindings from standard alias bindings
+
+**Deliverable:** `DecompositionDecl::isStructuredDecomposition()` query; `BindingDecl::isCompleteObject()` query. Both serialized.
+
+#### Stage 2 — Sema: array protocol
+
+**Goal:** When the initializer is a known-bound array and identifier count matches, bind each identifier as a **complete object** (not an alias).
+
+**Where:** New branch in `CheckCompleteDecompositionDeclaration`, before/alongside `checkArrayDecomposition`.
+
+**Changes:**
+- If structured-decomposition candidate and `DecompType` is `ConstantArrayType` with matching element count:
+  - Validate implicit decomposition legality: destructor not user-provided, all subobjects accessible (reuse logic from `CheckDecomposedVarDecl` in SemaRelocation.cpp:1624)
+  - Set each `BindingDecl`'s binding to `e[i]` (same as `checkArrayDecomposition`) but mark as complete object
+  - If implicit decomposition is illegal → fall back to standard `checkArrayDecomposition`
+- Reuse existing per-element cleanup infrastructure from Phase 5a (`MemberDestroyCleanup` vector supports `ArraySubscriptExpr` pattern #5 in `EmitCXXRelocExpr`)
+
+**Deliverable:** `auto [a, b, c] = reloc arrExpr;` produces three complete-object bindings. Each can be `reloc`'d independently.
+
+#### Stage 3 — Sema: data members protocol
+
+**Goal:** When the initializer is a non-union class with accessible direct members (or all in a single base), bind each identifier as a **complete object** corresponding to a data member.
+
+**Where:** New branch alongside `checkMemberDecomposition` (SemaDeclCXX.cpp:1547).
+
+**Changes:**
+- If structured-decomposition candidate and type satisfies data members protocol conditions:
+  - `T` is a non-union class
+  - All non-static data members accessible in `T` or a single base `B` (reuse `findDecomposableBaseClass`)
+  - Identifier count matches field count; no anonymous union members
+  - Implicit decomposition legal (destructor not user-provided, all subobjects accessible)
+  - If `T ≠ B`: recursively validate implicit decomposition down to `B` (each intermediate base must be decomposable)
+- Mark each `BindingDecl` as complete object
+- Fall back to `checkMemberDecomposition` (standard structured bindings) if validation fails
+
+**Deliverable:** `auto [x, y] = getPair();` where `pair<A,B>` has accessible members → two complete-object bindings.
+
+#### Stage 4 — `operator reloc[]` customized decomposition protocol
+
+**Sub-stage 4a — operator syntax and infrastructure:**
+- Parse `operator reloc[]` member function declarations: in the operator-function-id parsing path, when `operator` is followed by `tok::kw_reloc` + `[` + `]`, produce the right declarator
+- Approach: either add `OO_RelocSubscript` to `OperatorKinds.def`, or use a **named member lookup** (analogous to how `get<>` is looked up for tuple-like bindings — no operator kind). The named-lookup approach is simpler: look up a function named `operator reloc[]` (special identifier) or use a synthetic `DeclarationName` kind. Decision to be made during implementation.
+- `operator reloc[]` takes no arguments (beyond implicit object parameter), may accept any implicit object parameter type (`this T reloc self`, `this T const& self`, etc.)
+
+**Sub-stage 4b — protocol check in Sema:**
+- In `CheckCompleteDecompositionDeclaration`, between array and data members protocols:
+  - Look up `operator reloc[]` as a member of `S`
+  - If found: call it on the initialization expression
+  - Validate return type satisfies data members protocol (Stage 3 logic)
+  - If return type fails data members protocol → **ill-formed** (no fallback once `operator reloc[]` matched)
+  - If not found → skip to data members protocol
+
+**Sub-stage 4c — library support:**
+- Implement `operator reloc[]` for `std::tuple` and `std::array` (implementation-defined; may use compiler intrinsics or the `decomposable<Ts...>` exposition type)
+- `std::pair` already satisfies data members protocol directly — no `operator reloc[]` needed
+
+**Deliverable:** `auto [a, b] = getTuple();` decomposes via `operator reloc[]`, identifiers are complete objects.
+
+#### Stage 5 — CodeGen: per-subobject cleanups for decomposed bindings
+
+**Goal:** When a `DecompositionDecl` is a structured decomposition, push per-subobject cleanups instead of a whole-object cleanup. Integrate with `reloc` on individual bindings.
+
+**Where:** `EmitAutoVarCleanups` (CGDecl.cpp:2322), `EmitCXXRelocExpr` (CGExprCXX.cpp:2513).
+
+**Changes:**
+- When emitting a structured-decomposition `DecompositionDecl`:
+  - Push per-subobject cleanups (per-field or per-element) — **reuse Phase 5a infrastructure** (`MemberDestroyCleanup` / `BaseDestroyCleanup` vectors)
+  - Do NOT push a whole-object cleanup (the composite `e` is implicitly decomposed)
+- When `reloc bindingIdent` is emitted:
+  - `BindingDecl::getBinding()` resolves to `MemberExpr` (field) or `ArraySubscriptExpr` (array element)
+  - `EmitCXXRelocExpr` already handles patterns #2 (MemberExpr → `MemberDestroyCleanup`) and #5 (ArraySubscriptExpr → `MemberDestroyCleanup` unwrap) for cleanup deactivation
+  - Minimal changes needed — add `BindingDecl` as a recognized operand pattern
+- For `operator reloc[]` path: the returned object is a temporary with per-field cleanups; same mechanism
+
+**Deliverable:** `auto [a, b] = expr; sink(reloc a);` correctly relocates `a`, calls `b`'s destructor at scope end, does not call the whole-object destructor.
+
+### Dependency graph
+
+```
+Stage 1 (DecompositionDecl flag + BindingDecl::isCompleteObject)
+   ├── Stage 2 (Array protocol)
+   ├── Stage 3 (Data members protocol)
+   │      └── Stage 4b (operator reloc[] protocol check — depends on Stage 3 + 4a)
+   │             └── Stage 4c (Library support for tuple/array)
+   │
+Stage 4a (operator reloc[] syntax/parsing — fully independent of Stages 1–3)
+   └── Stage 4b
+
+All above ──→ Stage 5 (CodeGen)
+```
+
+Stages 2 and 3 are independent once Stage 1 is done. Stage 4a (syntax) is fully independent — it can be developed in parallel with Stages 1–3. Stage 4b depends on both 3 and 4a. Stage 5 comes last but should be straightforward given existing Phase 5a infrastructure.
+
+### Complexity estimate
+
+| Stage | Difficulty | Key risk |
+|---|---|---|
+| 1 (Flag) | Low | Ensuring seamless fallback to structured bindings |
+| 2 (Array) | Medium | Implicit decomposition validation; array-of-non-trivial cleanup |
+| 3 (Data members) | Medium | Recursive base decomposition; interaction with `findDecomposableBaseClass` |
+| 4a (Syntax) | **High** | `operator reloc[]` is novel syntax — parser + AST representation |
+| 4b (Protocol) | Medium | Overload resolution on `operator reloc[]`; error recovery after match |
+| 4c (Library) | Medium | `std::tuple`/`std::array` may need compiler intrinsics |
+| 5 (CodeGen) | Medium-Low | Mostly reuses Phase 5a per-subobject cleanup infrastructure |
 
 ---
 
@@ -851,15 +996,20 @@ Key sub-features:
 | EH-aware use-after-reloc (try/catch) | 6 |
 | Phase 9 (relocation elision, aliased reloc-assign) | 67 |
 | Phase 9 fixes (callee-destroy, decomposed base elision) | 38 |
-| **Total** | **450** |
+| Phase 10 (`constexpr` evaluation) | 33 |
+| `reloc` in function types (rejection + acceptance) | 9 |
+| **Total** | **492** |
 
-450 unit tests pass. All tests run cleanly in a single invocation.
+492 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 11 lit test files pass:
+Additionally, 14 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-reloc-arg-temp-cleanup.cpp` (argument temporary cleanup)
+- `clang/test/CodeGenCXX/p2785-reloc-c1-delegation.cpp` (C1 reloc ctor delegation cleanup)
+- `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` (relocation elision for reference binding)
 - `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (relocation elision + aliased reloc-assign + cleanup timing)
 - `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` (scalar, pointer, class, decomposition, discard, conditional, silent relocation)
+- `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` (EH cleanup for reloc ctor throw, VBase cleanup ordering)
 - `clang/test/CodeGenCXX/p2785-virtual-base-cleanup.cpp` (VBA ctor variants, base dtor with VTT)
 - `clang/test/SemaCXX/p2785-decomposed-reject.cpp` (decomposition rejection diagnostics)
 - `clang/test/SemaCXX/p2785-reloc-operator.cpp` (Sema diagnostics + noexcept static_asserts)
@@ -867,6 +1017,8 @@ Additionally, 11 lit test files pass:
 - `clang/test/SemaCXX/p2785-unsequenced-reloc.cpp` (unsequenced reloc + use diagnostics)
 - `clang/test/SemaCXX/p2785-use-after-reloc.cpp` (CFG-based use-after-reloc diagnostics)
 - `clang/test/SemaCXX/p2785-virtual-call-decomposed-base.cpp` (virtual call on decomposed base)
+
+158 runtime tests pass (`P2785/implementation/test/`).
 
 ---
 
@@ -879,13 +1031,16 @@ Additionally, 11 lit test files pass:
 | `clang/include/clang/AST/CXXRecordDeclDefinitionBits.def` | 8-bit `SpecialMembers` bitfields; `NeedOverloadResolutionForRelocAssignment`, `DefaultedRelocAssignmentIsDeleted` |
 | `clang/include/clang/AST/ExprCXX.h` | `CXXRelocExpr`, `CXXDecomposedBaseExpr`, `CXXDecomposedThisExpr` classes |
 | `clang/include/clang/AST/RecursiveASTVisitor.h` | `DEF_TRAVERSE_STMT` for `CXXDecomposedBaseExpr` and `CXXDecomposedThisExpr` |
-| `clang/include/clang/Basic/DiagnosticSemaKinds.td` | All `reloc` diagnostics |
+| `clang/include/clang/Basic/DiagnosticParseKinds.td` | `err_reloc_not_yet_implemented`, `err_reloc_in_function_type` |
+| `clang/include/clang/Basic/DiagnosticSemaKinds.td` | All `reloc` Sema diagnostics |
 | `clang/include/clang/Basic/LangOptions.def` | `Relocation` lang option |
 | `clang/include/clang/Basic/StmtNodes.td` | `CXXRelocExprClass`, `CXXDecomposedBaseExprClass`, `CXXDecomposedThisExprClass` |
+| `clang/include/clang/Parse/Parser.h` | `ParseParameterDeclarationClause` overloads with `IsFunctionDeclaration` flag |
 | `clang/include/clang/Sema/Sema.h` | `ActOnRelocExpr`, `ActOnDecomposedBaseAccess`, `ActOnDecomposedThisAccess`, `CheckRelocUseAfterReloc`, `CheckRelocUnsequenced`, `CheckDecomposedVarDecl`, `CheckDecomposedParams`; `CXXSpecialMemberKind::RelocAssignment`; `DeclareImplicitRelocAssignment`, `DefineImplicitRelocAssignment` |
 | `clang/include/clang/Sema/Overload.h` | `BindsToPRValue` bit in `StandardConversionSequence` (P2785 overload resolution) |
 | `clang/include/clang/Serialization/ASTBitCodes.h` | `EXPR_CXX_RELOC`, `EXPR_CXX_DECOMPOSED_BASE`, `EXPR_CXX_DECOMPOSED_THIS` opcodes |
 | `clang/lib/AST/Expr.cpp` | `isUnusedResultAWarning`, `hasSideEffects` hooks for all three nodes |
+| `clang/lib/AST/ExprConstant.cpp` | `constexpr` evaluation of `CXXRelocExpr`, `CXXDecomposedBaseExpr`, `CXXDecomposedThisExpr` (Phase 10) |
 | `clang/lib/AST/ExprClassification.cpp` | `CL_PRValue` / `CL_LValue` for `CXXRelocExpr`, `CXXDecomposedBaseExpr`, `CXXDecomposedThisExpr` |
 | `clang/lib/AST/ExprCXX.cpp` | Constructors, `Create`, `CreateEmpty` for `CXXDecomposedBaseExpr` and `CXXDecomposedThisExpr` |
 | `clang/lib/AST/StmtPrinter.cpp` | `VisitCXXRelocExpr`, `VisitCXXDecomposedBaseExpr`, `VisitCXXDecomposedThisExpr` |
@@ -900,7 +1055,7 @@ Additionally, 11 lit test files pass:
 | `clang/lib/CodeGen/CodeGenFunction.h` | Declaration of `ConditionallyDeactivateCleanup`; `EmittingRelocAssignEliding`, `CallingRelocAssignOperator` flags (Phase 9) |
 | `clang/lib/Driver/ToolChains/Clang.cpp` | `-frelocation` driver flag |
 | `clang/lib/Frontend/CompilerInvocation.cpp` | `LangOpts.Relocation` mapping |
-| `clang/lib/Parse/ParseDecl.cpp` | `reloc` keyword in declarator parsing (`T reloc name`) |
+| `clang/lib/Parse/ParseDecl.cpp` | `reloc` keyword in declarator parsing (`T reloc name`); `reloc`-in-function-type diagnostic in `ParseParameterDeclarationClause` |
 | `clang/lib/Parse/ParseExpr.cpp` | `tok::kw_reloc` in `ParseCastExpression` (absorbs `.*`/`->*`); `.base<` intercept; `.this` keyword intercept |
 | `clang/lib/Sema/SemaChecking.cpp` | `CheckCompletedExpr` call to `CheckRelocUnsequenced` |
 | `clang/lib/Sema/SemaDecl.cpp` | `ActOnParamDeclarator`: decomposed-param type checks; `ActOnFunctionDeclarator`: calls `CheckDecomposedParams` after `mergeFunctionDecl`; `ComputeSpecialMemberFunctionsEligiblity` for reloc assign |
@@ -920,7 +1075,10 @@ Additionally, 11 lit test files pass:
 | `clang/lib/AST/DeclCXX.cpp` | `isRelocationAssignmentOperator()`, `addedMember` SMF_RelocAssignment, `finishedDefaultedOrDeletedMember` ordering, triviality propagation |
 | `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` | FileCheck IR tests for scalar, pointer, class, base-subobject, decomposition, discard, conditional-branch, silent-relocation (caller-destroy, relocate-only, fptr, virtual dispatch), reloc assign codegen, aliased reloc-assign call sites |
 | `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` | FileCheck IR tests for relocation elision (call-site, MemberExpr, recursive), aliased reloc-assign (non-eliding vs eliding bodies, nested dispatch) |
+| `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` | FileCheck IR tests for reference binding elision (Phase 9c) |
+| `clang/test/CodeGenCXX/p2785-reloc-c1-delegation.cpp` | FileCheck IR tests for C1 reloc ctor delegation cleanup |
+| `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` | FileCheck IR tests for EH cleanup ordering (reloc ctor throw, VBase cleanup) |
 | `clang/lib/Sema/SemaLookup.cpp` | `ForceDeclarationOfImplicitMembers`, `LookupSpecialMember`, `AddMethodCandidate`/`AddMethodTemplateCandidate` for reloc assign |
 | `clang/lib/Sema/SemaExpr.cpp` | `MarkFunctionReferenced`: reloc assign before copy assign ordering |
 | `clang/test/SemaCXX/p2785-reloc-operator.cpp` | Sema lit tests: reloc operator validity, noexcept exception specification |
-| `clang/unittests/AST/CXXRelocExprTest.cpp` | 345 unit tests |
+| `clang/unittests/AST/CXXRelocExprTest.cpp` | 492 unit tests |
