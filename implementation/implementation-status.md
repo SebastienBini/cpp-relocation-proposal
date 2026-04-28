@@ -1020,6 +1020,28 @@ Additionally, 14 lit test files pass:
 
 158 runtime tests pass (`P2785/implementation/test/`).
 
+Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
+- Scalar types: int, pointer, enum, double, bool (constexpr-001)
+- Trivial defaulted reloc ctor (constexpr-002)
+- User-provided reloc ctor with side-effect (constexpr-003)
+- Move-ctor fallback: trivial and non-trivial (constexpr-004)
+- Discarded reloc with reloc ctor (constexpr-005)
+- Reloc ctor no-double-dtor (constexpr-006)
+- Move-ctor fallback dtor counting (constexpr-007)
+- Object decomposition: base access and multiple bases (constexpr-008)
+- Reloc of decomposed base subobject (constexpr-009)
+- `obj.this` non-null and identity (constexpr-010)
+- Reloc ctor not discarded on param in constexpr (constexpr-011)
+- Non-trivial defaulted reloc ctor (constexpr-012)
+- Defaulted reloc ctor with base class (constexpr-013)
+- Multiple sequential relocs and conditional reloc (constexpr-014)
+- Chained reloc: local → function → param (constexpr-015)
+- Copy-only fallback with defaulted reloc (constexpr-016)
+- Relocate-only type (move+copy deleted) (constexpr-017)
+- Reloc in loop (constexpr-018)
+- Nested scope reloc (constexpr-019)
+- `consteval` function (constexpr-020)
+
 ---
 
 ## File inventory
