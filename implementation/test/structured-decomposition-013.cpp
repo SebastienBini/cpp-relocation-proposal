@@ -44,7 +44,7 @@ int main(int, char**)
 }
 
 ////// BUILD FAILURE
-// structured-decomposition-013.cpp:40:14: error: type 'S' binds to 2 elements, but 3 names were provided
+// structured-decomposition-013.cpp:40:14: error: type 'Mut' binds to 2 elements, but 3 names were provided
 //    40 |         auto [a, b, c] = reloc s;
 //       |              ^
 // 1 error generated.
