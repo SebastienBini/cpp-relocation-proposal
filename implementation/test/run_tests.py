@@ -24,7 +24,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 # automatically links the C++ standard library.
 DEFAULT_CLANGPP = SCRIPT_DIR / ".." / ".." / ".." / "build-make" / "bin" / "clang++"
 DEFAULT_VALGRIND = Path("/opt/1A/toolchain/x86_64-v25.0.14/build-pack/25.0.14.0/bin/valgrind")
-CXX_FLAGS = ["-std=c++23", "-frelocation"]
+CXX_FLAGS = ["-std=c++2c", "-frelocation"]
 
 # Matches a hex address like 0x7ffd3b3815c0
 HEX_ADDR_RE = re.compile(r"0x[0-9a-fA-F]+")
