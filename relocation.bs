@@ -4686,6 +4686,19 @@ void foo()
 }
 ```
 
+When combined with C++26 structured binding packs ([[P1061R10]]) and pack
+indexing ([[P1858R2]]), each pack element is itself a complete object —
+so `reloc` may be applied to a single element selected by pack indexing:
+
+```c++
+void foo()
+{
+    box<T> arr[3] = { /* ... */ };
+    auto [...elems] = reloc arr;
+    bar(reloc elems...[1]); // OK: relocates the second element only
+}
+```
+
 #### Customized decomposition protocol #### {#structured-decomposition-custom}
 
 ##### `operator reloc[]` ##### {#operator-reloc-brackets}
