@@ -4719,6 +4719,18 @@ the expression is **ill-formed**. Once the *customized decomposition* protocol
 matched, the declaration no longer falls back to an ordinary structured
 bindings declaration.
 
+Note: the *customized decomposition* protocol applies only if member lookup
+finds at least one candidate whose associated constraints are satisfied for
+the *initialization* expression. If member lookup found candidates but the
+constraints of each one are unsatisfied, the *customized decomposition*
+protocol does not apply and the declaration falls through (typically to the
+*data members* protocol). If at least one candidate has its constraints
+satisfied, the *customized decomposition* protocol matches: any subsequent
+failure — including overload-resolution ambiguity, ref-qualifier mismatch
+on the implicit object parameter, inaccessibility, or the selected overload
+being deleted — then makes the declaration **ill-formed** and does not
+trigger fall-through.
+
 This protocol does not say how `e` is initialized and how the identifiers are
 bound. Those will happen by the *data member* protocol applied on the
 returned object.
