@@ -19,14 +19,14 @@ int main(int, char**)
     return 0;
 }
 
-////// BUILD FAILURE
-// structured-decomposition-009.cpp:10:11: error: operand of 'reloc' must be a local variable
-//    10 |     reloc a...[1];
-//       |           ^~~~~~~
-// structured-decomposition-009.cpp:18:5: note: in instantiation of function template specialization 'run<0>' requested here
-//    18 |     run();
-//       |     ^
-// structured-decomposition-009.cpp:12:20: error: operand of 'reloc' must be a local variable
-//    12 |     auto d = reloc a...[0];
-//       |                    ^~~~~~~
-// 2 errors generated.
+////// BUILD SUCCESS
+// a() 0x1
+// b() 0x2
+// c() 0x3
+// ---
+// ...
+// ~b() 0x2
+// ...
+// ...
+// ~a() 0x1
+// ~c() 0x3
