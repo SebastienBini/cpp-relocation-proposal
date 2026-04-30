@@ -754,6 +754,50 @@ always guaranteed, whereas for types that also have a move constructor the
 choice between relocation and move is *implementation-defined*
 (see [§](#reloc-with-function-param) for the rationale behind this design).
 
+## Decomposing function ## {#decomposing-function}
+
+A function is a *decomposing function* if any of its parameter declarations
+contains the `reloc` keyword in a parameter slot. Such a parameter is a
+*decomposed parameter*. The first parameter of a relocation constructor is
+always a decomposed parameter; hence every relocation constructor is a
+decomposing function.
+
+Whether a function is decomposing is determined from its declaration,
+not from its function type. The trait does not appear in the function
+type, so a pointer-to-function or pointer-to-member-function value carries
+no information about whether the pointee is decomposing. This is
+intentional and preserves interoperability with existing function-pointer
+APIs (`std::function`, C-style callbacks, etc.); see
+[§](#decomposing-function-indirect) for the implications.
+
+The following rules apply to declarations of decomposing functions:
+
+- All declarations of the same function shall agree on which parameter
+    slots are decomposed. Two declarations that differ only in the
+    presence of `reloc` on a parameter slot are conflicting declarations
+    of the same function and the program is ill-formed.
+- For the same reason, a non-decomposing virtual function in a base class
+    cannot be overridden by a decomposing function in a derived class
+    (and vice versa); the override candidate is simply not considered an
+    override.
+- A decomposing function shall not have C language linkage.
+
+NOTE: A derived-class declaration whose name and signature match a virtual
+function of an accessible base class but whose decomposition trait differs
+is well-formed: it does not override the base function, and instead hides
+it under the usual name-lookup rules. Because `reloc` is not part of the
+function type, such a declaration is otherwise indistinguishable from an
+attempted override; implementations are therefore encouraged to diagnose
+it with a warning (analogous to `-Woverloaded-virtual` /
+`-Wsuggest-override`), since the mismatched decomposition trait is
+overwhelmingly likely to be unintended. The diagnostic can be silenced by
+introducing the base function with `using B::bar;` or by renaming the
+derived function.
+
+Within the body of a decomposing function, every decomposed parameter is
+*early destructible*. The implications for argument passing are described
+in [§](#decompose-value-param).
+
 # Comparison with existing proposals # {#compare}
 
 This proposal introduces the `reloc` keyword, which allows users to explicitly
@@ -1464,10 +1508,9 @@ the relocation constructor, move constructor, or copy constructor
 **shall not be called**. The target object occupies the same storage
 as the source object. No temporary is materialized.
 
-NOTE: For decomposed function parameters, the direct subobjects are
-always managed by the callee (if necessary through
-[silent relocation to local storage](#decompose-value-param)).
-Mandatory elision therefore applies to their subobjects as well.
+NOTE: For decomposed function parameters, the direct subobjects are owned
+by the callee (see [§](#decompose-value-param)). Mandatory elision therefore
+applies to their subobjects as well.
 
 This rule parallels <a href="https://eel.is/c++draft/class.temporary#3">[class.temporary]/3</a>
 (mandatory copy/move elision for prvalues in C++17), adapted to the `reloc` context.
@@ -1666,33 +1709,16 @@ T const c, reloc *d; // ill-formed, d is not a class-type
 
 #### Function declaration and definition #### {#decomposed-func-def}
 
-Functions parameters may be declared with `reloc`, in which case the parameter
-is declared as decomposed.
+A function whose declaration uses `reloc` on at least one parameter slot is a
+[decomposing function](#decomposing-function); its general semantics, the
+same-function rule (`f(T)` and `f(T reloc obj)` refer to the same function),
+the cross-declaration consistency requirement, the absence of `reloc` from the
+function type, and the override-consistency rule for virtual functions are all
+specified there. This subsection only collects illustrative examples.
 
-The `reloc` specifier does not produce a new overload of a function: `f(T)` and
-`f(T reloc obj)` *refer to the same function*.
-
-If a function parameter is declared as decomposed, it needs to be done so
-for every visible function declaration and its definition. In our previous
-example `f(T)` and `f(T reloc obj)` refer to the same function, but they have
-conflicting declarations, making the program ill-formed.
-
-Indeed, the decomposed parameter may be used in contract expressions (which
-must be identical across all visible function declarations), and the fact it's
-decomposed has a direct impact on the well-formedness of the contract
-expressions that use it.
-
-The parameter decomposition trait may not be attached to a function pointer.
-As with contracts, the decomposition trait has no impact on the function type,
-and thus no impact on the type of its address.
-
-When a function which decomposes one or more of its parameters is invoked through a
-function pointer, the parameter decomposition must still be honored.
-Every call to that function, whether direct or indirect, is interpreted using
-the decomposition traits attached to its declaration.
-An implementation may introduce an additional entry point for indirect calls,
-but that entry point does not denote a distinct function, does not participate
-in overload resolution, and does not change the function type.
+NOTE: The decomposed parameter may appear in contract expressions, which must
+be identical across all visible function declarations; this is one motivation
+for the cross-declaration consistency requirement.
 
 ```c++
 void foobar(T reloc obj);
@@ -1719,15 +1745,7 @@ static_assert(std::is_same_v<decltype(&X::foo), void (X::*)(T)>); // ok
 
 void (*a)(T) = &foobar;        // ok, reloc is not part of the function type
 void (*b)(T reloc) = &foobar;  // ill-formed, reloc not allowed in function pointer types
-```
 
-The same consistency requirement extends to virtual functions and their
-overriders. If a virtual function declares a parameter as decomposed, every
-overriding function in a derived class must also declare that parameter as
-decomposed, and vice versa. A mismatch between the decomposition trait of a
-virtual function and any of its overriders makes the program ill-formed.
-
-```c++
 struct B
 {
     virtual void foo(T reloc obj);
@@ -1741,6 +1759,7 @@ struct D : B
 struct E : B
 {
     void foo(T obj) override; // ill-formed, not matching B::foo
+    void bar(T reloc obj); // well-formed, but do not override
 };
 ```
 
@@ -2650,31 +2669,125 @@ private:
 
 ### Decomposition of value parameters ### {#decompose-value-param}
 
-As we have seen, decomposition ends the lifetime of the source object.
-The reader may be concerned that this may break existing ABIs, should the source
-object be a function parameter passed by value.
-However we do not foresee any extra breakage other than what the support for
-the `reloc` operator does.
+This section specifies who owns the lifetime of a decomposed parameter's
+subobjects and where the storage backing them lives.
 
-Indeed if the decomposed object is not *early destructible*, then the function
-may silently relocate its argument to some local storage before the function
-body is entered. *This is a putative
-workaround and is not part of the proposal.* Nonetheless it is made possible
-in the [object decomposition requirements](#ill-formed-decomposition).
+The following two rules make the answer normative. They are stated in
+terms of object identity and lifetime, in the same style as guaranteed
+copy elision in [class.copy.elision].
 
-Note: If the parameter is not *early destructible*, this silent relocation
-will odr-use the move or copy constructor.
-For *[relocatable non-movable](#relocatable-non-movable)* types, the parameter
-is forcibly *early destructible*, so this never applies.
-Likewise, this does not apply to the first parameter of the relocation
-constructor, which is inherently decomposed and always callee-destroy.
+#### Direct and virtual calls #### {#decompose-value-param-direct}
 
-For instance:
+When a [decomposing function](#decomposing-function) is invoked by a
+direct call or by virtual dispatch, then for each decomposed parameter:
 
-<table>
-<tr><th>User-written code</th><th>Putative equivalent generated code</th></tr>
-<tr>
-<td valign="top"><pre lang="cpp">
+1. **(Ownership.)** No destructor is invoked at the call site for the
+    decomposed parameter, neither for the parameter as a complete object
+    (it has none) nor for any of its subobjects. The callee owns the
+    lifetime of every subobject of the decomposed parameter: any
+    subobject that is not relocated or further decomposed away during
+    the function body is destroyed at function exit (during normal
+    return or stack unwinding).
+
+2. **(Direct materialization.)** The storage backing the decomposed
+    parameter inside the callee *is* the storage that holds the prvalue
+    produced by argument initialization; no copy, move, or relocation
+    constructor of the parameter type is inserted between that prvalue
+    and the start of the function body. In particular, the address of
+    the parameter inside the callee (obtainable via
+    [obj . this](#decompose-obj-addr)) is the address of that prvalue's
+    storage in the caller. The argument expression is itself converted
+    to a prvalue by the ordinary rules of by-value parameter
+    initialization (including the `reloc` operator
+    [§](#reloc-operator), the discardment rule of
+    [§](#reloc-with-function-param), and
+    [implicit decomposition](#implicit-decomposition) where
+    applicable); relocation elision
+    ([§](#reloc-elision-mandatory), [§](#reloc-elision-optional))
+    applies to that initialization under its usual conditions and
+    restrictions.
+
+Rule 1 makes decomposition of a value parameter sound: there is no
+risk of double-destruction at the call site because no destructor runs
+there for the parameter at all.
+
+Rule 2 fixes the calling convention: the callee receives the *address*
+of the argument prvalue's storage, not a fresh copy or move of it. This
+is what makes the default relocation assignment operator (and other
+recursive decompositions) cheap: subobjects, and their subobjects in
+turn, can be forwarded by address all the way down without an
+intermediate copy at each level.
+
+If the type of a decomposed parameter is not
+*[relocatable non-movable](#relocatable-non-movable)*, the function
+odr-uses the move constructor of that type (or, if no move constructor
+is eligible, the copy constructor). This permission is required so that
+an implementation can legally synthesize, when needed, a non-decomposing
+bridge that materializes the argument into the decomposing entry's
+storage; see [§](#decomposing-function-indirect).
+
+For a decomposed parameter whose type *is*
+*[relocatable non-movable](#relocatable-non-movable)*, both rules are
+automatic: no implicit move or copy constructor exists that *could* be
+inserted between caller and callee (rule 2), and rule 1 follows from
+the fact that no caller-side destructor for the type can be invoked on
+the (now-decomposed) parameter object. Consequently no implicit
+move/copy constructor is required to exist on the type. The
+forced-callee-destroy rule that [§](#reloc-with-function-param) imposes
+for non-decomposed value parameters of *relocatable non-movable* type
+is therefore subsumed by rules 1 and 2 for the decomposed-parameter
+case.
+
+#### Indirect calls #### {#decomposing-function-indirect}
+
+Because the decomposing trait is not part of the function type, calls
+through a function pointer or pointer-to-member-function value have no
+static information about whether the pointee is decomposing. The
+implementation must nonetheless ensure that, when such an indirect
+call ultimately reaches a decomposing function, the observable
+behaviour is as if rules 1 and 2 above had been satisfied.
+
+The mechanism is *implementation-defined*. As a non-normative example,
+an implementation may emit, on demand when the address of a
+decomposing function is taken, a non-decomposing *twin* function with
+the same parameter list as the decomposing function but with `reloc`
+removed from each parameter slot (and the corresponding cv-qualifiers
+dropped, since they no longer apply to a non-decomposed value
+parameter). On entry the twin holds an ordinary value parameter for
+each formerly-decomposed slot; it relocates that parameter into the
+decomposing entry's storage (using the move or copy constructor that
+the decomposing function already odr-uses, see
+[§](#decompose-value-param-direct)), inhibits the twin's own
+caller-destroy or callee-destroy cleanup for that parameter, and
+forwards the remaining parameters unchanged. For a decomposed
+parameter whose type is *relocatable non-movable*, or that is trivial
+for the purpose of the call, the twin need not perform a relocation
+and may simply forward the argument's address. For a virtual
+decomposing function, the vtable slot dispatches to the decomposing
+entry directly; address-taking via pointer-to-member-function may
+emit a non-virtual twin that performs the virtual dispatch and bridges
+the call.
+
+An implementation whose default calling convention already satisfies
+rules 1 and 2 for a given decomposing function need not emit a twin at
+all.
+
+NOTE: During constant evaluation there is no ABI to bridge. A function
+pointer that is usable in a constant expression necessarily designates
+a specific known function, so the constant evaluator has access to the
+pointee's declaration and to its decomposing trait. It honors rules 1
+and 2 directly: an indirect call to a decomposing function in a
+constant-evaluated expression is well-formed and behaves identically
+to a direct call. No twin is materialized and the implementation-defined
+choice of bridging mechanism is not observable in this context.
+
+#### Examples #### {#decompose-value-param-examples}
+
+Direct call: the address of `obj` inside `foo01` is the same as the
+address of the corresponding argument in the caller, with no
+intermediate move or copy of `T`.
+
+```c++
 void foo01(T reloc obj)
 {
     // ...
@@ -2682,50 +2795,23 @@ void foo01(T reloc obj)
     {
         sink(reloc obj.m);
     }
-    // ...
+    // Any subobject of obj that is still alive here is destroyed at
+    // function exit (rule 1).  No destructor for T runs at the call
+    // site or here for the parameter as a whole — it is decomposed.
 }
-</pre></td>
-<td valign="top"><pre lang="cpp">
-void foo01(T __obj)
-{
-    auto reloc obj{reloc __obj};
-    // ...
-    if (test())
-    {
-        sink(reloc obj.m);
-    }
-    // ...
-}
-</pre></td>
-</tr>
-<tr>
-<td valign="top"><pre lang="cpp">
-void foo02(T reloc obj) try
-{
-    // ...
-    if (test())
-    {
-        sink(reloc obj.m);
-    }
-    // ...
-}
-catch (...) {}
-</pre></td>
-<td valign="top"><pre lang="cpp">
-void foo02(T __obj) try
-{
-    auto reloc obj{reloc __obj};
-    // ...
-    if (test())
-    {
-        sink(reloc obj.m);
-    }
-    // ...
-}
-catch (...) {}
-</pre></td>
-</tr>
-</table>
+```
+
+Function-template-style address-taking: an indirect call site materializes
+the twin if needed; the decomposing entry is unaffected and a direct call
+still costs nothing extra.
+
+```c++
+void sink(T reloc); // decomposing
+void (*p)(T) = sink; // address-taken; twin synthesized as needed
+T t, u;
+p(reloc t);          // indirect call; bridging is implementation-defined
+sink(reloc u);       // direct call; rules 1 and 2 apply, no bridging
+```
 
 ### Decomposition in constexpr ### {#dot-reloc-constexpr}
 
@@ -4100,100 +4186,50 @@ declaration has a `noexcept(true)` noexcept specification unless any assignment 
 or destructor of a subobject that the default definition would call is
 *potentially-throwing*, or — if the class type is not
 *[relocatable non-movable](#relocatable-non-movable)* — the move or copy
-constructor of the class type itself that the
-[non-eliding wrapper](#aliased-reloc-assign) may invoke is
-*potentially-throwing*.
+constructor of the class type itself is *potentially-throwing* (the
+[twin](#decomposing-function-indirect) of a defaulted decomposing assignment
+operator may invoke it).
 
 A non-defaulted user-declared relocation assignment operator with unspecified noexcept
 specification is *potentially-throwing*.
 
-If a relocation assignment operator exits by throwing an exception, then:
-
-- the destination complete object remains alive (it was already constructed),
-    but no rollback is implied by default ;
-- destination subobjects assigned before the throw keep their updated state,
-    and destination subobjects not yet assigned keep their former state ;
-- if the assignment parameter is decomposed (`T::operator=(T reloc src)`), then
-    the parameter complete object lifetime had already ended at relocation
-    entry, and is not resumed ;
-- otherwise (`T::operator=(T src)`), the parameter remains an ordinary complete
-    object and its lifetime follows normal parameter-lifetime rules ;
-- if the assignment parameter is decomposed, source subobjects that were already
-    relocated stay ended, and source subobjects not yet relocated are cleaned
-    up by normal unwinding of the decomposed source state ;
-- otherwise, cleanup follows ordinary unwinding rules for the non-decomposed
-    parameter object (plus any later decomposition explicitly performed by the
-    operator body).
+If a relocation assignment operator exits by throwing an exception, then the
+destination complete object remains alive (it was already constructed) but
+is left in a valid but partially-updated state: subobjects assigned before
+the throw keep their updated state while those not yet assigned keep their
+former state. No rollback is implied. Cleanup of the parameter follows the
+ordinary rules established for the operator's signature
+(see [§](#reloc-with-function-param) and [§](#decompose-value-param)).
 
 Note: As with throwing copy/move assignment operators, users should not infer
 strong exception safety unless it is provided by a specific implementation.
 
-### Relocation assignment operator parameter relocation elision ### {#aliased-reloc-assign}
+### Parameter passing ### {#reloc-assign-param-passing}
 
-As with the relocation constructor, it is desirable that the parameter should be
-the source object *converted to* a prvalue, and not a temporary prvalue relocated
-*from* the source object. This is particularly critical for
-the default definition of the operator, which
-(as you might suspect) performs memberwise calls to other relocation assignment operators.
-Without elision, that would imply recursive relocation of each subobject, down to
-their smallest unbreakable parts (incurring O(N<sup>2</sup>) byte copies, *N* being the size in
-bytes of the source object).
+A decomposing relocation assignment operator `T& T::operator=(T reloc src)` is
+a [decomposing function](#decomposing-function); the rules of
+[§](#decompose-value-param) apply unchanged. In particular, when `x = reloc y;`
+is a direct call (or a virtual call dispatched through the vtable to the
+decomposing entry) and `y` is [*early destructible*](#early-destructible),
+the parameter shares storage with `y` and no `T` constructor is invoked
+between caller and callee. Calls through the *address* of the operator
+(a pointer-to-member-function value) go through the implementation's bridging
+mechanism described in [§](#decomposing-function-indirect).
 
-However, this poses a problem since it is possible to take the address of a
-relocation assignment operator, yielding a pointer (or reference) with (typical)
-signature `T& (T::)(T)`, implying that the source object must occupy a parameter slot,
-which may not find it possible to have the same storage address as the source object,
-and/or which the caller may expect to destroy (see [[#abi]]).
-
-Nevertheless, **we mandate elision if the class-type (possibly implicitly)
-declares a non-deleted relocation constructor,
-or a decomposing relocation assignment operator (possibly defaulted)**.
-The proposed elision is performed in such a way as to avoid ABI break (more on that on the [ABI
-section](#prvalue-assign-op-abi)).
-
-If elision is mandated, then the assignment operator declaration actually
-declares two member functions:
-
-- the non-eliding one, which takes its input parameter by value.
-    If no optimizations allow otherwise, this is the function that will be
-    invoked when user-code calls the
-    assignment operator. It is the prvalue-assignment operator as we know it
-    today ;
-- the eliding one, which takes its input parameter as if by reference, and has the
-    same return type as the non-eliding one. The eliding
-    function has no identifier and does not participate in overload resolution.
-    Users cannot take its address.
-    The eliding operator is forced to have callee-destroy ABI: the operator
-    is in charge of the lifetime of the source object.
-
-The definition of the assignment operator (which is user-provided or
-defaulted) will serve as the definition of the eliding operator.
-
-The non-eliding operator definition is generated by the compiler, and merely wraps
-the call to the eliding one:
-
-- If the source object passed to the non-eliding operator is *early destructible*,
-    then the operator:
-    1.  Calls the eliding operator, passing the source object as if by reference.
-    2.  It forwards as return value whatever the eliding operator returns.
-- Otherwise then the operator:
-    1.  Creates a local copy of the source object, using move or copy constructor.
-    2.  Calls the eliding operator, passing that copy by reference.
-    3.  It forwards as return value whatever the eliding operator returns.
-    4.  It does not call the destructor of that local copy.
-
-NOTE: If the implementation can guarantee that the relocation assignment operator parameter
-is passed by address and is *early destructible*, then the non-eliding version is
-not needed.
-
-If the address of the assignment operator is queried, then the address of the
-non-eliding version is returned. If the assignment operator is virtual, then only
-the non-eliding version is considered to be `virtual` and is added to the vtable entry.
-Calls through that non-eliding version, including through a pointer-to-member
-or virtual dispatch, are still calls to the same relocation assignment
-operator. They therefore either forward the original source object to the
-eliding definition when it is *early destructible*, or otherwise perform the
-wrapper steps above.
+NOTE: For the defaulted decomposing assignment operator to be optimal, every
+subobject type that participates in the memberwise dispatch should itself
+provide a decomposing assignment operator (declared or defaulted). When a
+subobject type only exposes a non-decomposing `S& operator=(S)`, mandatory
+relocation elision ([§](#reloc-elision-mandatory)) avoids any extra copy in
+the common cases. Two corner cases remain where extra work is observable:
+(a) `S::operator=(S)` runs under a caller-destroy ABI and itself attempts to
+relocate its parameter (e.g. through delayed decomposition), which forces the
+ABI's parameter materialization ; (b) `S` is trivial for the purposes of the
+call, in which case the value is passed in registers (effectively a `memcpy`
+of its representation). These are not correctness issues, only missed
+optimization opportunities. Users adopting a relocation constructor are
+encouraged to also provide a decomposing assignment operator (defaulted or
+user-provided) on the same class.
 
 ### Definition ### {#reloc-assign-definition}
 
@@ -4213,9 +4249,6 @@ decomposed, and for all its subobjects `s` of type `S`:
 - otherwise we construct `s` (or `S`) by calling its own relocation, move or copy
     assignment operator, as if by: `s = reloc src.s;`
     (or `static_cast<S&>(*this) = reloc src.base<S>;` for base classes);
-
-Thanks to the relocation-assignment operator special eliding,
-no copies or relocations of the source subobjects are performed.
 
 Note that this default implementation only provides *basic* exception safety:
 if a subobject assignment throws, subobjects assigned before the throw keep
@@ -4445,23 +4478,6 @@ This implementation has a strong exception safety: should an exception be thrown
 the `box` would still be in a valid state. Indeed, an exception may only be
 thrown by `T`'s destructor, and this is only called after the `box` is set a new
 valid state (i.e. `rhs`), when the object returned by `exchange` is destroyed.
-
-### Invocation ### {#reloc-assign-invoke}
-
-```c++
-T x, y;
-x = reloc y;
-```
-
-Every call to the relocation assignment operator follows normal rules.
-
-If the call site detects that an eliding version of the operator is available,
-then which version of the operator
-is called is implementation-defined.
-
-The nominal case is to call the non-eliding version. The implementation is allowed
-to call the eliding version instead, given that the source object is
-*early destructible*.
 
 ## Overload resolution ## {#overload-resolution}
 
@@ -5190,10 +5206,6 @@ impact on existing prvalue-assignment operators (like it does to any function).
 However this change is purely opt-in. If there is an existing prvalue-assignment
 operator in a class, then it will prevent the implicit declaration of the
 relocation constructor, which will in turn prevent the potential ABI break.
-
-Also, the relocation assignment operator may be aliased.
-If aliasing occurs, then the ABI does not break as aliasing happens only on a
-new hidden function.
 
 ### The virtual slicing function ### {#virtual-slicing-func-discussion}
 
