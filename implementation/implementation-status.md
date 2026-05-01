@@ -801,6 +801,117 @@ When `reloc x` is passed to a `T&&` parameter, the compiler skips temporary mate
 
 ---
 
+## ABI support matrix — prototype scope
+
+The prototype targets the **Itanium C++ ABI** as its primary code generator.
+The other Clang-supported C++ ABIs (Microsoft, ARM-pauth) are intentionally
+out of scope for this prototype; the gaps are recorded below for completeness
+so a future production-quality implementation can pick them up.
+
+### Itanium C++ ABI (x86_64-linux, AArch64 ELF, etc.) ✅ Fully supported
+
+All P2785 codegen work in this prototype targets the Itanium C++ ABI in
+`clang/lib/CodeGen/ItaniumCXXABI.cpp`. Coverage:
+
+- ✅ Direct calls to decomposing functions (Phase 5, Phase 6)
+- ✅ Virtual dispatch into a decomposing function: vtable slot points at the
+    canonical (decomposing) entry, per §"decompose-value-param-direct" — no
+    bridging needed at the call site
+- ✅ Function-pointer indirect calls: address-taking emits the
+    `<canonical>.Vreloc_twin` non-decomposing twin per
+    §"decomposing-function-indirect" (Step 2 / Step 3, commits `786cb9fd7976`
+    and `a806652d8efa`)
+- ✅ PMF formation for **non-virtual** decomposing fns: PMF data field points at
+    `.Vreloc_twin`
+- ✅ PMF formation for **virtual** decomposing fns: PMF encoded as non-virtual
+    `{&<canonical>.Vreloc_pmf_bridge, adj}`; the bridge silent-relocs the
+    decomposed argument into a bridge-local, dispatches through the vtable, and
+    invokes the canonical (commit `538771eb1df4`, see also "Bridge for virtual
+    PMF" below)
+- ✅ Pure-virtual decomposing fns: bridge dispatches dynamically; no canonical
+    body required
+- ✅ ABI-aware reloc-ctor discardment for caller-destroy params (Phase 8)
+- ✅ Forced callee-destroy for *relocate-only* types (Phase 8)
+- ✅ Aliased reloc-assign dual-function scheme (`.reloc_eliding`) (Phase 9b)
+- ✅ Four reloc-ctor variants (C1 / C2 / C1-VBA / C2-VBA) for VBA bookkeeping
+    (Phase 5d)
+
+### ARM AAPCS variant (`UseARMMethodPtrABI`, no pointer authentication) ✅ Inherited
+
+The AAPCS PMF representation differs from base Itanium (`adj` low bit
+discriminates virtual vs. non-virtual instead of `ptr` low bit). The
+prototype's bridge formation runs *before* the AAPCS branch in
+`ItaniumCXXABI::BuildMemberPointer` and uses the AAPCS-correct adjustment
+shift `(UseARMMethodPtrABI ? 2 : 1) * adj`, so the generated PMF correctly
+selects the non-virtual dispatch path on AAPCS targets.
+
+No AAPCS-specific tests are present; this is exercised only indirectly via
+the Itanium codegen path.
+
+### ARM with pointer authentication (`PointerAuth.CXXMemberFunctionPointers`) ⚠️ Partial / known gap
+
+For non-`reloc` virtual PMFs, `BuildMemberPointer` calls
+`getSignedVirtualMemberFunctionPointer(MD)` to emit a thunk and sign the
+resulting pointer with the configured pauth schema (see
+`clang/lib/CodeGen/ItaniumCXXABI.cpp` line ~1240).
+
+The prototype's virtual-PMF bridge does **not** go through this signing
+path: `getOrCreateVRelocPMFBridge(MD)` returns a plain `Function*` and the
+PMF data field is built as `ptrtoint(Bridge)` directly. Under pauth this
+yields an unauthenticated raw pointer where the call site expects a signed
+one — call-time authentication will fail.
+
+**Production-quality fix:** route the bridge through the same pauth schema
+as `getSignedVirtualMemberFunctionPointer`, either by reusing
+`CGM.getMemberFunctionPointer(...)` on the synthesized symbol or by
+factoring out a helper that signs an arbitrary `Function*` with the
+member-function-pointer schema. No call sites in the prototype's test
+matrix exercise pauth, so this is not currently observable.
+
+### Microsoft C++ ABI (`MicrosoftCXXABI.cpp`) ❌ Out of scope for the prototype
+
+`MicrosoftCXXABI.cpp` contains zero references to `reloc`, decomposition,
+or any P2785 mechanism. Concretely this means that under MS ABI:
+
+- The `.Vreloc_twin` non-decomposing twin (Step 2 / Step 3) is **not**
+    emitted on address-taking — function-pointer indirect calls into a
+    decomposing fn use the decomposing entry directly with the wrong
+    calling convention.
+- PMF formation for decomposing fns has no special handling — the MS PMF
+    representation (1, 2, or 3 fields depending on the inheritance model,
+    plus vftable thunks for virtuals) goes through the unmodified
+    `MicrosoftCXXABI::EmitMemberFunctionPointer` path.
+- Direct calls and per-subobject cleanups inside decomposing fn bodies
+    still work because that codegen lives in target-independent
+    `CGDecl.cpp` / `CGCall.cpp`. Only the address-taken / PMF / indirect
+    paths are affected.
+- The Phase 8 caller-destroy / callee-destroy logic is correct for MS by
+    accident: MS ABI is callee-destroy by default, so the
+    `ParamDestroyedInCallee` path naturally avoids the double-destroy
+    that motivated `.Vreloc_twin` in the first place. The remaining MS
+    gap is purely on the indirect-dispatch side (PMF formation and
+    function-pointer twins), not in the call-site cleanup logic.
+
+**Production-quality fix:** port Steps 2 + 3 + the virtual-PMF-bridge work
+to `MicrosoftCXXABI.cpp`. The MS PMF representation makes this larger than
+the Itanium counterpart (each inheritance model needs separate handling),
+but the high-level shape is identical: synthesize a `.Vreloc_twin`-style
+non-decomposing entry on address-taking, and a `.Vreloc_pmf_bridge`-style
+non-virtual bridge for PMF formation of virtual decomposing fns.
+
+No MS-ABI lit tests are present in the prototype's P2785 test matrix.
+
+### Bridge for virtual PMF — implementation reference
+
+For the Itanium implementation of the virtual-PMF bridge added in
+`538771eb1df4`, see [clang/lib/CodeGen/ItaniumCXXABI.cpp](clang/lib/CodeGen/ItaniumCXXABI.cpp)
+(`BuildMemberPointer` virtual branch, and `getOrCreateVRelocPMFBridge`).
+Test: [clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp](clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp).
+
+**Proposal coverage:** §"decomposing-function-indirect" (Itanium-only).
+
+---
+
 ## Phase 11 — Structured decomposition (planned)
 
 **Scope:** `auto [x, y] = expr;` with implicit decomposition, enabling relocation from structured bindings.
