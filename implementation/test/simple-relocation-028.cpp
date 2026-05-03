@@ -87,8 +87,8 @@ int main(int, char**)
 // ~thr() 0x6
 // ~VB() 0x5
 // ~VBBase() 0x5
+// ~dm() 0x4
 // ~VB() 0x1
 // ~VBBase() 0x1
-// ~dm() 0x4
 // caught
 // ---

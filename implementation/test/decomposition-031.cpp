@@ -16,9 +16,9 @@ struct B : public snoop {
 };
 
 struct D : B {
-    int dy;
-    D() : dy(1) { std::cout << "D() " << this << std::endl; }
-    D(D&& rhs) : B(std::move(rhs)), dy(rhs.dy) { std::cout << "D(D&&) " << this << " <- " << &rhs << std::endl; }
+    snoop dy;
+    D() : dy("dy") { std::cout << "D() " << this << std::endl; }
+    D(D&& rhs) : B(std::move(rhs)), dy(std::move(rhs.dy)) { std::cout << "D(D&&) " << this << " <- " << &rhs << std::endl; }
     D(D reloc rhs) : B(reloc rhs.base<B>), dy(reloc rhs.dy) { std::cout << "D(D reloc) " << this << " <- " << rhs.this << std::endl; }
     ~D() { std::cout << "~D() " << this << std::endl; }
     friend void decomp(D reloc d);
@@ -48,17 +48,13 @@ int main(int, char**)
 ////// BUILD SUCCESS
 // snoop() 0x1
 // B() 0x1
+// dy() 0x2
 // D() 0x1
 // main ---
-// snoop(snoop&&) 0x2 <- 0x1
-// B(B&&) 0x2 <- 0x1
-// D(D&&) 0x2 <- 0x1
 // decomp ---
 // sink_b
-// ~B() 0x2
-// ~snoop() 0x2
-// decomp ---
-// ~D() 0x1
 // ~B() 0x1
 // ~snoop() 0x1
+// decomp ---
+// ~dy() 0x2
 // main ---

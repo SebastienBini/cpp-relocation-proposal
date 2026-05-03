@@ -38,15 +38,15 @@ int main(int, char**)
 // b1_m(b1_m reloc) 0x9 <- 0x2
 // B1(B1 reloc) 0x10 <- 0x3
 // decomp_b1 body
+// ~b1_m() 0x9
 // ~VBase() 0x8
 // ~vb_m() 0x8
-// ~b1_m() 0x9
 // decomp_d end
-// ~VBase() 0x1
-// ~vb_m() 0x1
+// ~d_m() 0x7
 // ~C() 0x6
 // ~c_m() 0x6
 // ~B2() 0x5
 // ~b2_m() 0x4
-// ~d_m() 0x7
+// ~VBase() 0x1
+// ~vb_m() 0x1
 // main end

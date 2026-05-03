@@ -32,10 +32,6 @@ int main(int, char**)
 // snoop() 0x1
 // A() 0x1
 // After A ctor
-// snoop(snoop&&) 0x2 <- 0x1
-// A(A&&) 0x2 <- 0x1
 // foo body
-// ~snoop() 0x2
-// ~A() 0x1
 // ~snoop() 0x1
 // main end

@@ -45,11 +45,11 @@ int main(int, char**)
 // ~VBase() 0x8
 // ~vb_m() 0x8
 // decomp_d end
-// ~VBase() 0x1
-// ~vb_m() 0x1
+// ~d_m() 0x7
 // ~C() 0x6
 // ~c_m() 0x6
 // ~B2() 0x5
 // ~b2_m() 0x4
-// ~d_m() 0x7
+// ~VBase() 0x1
+// ~vb_m() 0x1
 // main end

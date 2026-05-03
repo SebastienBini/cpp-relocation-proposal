@@ -28,13 +28,13 @@ int main(int, char**)
 // D() 0x3
 // After D ctor
 // decomp_d body
-// ~VBase() 0x1
-// ~vb_m() 0x1
+// ~d_m() 0x7
 // ~C() 0x6
 // ~c_m() 0x6
 // ~B2() 0x5
 // ~b2_m() 0x4
 // ~B1() 0x3
 // ~b1_m() 0x2
-// ~d_m() 0x7
+// ~VBase() 0x1
+// ~vb_m() 0x1
 // main end

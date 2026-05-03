@@ -43,9 +43,9 @@ int main(int, char**)
 // ~b2_m() 0x9
 // ~VBase() 0x8
 // ~vb_m() 0x8
-// ~VBase() 0x1
-// ~vb_m() 0x1
+// ~d_m() 0x7
 // ~C() 0x6
 // ~c_m() 0x6
-// ~d_m() 0x7
+// ~VBase() 0x1
+// ~vb_m() 0x1
 // main end

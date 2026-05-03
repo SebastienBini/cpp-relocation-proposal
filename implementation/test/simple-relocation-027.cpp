@@ -75,8 +75,8 @@ int main(int, char**)
 // VB(&&) 0x5 <- 0x1
 // ~VBBase() 0x5
 // ~bm() 0x2
+// ~dm() 0x4
 // ~VB() 0x1
 // ~VBBase() 0x1
-// ~dm() 0x4
 // caught
 // ---

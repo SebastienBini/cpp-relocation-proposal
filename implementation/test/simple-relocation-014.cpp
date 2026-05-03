@@ -38,12 +38,8 @@ int main(int, char**)
 // snoop() 0x2
 // A() 0x2
 // make_a
-// snoop(snoop&&) 0x3 <- 0x2
-// A(A&&) 0x3 <- 0x2
-// snoop& snoop::operator=(snoop reloc) 0x1 <- 0x3
-// A::operator=(A reloc) 0x1 <- 0x3
-// ~A() 0x2
-// ~snoop() 0x2
+// snoop& snoop::operator=(snoop reloc) 0x1 <- 0x2
+// A::operator=(A reloc) 0x1 <- 0x2
 // ---
 // ~A() 0x1
 // ~snoop() 0x1
