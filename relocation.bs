@@ -4821,16 +4821,8 @@ This code works even if `T` is relocate-only.
 
 #### Possible `operator reloc[]` implementations #### {#structured-decomposition-implem}
 
-A generic utility class leveraging C++26 pack indexing can serve as a
-convenient return type for `operator reloc[]`:
-
-```c++
-template <class... Ts>
-struct decomposable { Ts... m; };
-```
-
-Note: `decomposable` is shown for exposition; it is not proposed for
-standardization.
+A generic utility class can serve as a convenient return type for
+`operator reloc[]`: `std::decomposition_pack` (see [§](#std-decomposition-pack)).
 
 With this, writing `operator reloc[]` for a custom class is straightforward:
 
@@ -4843,7 +4835,11 @@ public:
 
     auto operator reloc[](this MyType reloc self)
     {
-        return decomposable{self._rep, reloc self._name, reloc self._box};
+        return std::decomposition_pack{
+            std::ref(self._rep),
+            reloc self._name,
+            reloc self._box
+        };
     }
 
 private:
@@ -4854,7 +4850,8 @@ private:
 };
 ```
 
-The returned `decomposable` satisfies the *data members* protocol directly.
+The returned `std::decomposition_pack` satisfies the *data members* protocol
+directly.
 
 Then, in the following snippet:
 ```c++
@@ -4863,7 +4860,7 @@ auto [rep, name, box] = reloc tp;
 // equivalent to: auto [rep, name, box] = (reloc tp).operator reloc[]();
 ```
 
-`MyType`'s `operator reloc[]` returns a `decomposable` which matches the
+`MyType`'s `operator reloc[]` returns a `std::decomposition_pack` which matches the
 *data member* protocol, and the identifiers are bound to its members.
 
 And we have:
@@ -4880,6 +4877,52 @@ What we are proposing to add for the moment is the bare minimum to allow
 library writers to benefit from relocation. Support for relocation in the STL
 will be done in a separate proposal, depending on the reception of the current
 proposal.
+
+## Structured decomposition utility ## {#std-structured-decomposition-utility}
+
+### std::decomposition_pack ### {#std-decomposition-pack}
+
+We propose to add the following utility in namespace `std` (in header `<utility>`):
+
+```c++
+template<class... Ts>
+struct decomposition_pack;
+```
+
+`std::decomposition_pack<Ts...>` is specified as if it were an aggregate that
+contains exactly one direct non-static data member for each type in `Ts...`,
+in index order.
+
+- all such members are public ;
+- member names are unspecified ;
+- no user-provided constructors, destructor, or assignment operators are
+    declared by the library specification ;
+- class template argument deduction is supported so `std::decomposition_pack{...}`
+    may be used in `operator reloc[]` return statements.
+
+This utility is intended to bridge the `operator reloc[]` customized protocol
+and the *data members* protocol in a non-recursive way.
+
+`std::tuple` and `std::array` can then express their `operator reloc[]`
+implementations in terms of `std::decomposition_pack`.
+
+### Future directions and alternatives ### {#std-decomposition-pack-future}
+
+`std::decomposition_pack` is proposed as a practical bridge, not as a
+long-term constraint on language evolution.
+
+- If C++ later gains pack data members, `std::decomposition_pack` can be
+    re-specified in terms of that direct language feature.
+- If C++ reflection later supports forging/injecting structure definitions,
+    `std::decomposition_pack` can be re-specified in terms of reflection-backed
+    generated structures.
+
+As an implementation fallback, vendors may realize
+`std::decomposition_pack<Ts...>` through a finite family of internal carrier
+types (for example, `decomposition_pack_1` to `decomposition_pack_N`, for a
+chosen `N`) and diagnose arities above that limit. This keeps the model
+non-recursive while preserving a deployable path on compilers that do not yet
+have native support for member-pack-like representations.
 
 ## Memory header ## {#std-mem-header}
 
