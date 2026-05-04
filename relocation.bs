@@ -4494,8 +4494,12 @@ void foo(T val)
 }
 ```
 
-Hence we propose a change in the overload resolution rules to prefer passing by
-value for prvalue arguments.
+Hence we propose a change in the overload resolution rules so that each value
+category has a clear winner when both a reference binding and a by-value
+parameter are viable:
+
+- for prvalue arguments, by-value is preferred over reference bindings;
+- for lvalue and xvalue arguments, reference binding is preferred over by-value.
 
 Specifically, we would amend <a href="https://eel.is/c++draft/over.ics.rank#3.2.3">[over.ics.rank]/3.2.3</a> to read:
 
@@ -4504,6 +4508,8 @@ Specifically, we would amend <a href="https://eel.is/c++draft/over.ics.rank#3.2.
     - S1 binds an lvalue reference to an lvalue, and S2 does not, or:
     - S1 binds an rvalue reference to an xvalue, and S2 does not, or:
     - S1 does not bind a reference, and S2 binds a reference to a prvalue, or:
+    - S1 binds a reference, S2 does not bind a reference, and the argument is
+        not a prvalue, or:
     - S1 binds an rvalue reference to a prvalue, and S2 binds an lvalue reference [Example:
         ```c++
         int i;
@@ -4513,9 +4519,21 @@ Specifically, we would amend <a href="https://eel.is/c++draft/over.ics.rank#3.2.
         int g2(const int&);
         int g2(int);
         int g2(int&&);
-        int j2 = g2(i); // calls g2(const int&)
-        int k2 = g2(f1()); // calls g2(int)
-        int l2 = g2(f2()); // calls g2(int&&)
+        int j2 = g2(i);            // calls g2(const int&): lvalue ref beats by-value
+        int k2 = g2(f1());         // calls g2(int): by-value beats rvalue ref for prvalue
+        int l2 = g2(f2());         // calls g2(int&&): rvalue ref beats lvalue ref for xvalue
+        int m2 = g2(std::move(i)); // calls g2(int&&): same as above
+
+        int g3(const int&);
+        int g3(int);
+        int n3 = g3(std::move(i)); // calls g3(const int&): lvalue ref beats by-value for xvalue
+
+        struct Widget {}; // Rule of Zero: implicit copy, move, reloc assignment
+        Widget& assign(Widget&, const Widget&);
+        Widget& assign(Widget&, Widget);
+        Widget w1, w2;
+        assign(w1, std::move(w2));          // calls assign(Widget&, const Widget&)
+        assign(w1, std::forward<const Widget>(w2)); // same: const Widget&& is an xvalue
         ...
         ```
         &#45; end example]
