@@ -4883,9 +4883,28 @@ auto [rep, name, box] = reloc tp;
 
 And we have:
 ```c++
-static_assert(std::is_same_v<Repository&, decltype(rep)>);
+static_assert(std::is_same_v<std::reference_wrapper<Repository>, decltype(rep)>);
 static_assert(std::is_same_v<std::string, decltype(name)>);
 static_assert(std::is_same_v<std::box<int>, decltype(box)>);
+```
+
+For a type wrapping a C-array, `operator reloc[]` can decompose the array
+member into individual elements using the
+[array protocol](#structured-decomposition-array) combined with mandatory
+relocation elision ([§](#reloc-elision-mandatory)):
+
+```c++
+template <class T, std::size_t N>
+struct array {
+    T _m[N];
+    auto operator reloc[](this array reloc self) {
+        // _m is a direct data member of decomposed self: mandatory elision
+        // applies. Each ar_el...[i] aliases self._m[i] in place — no
+        // element-wise constructor is called.
+        auto [...ar_el] = reloc self._m;  // mandatory elision
+        return std::decomposition_pack{reloc ar_el...};
+    }
+};
 ```
 
 # Proposed library changes # {#proposed-lib-changes}
