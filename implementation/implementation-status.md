@@ -706,17 +706,38 @@ The discardment does NOT apply when:
 
 **Silent relocation of decomposed parameters (§"decompose-value-param"):**
 
-Implemented in CGDecl.cpp (`EmitParmDecl`), CGCall.cpp (`EmitDelegateCallArg`), and SemaRelocation.cpp (`CheckDecomposedParams`).
+Implemented across CGDecl.cpp (`EmitParmDecl`), CGExpr.cpp
+(`getDirectCallTarget`/`getRawFunctionPointer`), CGCall.cpp (`EmitCallArg`,
+`EmitDelegateCallArg`) and SemaRelocation.cpp (`CheckDecomposedParams`).
 
-When a function parameter is declared with `T reloc obj` (decomposed), the callee manages the parameter's subobjects individually. On caller-destroy ABIs (Itanium default for non-trivially-destructible types), the caller also expects to destroy the whole parameter, which would conflict with per-subobject cleanups.
+When a function parameter is declared with `T reloc obj` (decomposed), the
+callee manages the parameter's subobjects individually. Per
+§decompose-value-param-direct the canonical decomposing entry must satisfy
+two invariants at every direct or virtual call site:
 
-The fix per §"decompose-value-param": the callee silently relocates/moves the parameter into local storage at function entry, then decomposes the local copy. The original parameter is left in a moved-from state for the caller to safely destroy. This is transparent to the caller, preserving ABI compatibility through function pointers.
+  * **Rule 1 (Ownership)**: the caller invokes NO destructor for the
+    decomposed parameter; the callee owns every subobject's lifetime.
+  * **Rule 2 (Direct materialization)**: the storage backing the parameter
+    inside the callee IS the storage that holds the argument prvalue; no
+    copy/move/relocation constructor is inserted between caller and callee.
 
-1. **Sema: implicit ctor declaration** (SemaRelocation.cpp `CheckDecomposedParams`): for caller-destroy decomposed params, explicitly triggers `DeclareImplicitRelocConstructor`, `DeclareImplicitMoveConstructor`, and `DeclareImplicitCopyConstructor` to ensure the constructor is available in CodeGen (implicit special members are lazily declared in Clang).
+For indirect (function-pointer) calls the source generally cannot satisfy
+rules 1+2, so address-taking emits a non-decomposing `.Vreloc_twin`
+(§decomposing-function-indirect) that takes the same parameter list with
+`reloc` removed and silently reloc-copies each formerly-decomposed
+parameter into the canonical entry's storage on entry.
 
-2. **CodeGen: silent relocation to local storage** (CGDecl.cpp `EmitParmDecl`): when a decomposed parameter is NOT callee-destroy and has a non-trivial destructor, CodeGen finds the best available ctor (prefer reloc > move > copy), creates a local alloca, constructs from the parameter into it, and replaces `DeclPtr`/`AllocaPtr` so all subsequent code uses the local. Per-subobject cleanups are registered on the local copy.
+1. **Sema: implicit ctor declaration** (SemaRelocation.cpp `CheckDecomposedParams`): for caller-destroy decomposed params, explicitly triggers `DeclareImplicitRelocConstructor`, `DeclareImplicitMoveConstructor`, and `DeclareImplicitCopyConstructor` to ensure the constructor is available in CodeGen.
 
-3. **CodeGen: delegate call fix** (CGCall.cpp `EmitDelegateCallArg`): decomposed params skip the `CalleeDestructedParamCleanups` lookup since their cleanups are per-subobject (registered in `MemberDestroyCleanup`/`BaseDestroyCleanup`), not as a whole-object cleanup. This fixes a pre-existing crash in C1→C2 delegation for forced callee-destroy relocate-only types.
+2. **CodeGen: canonical entry is rule-1+2 compliant** (CGDecl.cpp `EmitParmDecl`): the silent-reloc materialization is gated on `EmittingRelocTwin`. The canonical decomposing entry receives the parameter via `dead_on_return` and operates directly on the caller's storage (rule 2). Per-subobject cleanups are registered on the parameter address.
+
+3. **CodeGen: direct vs. address-taken function pointer split** (CGExpr.cpp): `getDirectCallTarget(GD)` returns the canonical entry for direct/virtual calls; `getRawFunctionPointer(GD)` returns the `.Vreloc_twin` for address-taken contexts (function-to-pointer decay, function-pointer constants, PMF formation). All direct-call sites (`EmitDirectCallee`, the inline-builtin path, the predefined library function path in CGBuiltin, and the OpenCL kernel-stub direct call) route through `getDirectCallTarget`.
+
+4. **CodeGen: caller-side cleanup suppression** (CGCall.cpp `EmitCallArg`): the optional `CalleeParam` argument is threaded from `EmitCallArgs`. When the callee parameter is `reloc`-decomposed, both the elision branch and the CXXRelocExpr fallback branch suppress the caller-side full-expression destructor cleanup that would ordinarily run for caller-destroy ABIs (rule 1).
+
+5. **CodeGen: per-subobject destruction order** (CGDecl.cpp): per-subobject cleanups for a decomposed object are pushed in the inverse of the run order, so LIFO popping yields the [class.dtor] order (members in reverse declaration, then non-virtual bases in reverse spec, then virtual bases in reverse DFS). Applies to both decomposed locals and decomposed parameters.
+
+6. **CodeGen: delegate call fix** (CGCall.cpp `EmitDelegateCallArg`): decomposed params skip the `CalleeDestructedParamCleanups` lookup since their cleanups are per-subobject (registered in `MemberDestroyCleanup`/`BaseDestroyCleanup`).
 
 For callee-destroy ABIs (MSVC, or forced for relocate-only types), the parameter is decomposed directly in place — the caller doesn't call the destructor, so per-subobject cleanups on the original param are safe.
 
@@ -1113,9 +1134,12 @@ Key sub-features:
 
 492 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 14 lit test files pass:
+Additionally, 16 lit test files pass:
+- `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
+- `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
 - `clang/test/CodeGenCXX/p2785-reloc-arg-temp-cleanup.cpp` (argument temporary cleanup)
+- `clang/test/CodeGenCXX/p2785-reloc-arg-vba-base-no-double-dtor.cpp` (rule 1 in CXXRelocExpr fallback)
 - `clang/test/CodeGenCXX/p2785-reloc-c1-delegation.cpp` (C1 reloc ctor delegation cleanup)
 - `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` (relocation elision for reference binding)
 - `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (relocation elision + aliased reloc-assign + cleanup timing)
@@ -1152,6 +1176,44 @@ Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/conste
 - Reloc in loop (constexpr-018)
 - Nested scope reloc (constexpr-019)
 - `consteval` function (constexpr-020)
+
+---
+
+## Remaining work — summary
+
+### Required by the proposal but not yet implemented
+
+| Area | Status | Notes |
+|---|---|---|
+| **Phase 11** — structured decomposition (`auto [x, y] = expr;` with implicit decomposition) | ❌ Planned | Five-stage plan above. Stage 4a (`operator reloc[]` syntax) is the highest-risk piece. |
+| **Phase 12** — virtual slicing function | ❌ Planned | Hidden virtual implicitly declared when class has explicit reloc ctor + virtual dtor. Required by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim`. |
+| **Phase 13** — standard library additions | ❌ Planned | `std::construct_at` overload, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. |
+| Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ❌ Planned | E.g. `B b = getD();` implicitly decomposes the `D` temporary. Independent of Phase 11. |
+| NRVO-style elision for `return reloc x;` | ❌ Deferred | Largely redundant per proposal line 3680 (`return x;` already gets NRVO via end-of-life optimization). |
+
+### ABI gaps in the prototype
+
+| Area | Status | Notes |
+|---|---|---|
+| Microsoft C++ ABI (`MicrosoftCXXABI.cpp`) | ❌ Out of scope | No `.Vreloc_twin`, no PMF bridging. Direct calls and per-subobject cleanups still work (target-independent). MS is callee-destroy by default so the rule-1+2 silent-reloc concerns don't manifest at direct call sites. |
+| ARM pauth signing of the virtual-PMF bridge | ⚠️ Partial | `getOrCreateVRelocPMFBridge` returns a raw `Function*`; pauth call-time authentication will fail under `PointerAuth.CXXMemberFunctionPointers`. No call sites in the prototype's test matrix exercise pauth. |
+
+### Precision / quality-of-implementation gaps (non-blocking)
+
+| Area | Status | Notes |
+|---|---|---|
+| `typeid` polymorphic glvalue handling in Phase 4b unsequenced checker | ⚠️ Minor | `CXXTypeidExpr` not skipped when its operand is a non-polymorphic prvalue. Extremely obscure; potential spurious diagnostic. |
+| Noexcept-aware EH precision | ⚠️ Over-approximation | Phase 1.5 conservatively injects `AliveOrRelocated` for any var with a `CXXRelocExpr` in a try body; never a missed diagnostic, only false positives in catch blocks when nothing throwing follows the reloc. |
+| Function-pointer indirect calls into decomposing fns — runtime trace correctness | ⚠️ Suspect | Per the audit of `P2785/implementation/test/decomposition-03N-fptr*.cpp`, several expected-output traces show what looks like missed cleanup deactivation on `reloc d` arguments through a function pointer (caller still destroys `d` via the twin path). Needs reconciliation: either the expected traces are wrong, or there is a residual bug in the indirect-call path analogous to the recently-fixed direct-call rule 1 bug. |
+
+### Recently fixed (this branch, post-summary baseline)
+
+| Fix | Commit | Notes |
+|---|---|---|
+| Synthesize PMF bridge for virtual decomposing fns | `538771eb1df4` | `.Vreloc_pmf_bridge`; PMF formation for virtual decomposing fns. |
+| Honor §decompose-value-param-direct rules 1+2 for direct calls | `9dc467296db0` | Split `getDirectCallTarget` vs `getRawFunctionPointer`; suppress caller-side cleanup when the callee param is `reloc`-decomposed. |
+| Decomposed objects: destroy in [class.dtor] order | `761c0b50c040` | Inverted EHStack push order so members pop first, then non-virtual bases (reverse spec), then virtual bases. |
+| Apply rule 1 to the CXXRelocExpr fallback arg path | `f26f4de630d4` | Suppress caller-side D1 on `reloc.arg.tmp` when callee param is decomposed (e.g. `sink_b(reloc d.base<B>)`). |
 
 ---
 
