@@ -25,6 +25,9 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 DEFAULT_CLANGPP = SCRIPT_DIR / ".." / ".." / ".." / "build-make" / "bin" / "clang++"
 DEFAULT_VALGRIND = Path("/opt/1A/toolchain/x86_64-v25.0.14/build-pack/25.0.14.0/bin/valgrind")
 CXX_FLAGS = ["-std=c++2c", "-frelocation"]
+DEFAULT_LLVM_ROOT = SCRIPT_DIR.parents[2]
+DEFAULT_LIBCXX_INCLUDE = DEFAULT_LLVM_ROOT / "build-make" / "include" / "c++" / "v1"
+DEFAULT_LIBCXX_LIB = DEFAULT_LLVM_ROOT / "build-make" / "lib"
 
 # Matches a hex address like 0x7ffd3b3815c0
 HEX_ADDR_RE = re.compile(r"0x[0-9a-fA-F]+")
@@ -39,6 +42,106 @@ def normalize_addresses(text: str) -> str:
             seen[addr] = f"0x{len(seen) + 1}"
         return seen[addr]
     return HEX_ADDR_RE.sub(replacer, text)
+
+
+def libcxx_flags(libcxx_include: Path, libcxx_lib: Path) -> list[str]:
+    """Return compiler/linker flags to force the local libc++ build."""
+    return [
+        "-nostdinc++",
+        "-isystem",
+        str(libcxx_include),
+        "-stdlib=libc++",
+        "-L",
+        str(libcxx_lib),
+        f"-Wl,-rpath,{libcxx_lib}",
+    ]
+
+
+def _has_decomposition_pack(libcxx_include: Path) -> bool:
+    utility = libcxx_include / "utility"
+    if not utility.exists():
+        return False
+    try:
+        return "decomposition_pack" in utility.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+
+
+def _has_libcxx_libs(libcxx_lib: Path) -> tuple[bool, bool]:
+    has_libcxx = any((libcxx_lib / name).exists() for name in ("libc++.so", "libc++.a"))
+    has_libcxxabi = any((libcxx_lib / name).exists() for name in ("libc++abi.so", "libc++abi.a"))
+    return has_libcxx, has_libcxxabi
+
+
+def _discover_local_libcxx_roots() -> list[tuple[Path, Path]]:
+    """Return (include_dir, lib_dir) candidates likely to be local libc++ builds."""
+    roots = [DEFAULT_LLVM_ROOT / "build-make", DEFAULT_LLVM_ROOT / "build"]
+    include_candidates: list[Path] = []
+
+    # Fast paths first.
+    for root in roots:
+        include_candidates.append(root / "include" / "c++" / "v1")
+
+    # Then look for nested build layouts used by runtimes/libc++ builds.
+    for root in roots:
+        if root.exists():
+            for utility in root.glob("**/include/c++/v1/utility"):
+                include_candidates.append(utility.parent)
+
+    # Deduplicate while preserving discovery order.
+    seen: set[Path] = set()
+    unique_includes: list[Path] = []
+    for inc in include_candidates:
+        resolved = inc.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique_includes.append(resolved)
+
+    out: list[tuple[Path, Path]] = []
+    for inc in unique_includes:
+        # include/c++/v1 => prefix is 3 levels up
+        prefix = inc.parents[2] if len(inc.parents) >= 3 else inc
+        out.append((inc, prefix / "lib"))
+    return out
+
+
+def resolve_local_libcxx_paths(
+    include_override: Optional[str],
+    lib_override: Optional[str],
+) -> tuple[Optional[Path], Optional[Path], Optional[str]]:
+    """
+    Resolve local libc++ include/lib paths.
+
+    Returns (include, lib, error). If include/lib are not None, they are usable.
+    """
+    if include_override or lib_override:
+        libcxx_include = Path(include_override) if include_override else DEFAULT_LIBCXX_INCLUDE
+        libcxx_lib = Path(lib_override) if lib_override else DEFAULT_LIBCXX_LIB
+        if not _has_decomposition_pack(libcxx_include):
+            return None, None, (
+                "Selected libc++ headers do not provide std::decomposition_pack in <utility>: "
+                f"{libcxx_include / 'utility'}"
+            )
+        has_libcxx, has_libcxxabi = _has_libcxx_libs(libcxx_lib)
+        if not has_libcxx or not has_libcxxabi:
+            return None, None, (
+                "Selected libc++ lib dir is missing libc++ or libc++abi: "
+                f"{libcxx_lib}"
+            )
+        return libcxx_include, libcxx_lib, None
+
+    # Try default, then auto-discovery.
+    for libcxx_include, libcxx_lib in [(DEFAULT_LIBCXX_INCLUDE, DEFAULT_LIBCXX_LIB), *_discover_local_libcxx_roots()]:
+        if not _has_decomposition_pack(libcxx_include):
+            continue
+        has_libcxx, has_libcxxabi = _has_libcxx_libs(libcxx_lib)
+        if has_libcxx and has_libcxxabi:
+            return libcxx_include, libcxx_lib, None
+
+    return None, None, (
+        "Could not find a local libc++ build with std::decomposition_pack in <utility> and "
+        "matching libc++/libc++abi libraries."
+    )
 
 
 def normalize_output(text: str, cpp_path: Path) -> str:
@@ -109,7 +212,7 @@ def write_annotation(cpp_path: Path, outcome: str, output_raw: str) -> None:
     cpp_path.write_text(text + annotation, encoding="utf-8")
 
 
-def build_only(cpp_path: Path, compiler: Optional[Path] = None) -> tuple:
+def build_only(cpp_path: Path, cxx_flags: list[str], compiler: Optional[Path] = None) -> tuple:
     """
     Build *cpp_path* and keep the resulting binary. Does not run, bless, or compare.
 
@@ -119,7 +222,7 @@ def build_only(cpp_path: Path, compiler: Optional[Path] = None) -> tuple:
     clangpp = compiler if compiler is not None else DEFAULT_CLANGPP
     out_binary = cpp_path.with_suffix("")
     compile_result = subprocess.run(
-        [str(clangpp)] + CXX_FLAGS + ["-o", str(out_binary), str(cpp_path)],
+        [str(clangpp)] + cxx_flags + ["-o", str(out_binary), str(cpp_path)],
         capture_output=True,
         text=True,
     )
@@ -134,7 +237,7 @@ def build_only(cpp_path: Path, compiler: Optional[Path] = None) -> tuple:
         )
 
 
-def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = None,
+def run_test(cpp_path: Path, cxx_flags: list[str], bless: bool = False, compiler: Optional[Path] = None,
              valgrind: Optional[Path] = None) -> tuple:
     """
     Build and (if successful) run a single .cpp file.
@@ -153,7 +256,7 @@ def run_test(cpp_path: Path, bless: bool = False, compiler: Optional[Path] = Non
     # --- Build ---
     out_binary = cpp_path.with_suffix("")
     compile_result = subprocess.run(
-        [str(clangpp)] + CXX_FLAGS + ["-o", str(out_binary), str(cpp_path)],
+        [str(clangpp)] + cxx_flags + ["-o", str(out_binary), str(cpp_path)],
         capture_output=True,
         text=True,
     )
@@ -297,6 +400,35 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--stdlib",
+        choices=["local-libc++", "system"],
+        default="local-libc++",
+        help=(
+            "C++ standard library to use. 'local-libc++' forces the local "
+            "libc++ build; 'system' uses the compiler default STL. "
+            "(default: local-libc++)."
+        ),
+    )
+    parser.add_argument(
+        "--libcxx-include",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to libc++ headers directory (the one containing <utility>, "
+            "typically .../include/c++/v1). "
+            f"(default: {DEFAULT_LIBCXX_INCLUDE})."
+        ),
+    )
+    parser.add_argument(
+        "--libcxx-lib",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to directory containing libc++ libraries (libc++/libc++abi). "
+            f"(default: {DEFAULT_LIBCXX_LIB})."
+        ),
+    )
+    parser.add_argument(
         "--valgrind",
         action="store_true",
         help=(
@@ -374,17 +506,28 @@ def main() -> int:
         print(f"Compiler not found: {clangpp.resolve()}")
         return 1
 
+    cxx_flags = list(CXX_FLAGS)
+    if args.stdlib == "local-libc++":
+        libcxx_include, libcxx_lib, err = resolve_local_libcxx_paths(args.libcxx_include, args.libcxx_lib)
+        if err is not None:
+            print(err)
+            print("Provide --libcxx-include/--libcxx-lib, or build libc++ + libc++abi first.")
+            return 1
+
+        cxx_flags += libcxx_flags(libcxx_include, libcxx_lib)
+
     mode = "Building" if args.build else "Blessing" if args.bless else "Running"
     vg_suffix = f" (valgrind {valgrind})" if valgrind else ""
-    print(f"{mode} {len(cpp_files)} test(s) with {clangpp.resolve()}{vg_suffix}\n")
+    stdlib_desc = args.stdlib
+    print(f"{mode} {len(cpp_files)} test(s) with {clangpp.resolve()} [{stdlib_desc}]{vg_suffix}\n")
 
     results: list[tuple] = []
     max_workers = min(len(cpp_files), os.cpu_count() or 4)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
         if args.build:
-            futures = {pool.submit(build_only, p, clangpp): p for p in cpp_files}
+            futures = {pool.submit(build_only, p, cxx_flags, clangpp): p for p in cpp_files}
         else:
-            futures = {pool.submit(run_test, p, args.bless, clangpp, valgrind): p for p in cpp_files}
+            futures = {pool.submit(run_test, p, cxx_flags, args.bless, clangpp, valgrind): p for p in cpp_files}
         for fut in concurrent.futures.as_completed(futures):
             results.append(fut.result())
 
