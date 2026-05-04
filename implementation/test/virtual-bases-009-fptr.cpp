@@ -1,0 +1,71 @@
+/// Same as virtual-bases-009 but getBase<B1> is called through a
+/// runtime function pointer instead of directly.
+
+#include "virtual-bases.h"
+
+template <class base>
+base getBase(D reloc d)
+{
+    std::cout << "getBase beg" << std::endl;
+    return d.base<base>;
+    std::cout << "decomp_d end" << std::endl;
+}
+
+int main(int, char**)
+{
+    D d;
+    std::cout << "D initialized" << std::endl;
+    B1 (*fp)(D) = &getBase<B1>;
+    fp(reloc d);
+    std::cout << "main end" << std::endl;
+}
+
+////// BUILD SUCCESS
+// vb_m() 0x1
+// VBase() 0x1
+// b1_m() 0x2
+// B1() 0x3
+// b2_m() 0x4
+// B2() 0x5
+// c_m() 0x6
+// C() 0x6
+// d_m() 0x7
+// D() 0x3
+// D initialized
+// vb_m(vb_m&&) 0x8 <- 0x1
+// VBase(VBase&&) 0x8 <- 0x1
+// b1_m(b1_m&&) 0x9 <- 0x2
+// B1(B1&&) 0x10 <- 0x3
+// b2_m(b2_m&&) 0x11 <- 0x4
+// B2(B2&&) 0x12 <- 0x5
+// c_m(c_m&&) 0x13 <- 0x6
+// C(C&&) 0x13 <- 0x6
+// d_m(d_m&&) 0x14 <- 0x7
+// D(D&&) 0x10 <- 0x3
+// getBase beg
+// vb_m(vb_m&&) 0x15 <- 0x8
+// VBase(VBase&&) 0x15 <- 0x8
+// b1_m(b1_m reloc) 0x16 <- 0x9
+// B1(B1 reloc) 0x17 <- 0x10
+// ~d_m() 0x14
+// ~C() 0x13
+// ~c_m() 0x13
+// ~B2() 0x12
+// ~b2_m() 0x11
+// ~VBase() 0x8
+// ~vb_m() 0x8
+// ~B1() 0x17
+// ~b1_m() 0x16
+// ~VBase() 0x15
+// ~vb_m() 0x15
+// ~D() 0x3
+// ~d_m() 0x7
+// ~C() 0x6
+// ~c_m() 0x6
+// ~B2() 0x5
+// ~b2_m() 0x4
+// ~B1() 0x3
+// ~b1_m() 0x2
+// ~VBase() 0x1
+// ~vb_m() 0x1
+// main end
