@@ -1786,7 +1786,9 @@ When a complete object is defined as *decomposed*, then:
         if any, of the *decomposed* object.
 - *The lifetime of the* decomposed *object ends*: its destructor is never invoked implicitly.
     All its non-static subobjects, now considered as complete objects, have a
-    lifetime of their own.
+    lifetime of their own. Those that are not explicitly relocated are
+    implicitly destroyed at end of scope in the same order as the destructor
+    of the decomposed type would destroy them.
 
 Note: If not for changing the runtime type of the direct bases that have one,
 the decomposition operation would be a no-op.
@@ -4057,6 +4059,9 @@ The aim of the slicing function is to decompose `T`, destroy all the unwanted pa
 but the desired base class, and to relocate that base class to a new storage
 space.
 
+The slicing function is defined in the same translation units as the destructor.
+If the destructor is inline, then so is the slicing function.
+
 The parameters of the slicing function are *implementation-defined*. At minimum
 there must be:
 
@@ -4071,23 +4076,61 @@ there must be:
 
 The slicing function handles the destruction of its `this` object. Upon exit
 (normally or through an exception), the `this` object is destroyed.
+The destruction of subobjects must honor the same order as the destructor of `T`.
 
-A possible implementation of the virtual slicing function is:
+A possible implementation (non-normative) of the virtual slicing function is
+described below, first for the common case without virtual bases, then with the
+adjustments needed when virtual bases are present.
 
-1.  If `U` is the same as `T`, then relocates `this` to `u`. This is done by
+**Without virtual bases:**
+
+1.  If `U` is the same as `T`, then relocate `this` to `u`. This is done by
     invoking the relocation constructor, move constructor or copy
     constructor. If the relocation constructor was not invoked, then the
     destructor of `this` must be invoked.
 1.  Otherwise let `V` be the direct base of `T` which is on the inheritance path
     from `T` to `U` (`V` may be `U`):
 
-    1. Decompose `this`. Then recursively invoke the `V`'s slicing function
-        on `V` subobject, forwarding the `U` and `u` parameters.
-    1. Upon exit, the destructors of all non-relocated subobjects
-        of `src` are implicitly invoked.
+    1.  Decompose `this`.
+    1.  Destroy all non-static data members of `T` in reverse declaration
+        order, as if each were the operand of a discarded `reloc` expression.
+    1.  Destroy all direct base classes of `T` that are declared *after* `V`
+        in the base-specifier-list, in reverse base-specifier order.
+    1.  Invoke `V`'s slicing function on the `V` subobject, forwarding the
+        `U` and `u` parameters.
+    1.  Upon exit, the remaining direct base classes (those declared *before*
+        `V` in the base-specifier-list) are destroyed in reverse
+        base-specifier order.
 
-The slicing function is defined in the same translation units as the destructor.
-If the destructor is inline, then so is the slicing function.
+**With virtual bases:**
+
+When `T` has virtual bases, the slicing function exists in two variants,
+analogous to the Itanium ABI's complete/base destructor distinction (D1/D2):
+
+- The **complete** variant is the one called through virtual dispatch.
+    It owns the virtual bases and is responsible for their destruction.
+- The **base** variant is the one invoked recursively (step 4 above)
+    by a more-derived class's slicing function. It does not own the
+    virtual bases.
+
+The algorithm above is amended as follows:
+
+- In the `U` != `V` case, the non-virtual constraint is added: step 3 only destroys
+    direct *non-virtual* base classes declared after `V`.
+- A new check is inserted before step 4, only in the **complete** variant:
+    if `V` is a virtual base of `T`,
+    then move-construct `U` from the `V` subobject into `u`, destroy the
+    (now moved-from) `V` subobject, and skip step 4. No recursive call is
+    made.
+- Step 4 invokes `V`'s **base** variant (rather than the only variant).
+- Step 5 likewise only destroys direct *non-virtual* base classes declared
+    before `V`.
+- A new final step is added (only in the **complete** variant): destroy all
+    virtual base classes of `T` other than `V` (if `V` is virtual), in
+    reverse declaration order.
+- When the **base** variant reaches the "`U` equals the current class" case,
+    the [VBA-source relocation constructor variant](#decompose-virtual-ctor-variants)
+    is invoked (Combo 2).
 
 #### Ill-formed definition #### {#virtual-slicing-def-ill-formed}
 
