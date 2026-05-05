@@ -265,7 +265,7 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 **Description:** The proposal describes relocation elision (§"relocation elision") analogous to NRVO: the source object may share storage with the target, avoiding the constructor call entirely. Key to achieving zero-copy transfer chains (§"achieving 0-copy transfer").
 
-**Implemented:** Phase 9a — call-site elision for by-value parameters and reloc-assign operators, MemberExpr elision in synthesized reloc-assign bodies, aliased reloc-assign dual-function scheme (§"aliased-reloc-assign"). Phase 9c — reference binding elision (`04bcfa91f5cd`). Relocation elision for variable initialisation is **mandatory** (`7bb11fb9398a`): when a local variable is initialised from `reloc x`, the source and target share storage (zero-copy). `constexpr` mandatory elision with storage aliasing for address identity (`1cb0c3254df0`). See Phase 9 section for details.
+**Implemented:** Phase 9a — call-site elision for by-value parameters and reloc-assign operators, MemberExpr elision in synthesized reloc-assign bodies, aliased reloc-assign dual-function scheme (§"aliased-reloc-assign"). Phase 9c — reference binding elision (`04bcfa91f5cd`). Relocation elision for variable initialisation is **mandatory** (`7bb11fb9398a`): when a local variable is initialised from `reloc x`, the source and target share storage (zero-copy). `constexpr` mandatory elision with storage aliasing for address identity (`1cb0c3254df0`). Mandatory elision for decomposed members (`a0d77a3f1340`): when `reloc obj.member` directly initialises a local variable, the target aliases the member subobject's storage. See Phase 9 section for details.
 
 **Remaining:** NRVO-style elision for `return reloc x;` (note: `return x;` already gets NRVO, making this largely redundant per proposal line 3680).
 
@@ -679,6 +679,7 @@ Implemented in `CompareStandardConversionSequences` (`SemaOverload.cpp`), gated 
 - Added `BindsToPRValue` bit to `StandardConversionSequence` (`Overload.h`) to distinguish prvalue from xvalue (existing `BindsToRvalue` covers both).
 - New tie-breaker: a non-reference binding is preferred over a reference binding when the argument is a prvalue.
 - New tie-breaker: an rvalue-reference binding to an xvalue is preferred over a non-reference binding.
+- New tie-breaker (`073fca7da55f`): when S1 binds a reference and S2 does not bind a reference and the argument is not a prvalue, S1 is a better conversion sequence. This resolves an ambiguity where an xvalue argument facing both `f(const T&)` and `f(T)` had no tiebreaker — the ambiguity broke `assignable_from` concept checks on Rule-of-Zero classes (which implicitly gain a relocation assignment operator), cascading into failures of `copyable`, `semiregular`, `forward_iterator`, etc.
 - Without `-frelocation`, standard C++ behavior is unchanged (both cases remain ambiguous).
 
 Remaining sub-features (depend on Phase 6):
@@ -782,11 +783,17 @@ This works for both `CXXOperatorCallExpr` (user-written `a = reloc b`) and `CXXM
 
 When `reloc x` is passed to a `T&&` parameter, the compiler skips temporary materialization and binds the reference directly to `x`, destroying `x` at end of full-expression. This avoids an unnecessary move-construct + destroy pair. The source's scope-exit cleanup is conditionally deactivated; a full-expression cleanup destroys the source after the callee returns.
 
+### Phase 9d — Mandatory elision for decomposed members ✅ `a0d77a3f1340`
+
+When a `reloc` expression on a direct data member of a decomposed object directly initialises a local variable, the relocation/move/copy constructor is not called. The target object aliases the member subobject's storage directly (§"reloc-elision-mandatory" bullet 2).
+
+- `EmitAutoVarAlloca` (CGDecl.cpp): detects `MemberExpr(DeclRefExpr(decomposed))` initialisation pattern and computes the field address via `EmitLValueForField` instead of allocating a new slot
+
 ### Not yet implemented
 
 - NRVO-style elision for `return reloc x;` (note: `return x;` already gets NRVO via end-of-life optimization, making `return reloc x;` largely redundant per proposal line 3680)
 
-**Proposal coverage:** §"relocation elision", §"aliased-reloc-assign", §"achieving 0-copy transfer"
+**Proposal coverage:** §"relocation elision", §"reloc-elision-mandatory", §"aliased-reloc-assign", §"achieving 0-copy transfer"
 
 ---
 
@@ -951,7 +958,7 @@ All five stages landed:
 - ✅ **`constexpr`** (`af5071040dcb`): per-subobject reloc lifetime in constant evaluation
 - ✅ **Template candidate materialization fix** (`a3c916f7e1a6`): deferred template candidates materialized during `operator reloc[]` probe (gap 1)
 
-**Stage 4c — library support** (`std::tuple` / `std::array` `operator reloc[]`) ⚠️ Not yet implemented — standard library additions are Phase 13.
+**Stage 4c — library support** (`std::tuple` / `std::array` `operator reloc[]`) ⚠️ Not yet implemented — standard library additions are Phase 13. `std::decomposition_pack` utility has been added (see Phase 13).
 
 **Proposal coverage:** §"structured decomposition", §"structured decomposition protocols", §"customized decomposition protocol", §"decomposition of a lambda closure type"
 
@@ -971,29 +978,108 @@ All five stages landed:
 
 ---
 
-## Phase 12 — Virtual slicing function (planned)
+## Phase 12 — Virtual slicing function (in progress)
 
 **Scope:** Hidden virtual function for safe polymorphic relocation.
 
-Key sub-features:
-- Implicit declaration when class has explicit relocation constructor + virtual destructor (§"virtual slicing function")
-- Definition: recursive base decomposition and forwarding (§"definition")
-- Ill-formed definition rules (user-provided destructor guard) (§"ill-formed definition")
+A class implicitly declares a virtual slicing function when:
+1. It **explicitly declares** a non-deleted relocation constructor, AND
+2. It has a **virtual destructor** (declared locally or inherited)
+
+OR: it inherits from a base that already provides a virtual slicing function.
+
+The slicing function prevents object slicing when polymorphic objects are relocated through a base pointer via `std::reloc_and_uninitialize`.
+
+### Parameters (prototype ABI)
+
+```
+ptr @__slicing_fn(ptr %this, ptr %dest, ptr %target_type_tag)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `this` | `ptr` | The polymorphic object to slice/relocate |
+| `dest` | `ptr` | Destination address for the result object |
+| `target_type_tag` | `ptr` | Pointer to a per-class unique linkonce_odr constant (type discriminator) |
+
+Single vtable slot per class. The tag-comparison approach avoids O(depth) vtable entries.
+
+### Sub-phases
+
+| # | Sub-phase | Scope | Status |
+|---|---|---|---|
+| **12a** | AST declaration & Sema | Implicitly declare the slicing function; ill-formed checks | ⚠️ In progress |
+| **12b** | Vtable integration | Add slot, mangling, override semantics | ❌ Planned |
+| **12c** | CodeGen: body emission | Generate the compare-tag / relocate / recurse / cleanup body | ❌ Planned |
+| **12d** | `std::reloc_and_uninitialize` builtin | `__builtin_reloc_and_uninitialize(ptr)` lowering | ❌ Planned |
+| **12e** | Relax implicit reloc ctor suppression | Allow implicit reloc ctor when virtual dtor has a slicing fn | ❌ Planned |
+| **12f** | Tests | Sema + CodeGen lit tests, runtime tests | ❌ Planned |
+
+### Phase 12a — AST declaration & Sema
+
+1. `CXXRecordDecl` additions: `hasVirtualSlicingFunction()`, `getVirtualSlicingFunction()`
+2. In `AddImplicitlyDeclaredMembersToClass`: after reloc ctor is resolved, check: explicit (non-deleted) reloc ctor + virtual dtor → declare slicing function
+3. Inherited case: if base provides slicing fn and derived has explicit reloc ctor → derived also gets one
+4. Ill-formed definition checks (emit diagnostic if):
+   - Destructor is **user-provided** (not just user-declared)
+   - No eligible reloc/move/copy ctor
+   - Inaccessible base slicing function
+   - Inaccessible subobject destructor
+5. Access: same as destructor
+6. Virtual destructor suppresses implicit reloc ctor (existing behavior is correct for now — relaxed in 12e)
+
+### Phase 12b — Vtable integration
+
+- Mangling: `__vs` vendor extension
+- Vtable slot: new component type placed after existing virtual functions
+- Override: derived class's slicing function overrides base's slot
+- Thunks: this-adjustment for non-primary bases
+
+### Phase 12c — CodeGen: body emission
+
+Per-class type tag: `@__slicing_tag._ZN4BaseE = linkonce_odr constant i8 0`
+
+Body algorithm for `Derived::__slicing_fn(this, dest, tag)`:
+1. If `tag == &__slicing_tag._ZN7DerivedE` → relocate `*this` to `dest` (reloc ctor > move > copy; if non-reloc used, destroy `*this`)
+2. Otherwise: decompose `*this`, invoke base's slicing function, destroy remaining subobjects
+
+### Phase 12d — `std::reloc_and_uninitialize`
+
+Prototype builtin: `__builtin_reloc_and_uninitialize<T>(ptr)`:
+- If `T` has a slicing function: emit virtual call `ptr->__slicing_fn(dest, &__slicing_tag._ZN1TE)`
+- Else: call reloc ctor / move ctor / copy ctor + dtor fallback
+
+### Phase 12e — Relax implicit reloc ctor suppression
+
+Change `needsImplicitRelocConstructor()`:
+- Current: `!hasUserDeclaredDestructor()` (blanket block)
+- New: allow implicit reloc ctor if all bases with virtual dtors also provide a slicing function
 
 **Proposal coverage:** §"virtual slicing function"
 
 ---
 
-## Phase 13 — Standard library additions (planned)
+## Phase 13 — Standard library additions (partially started)
 
 **Scope:** New and updated standard library components enabled by relocation.
 
-Key sub-features:
+### `std::decomposition_pack` ✅
+
+`std::decomposition_pack<Ts...>` added to `<utility>` — a lightweight aggregate carrier intended as the return type for `operator reloc[]` (P2785 structured decomposition customization point). Specializations provided for arities 0–16 with a by-value deduction guide.
+
+- `libcxx/include/__utility/decomposition_pack.h` (new)
+- `libcxx/include/utility` (include + synopsis)
+- `libcxx/include/CMakeLists.txt` (registration)
+- `libcxx/include/module.modulemap.in` (module entry)
+
+### Remaining
+
 - `std::construct_at` overload taking `T` by value (`::new (p) T{reloc src}`) — §"std::construct_at"
 - `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` — §"std::reloc_and_uninitialize and std::reloc_and_reclaim"
 - Type traits: `std::is_relocation_constructible<T>`, `std::is_nothrow_relocation_constructible<T>`, `std::is_trivially_relocation_constructible<T>`, and assignment variants — §"type traits header"
 - Concepts: `std::relocation_constructible<T>`, `std::relocatable<T>`, `std::trivially_relocatable<T>` — §"concepts header"
 - `std::relocate` amended to support relocation constructors — §"std::relocate"
+- Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`
 
 **Proposal coverage:** §"memory header", §"type traits header", §"concepts header"
 
@@ -1034,28 +1120,34 @@ Key sub-features:
 
 599 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 17 lit test files pass:
+Additionally, 23 lit test files pass (2 pre-existing failures in `p2785-reloc-elision.cpp` and `p2785-reloc-operator.cpp` due to CHECK patterns not yet updated for twin emission rework):
 - `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
 - `clang/test/CodeGenCXX/p2785-reloc-arg-temp-cleanup.cpp` (argument temporary cleanup)
 - `clang/test/CodeGenCXX/p2785-reloc-arg-vba-base-no-double-dtor.cpp` (rule 1 in CXXRelocExpr fallback)
+- `clang/test/CodeGenCXX/p2785-reloc-array-decomp.cpp` (C-array structured decomposition codegen)
 - `clang/test/CodeGenCXX/p2785-reloc-c1-delegation.cpp` (C1 reloc ctor delegation cleanup)
+- `clang/test/CodeGenCXX/p2785-reloc-decomp-this-no-caller-dtor.cpp` (caller-side dtor suppression for decomposed explicit object parameter)
+- `clang/test/CodeGenCXX/p2785-reloc-elision-member.cpp` (mandatory elision for decomposed member initialisation)
 - `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` (relocation elision for reference binding)
-- `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (relocation elision + aliased reloc-assign + cleanup timing)
-- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` (scalar, pointer, class, decomposition, discard, conditional, silent relocation)
 - `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` (EH cleanup for reloc ctor throw, VBase cleanup ordering)
+- `clang/test/CodeGenCXX/p2785-reloc-twin-addr-taken.cpp` (.Vreloc_twin emission on address-taken)
+- `clang/test/CodeGenCXX/p2785-reloc-twin-direct-only.cpp` (direct call uses canonical entry, not twin)
 - `clang/test/CodeGenCXX/p2785-virtual-base-cleanup.cpp` (VBA ctor variants, base dtor with VTT)
+- `clang/test/SemaCXX/p2785-constexpr-indirect.cpp` (constexpr indirect-call test for decomposing functions)
 - `clang/test/SemaCXX/p2785-decomposed-reject.cpp` (decomposition rejection diagnostics)
+- `clang/test/SemaCXX/p2785-decomposing-function.cpp` (decomposing-function declaration checks)
+- `clang/test/SemaCXX/p2785-overload-resolution.cpp` (P2785 overload resolution tie-breakers)
 - `clang/test/SemaCXX/p2785-reloc-operator.cpp` (Sema diagnostics + noexcept static_asserts)
 - `clang/test/SemaCXX/p2785-reloc-unused-value.cpp` (unused reloc value warnings)
 - `clang/test/SemaCXX/p2785-unsequenced-reloc.cpp` (unsequenced reloc + use diagnostics)
 - `clang/test/SemaCXX/p2785-use-after-reloc.cpp` (CFG-based use-after-reloc diagnostics)
 - `clang/test/SemaCXX/p2785-virtual-call-decomposed-base.cpp` (virtual call on decomposed base)
 
-208 runtime tests pass (`P2785/implementation/test/`).
+214 runtime tests pass (`P2785/implementation/test/`).
 
-Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
+Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
 - Scalar types: int, pointer, enum, double, bool (constexpr-001)
 - Trivial defaulted reloc ctor (constexpr-002)
 - User-provided reloc ctor with side-effect (constexpr-003)
@@ -1076,6 +1168,8 @@ Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/conste
 - Reloc in loop (constexpr-018)
 - Nested scope reloc (constexpr-019)
 - `consteval` function (constexpr-020)
+- Constexpr event-log test: mandatory elision and non-elision with cxlog (constexpr-021)
+- Constexpr chained reloc with cxlog: local → function param → reloc param (constexpr-022)
 
 ---
 
@@ -1086,7 +1180,7 @@ Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/conste
 | Area | Status | Notes |
 |---|---|---|
 | **Phase 12** — virtual slicing function | ❌ Planned | Hidden virtual implicitly declared when class has explicit reloc ctor + virtual dtor. Required by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim`. |
-| **Phase 13** — standard library additions | ❌ Planned | `std::construct_at` overload, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. Includes Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`. |
+| **Phase 13** — standard library additions | ⚠️ Partial | `std::decomposition_pack` added. Remaining: `std::construct_at` overload, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. Includes Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`. |
 | Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ❌ Planned | E.g. `B b = getD();` implicitly decomposes the `D` temporary. Independent of Phase 11. |
 | NRVO-style elision for `return reloc x;` | ❌ Deferred | Largely redundant per proposal line 3680 (`return x;` already gets NRVO via end-of-life optimization). |
 
@@ -1112,6 +1206,10 @@ Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/conste
 | Honor §decompose-value-param-direct rules 1+2 for direct calls | `9dc467296db0` | Split `getDirectCallTarget` vs `getRawFunctionPointer`; suppress caller-side cleanup when the callee param is `reloc`-decomposed. |
 | Decomposed objects: destroy in [class.dtor] order | `761c0b50c040` | Inverted EHStack push order so members pop first, then non-virtual bases (reverse spec), then virtual bases. |
 | Apply rule 1 to the CXXRelocExpr fallback arg path | `f26f4de630d4` | Suppress caller-side D1 on `reloc.arg.tmp` when callee param is decomposed (e.g. `sink_b(reloc d.base<B>)`). |
+| Fix twin emission and array reloc decomposition codegen | `6005dffd9894` | Correct twin emission for decomposing functions; fix array structured decomposition codegen. |
+| Mandatory relocation elision for decomposed members | `a0d77a3f1340` | §reloc-elision-mandatory bullet 2: `reloc obj.member` initialiser aliases member storage. |
+| Suppress caller-side dtor for decomposed explicit object param | `a4046f6c8839` | `EmitCallArg`: mark aggregate slot externally-destructed when callee param `isDecomposedByReloc()`. |
+| Fix overload resolution: prefer reference for xvalue args | `073fca7da55f` | [over.ics.rank]/3.2.3 bullet 4: reference binding beats by-value for non-prvalue arguments. |
 
 ---
 
@@ -1146,6 +1244,7 @@ Additionally, 20 constexpr runtime tests pass (`P2785/implementation/test/conste
 | `clang/lib/CodeGen/CGExprScalar.cpp` | `VisitCXXDecomposedThisExpr` (emits alloca address as `void cv*`) |
 | `clang/lib/CodeGen/CodeGenFunction.cpp` | Early-destructible source lifetime suppression |
 | `clang/lib/CodeGen/CodeGenFunction.h` | Declaration of `ConditionallyDeactivateCleanup`; `EmittingRelocAssignEliding`, `CallingRelocAssignOperator` flags (Phase 9) |
+| `libcxx/include/__utility/decomposition_pack.h` | `std::decomposition_pack<Ts...>` aggregate carrier for `operator reloc[]` return type (Phase 13) |
 | `clang/lib/Driver/ToolChains/Clang.cpp` | `-frelocation` driver flag |
 | `clang/lib/Frontend/CompilerInvocation.cpp` | `LangOpts.Relocation` mapping |
 | `clang/lib/Parse/ParseDecl.cpp` | `reloc` keyword in declarator parsing (`T reloc name`); `reloc`-in-function-type diagnostic in `ParseParameterDeclarationClause` |
