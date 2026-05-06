@@ -17,3 +17,6 @@ struct snoop
 
     std::string_view name;
 };
+
+template <int>
+struct snoopN { snoop s; snoopN(std::string_view n) : s{n} {} };

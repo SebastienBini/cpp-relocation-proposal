@@ -1,4 +1,3 @@
-////// BUILD SUCCESS
 #include <array>
 #include "box.h"
 #include "snoop.h"
