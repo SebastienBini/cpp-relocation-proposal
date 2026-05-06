@@ -44,27 +44,39 @@ struct D : L, R {
 };
 
 int main() {
-    // NOTE: The virtual diamond slicing function is now correctly declared
-    // (no more ambiguous final overrider error).  However, the runtime
-    // behavior is not yet correct — slicing through the shared virtual base
-    // in a diamond crashes because the generated slicing function body does
-    // not properly handle the diamond pattern.  This is a codegen limitation.
-    //
-    // For now, just verify the program compiles and basic operations work.
-
-    // Test: Relocate exact D* → D (no slicing through diamond)
-    std::cout << "---construct d---" << std::endl;
+    // Test 1: Slice D* → Base* through L path
+    std::cout << "---construct d1---" << std::endl;
     {
-        D* obj = new D();
+        D* obj1 = new D();
+        std::cout << "---slice D* to Base* (via L)---" << std::endl;
+        Base* bp = static_cast<L*>(obj1);  // L's Base subobject
+        Base bres = std::reloc_and_uninitialize(bp);
+        std::cout << "b1=" << bres.b1.name << std::endl;
+    }
+
+    // Test 2: Slice D* → L*
+    std::cout << "---construct d2---" << std::endl;
+    {
+        D* obj2 = new D();
+        std::cout << "---slice D* to L*---" << std::endl;
+        L* lp = obj2;
+        L lres = std::reloc_and_uninitialize(lp);
+        std::cout << "l1=" << lres.l1.name << std::endl;
+    }
+
+    // Test 3: Relocate exact D* → D
+    std::cout << "---construct d3---" << std::endl;
+    {
+        D* obj3 = new D();
         std::cout << "---relocate exact D*---" << std::endl;
-        D dres = std::reloc_and_uninitialize(obj);
+        D dres = std::reloc_and_uninitialize(obj3);
         std::cout << "d1=" << dres.d1.name << std::endl;
     }
     return 0;
 }
 
 ////// BUILD SUCCESS
-// ---construct d---
+// ---construct d1---
 // b1() 0x1
 // Base() 0x2
 // l1() 0x3
@@ -73,22 +85,60 @@ int main() {
 // R() 0x6
 // d1() 0x7
 // D() 0x4
-// ---relocate exact D*---
+// ---slice D* to Base* (via L)---
+// ~d1() 0x7
+// ~r1() 0x5
+// ~l1() 0x3
 // b1(b1&&) 0x8 <- 0x1
 // Base(&&) 0x9 <- 0x2
-// b1(b1&&) 0x10 <- 0x1
-// Base(&&) 0x11 <- 0x2
-// l1(l1 reloc) 0x12 <- 0x3
-// L(reloc) 0x13 <- 0x4
-// b1(b1&&) 0x14 <- 0x1
-// Base(&&) 0x15 <- 0x2
-// r1(r1 reloc) 0x10 <- 0x5
-// R(reloc) 0x11 <- 0x6
-// d1(d1 reloc) 0x15 <- 0x7
-// D(reloc) 0x13 <- 0x4
 // ~b1() 0x1
-// d1=d1
-// ~d1() 0x15
-// ~r1() 0x10
-// ~l1() 0x12
+// b1=b1
 // ~b1() 0x8
+// ---construct d2---
+// b1() 0x10
+// Base() 0x11
+// l1() 0x12
+// L() 0x13
+// r1() 0x14
+// R() 0x15
+// d1() 0x16
+// D() 0x13
+// ---slice D* to L*---
+// ~d1() 0x16
+// ~r1() 0x14
+// b1(b1&&) 0x17 <- 0x10
+// Base(&&) 0x18 <- 0x11
+// l1(l1 reloc) 0x19 <- 0x12
+// L(reloc) 0x20 <- 0x13
+// ~b1() 0x10
+// l1=l1
+// ~l1() 0x19
+// ~b1() 0x17
+// ---construct d3---
+// b1() 0x21
+// Base() 0x22
+// l1() 0x23
+// L() 0x24
+// r1() 0x25
+// R() 0x26
+// d1() 0x27
+// D() 0x24
+// ---relocate exact D*---
+// b1(b1&&) 0x28 <- 0x21
+// Base(&&) 0x29 <- 0x22
+// b1(b1&&) 0x30 <- 0x21
+// Base(&&) 0x31 <- 0x22
+// l1(l1 reloc) 0x32 <- 0x23
+// L(reloc) 0x33 <- 0x24
+// b1(b1&&) 0x34 <- 0x21
+// Base(&&) 0x35 <- 0x22
+// r1(r1 reloc) 0x30 <- 0x25
+// R(reloc) 0x31 <- 0x26
+// d1(d1 reloc) 0x35 <- 0x27
+// D(reloc) 0x33 <- 0x24
+// ~b1() 0x21
+// d1=d1
+// ~d1() 0x35
+// ~r1() 0x30
+// ~l1() 0x32
+// ~b1() 0x28
