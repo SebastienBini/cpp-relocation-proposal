@@ -5129,6 +5129,30 @@ are interpreted through these traits for the exact cv-qualified type supplied.
 The existing trait `std::is_trivially_relocatable<T>` shall be amended to take
 into account the [updated definition](#trivial-relocation).
 
+Additionally, we propose a structural trait to detect the presence of the
+[virtual slicing function](#virtual-slicing):
+
+- `std::has_virtual_slicing_function<T>`: derives from `std::true_type` if
+    `T` is a class type that declares a virtual slicing function,
+    otherwise derives from `std::false_type`.
+
+This trait parallels `std::has_virtual_destructor<T>`. It allows generic code
+to statically determine whether `std::reloc_and_uninitialize` will perform
+safe polymorphic relocation (dispatching through the slicing function) or
+merely static-type relocation. This is useful for containers and smart pointers
+that manage polymorphic objects and wish to assert or constrain on safe
+polymorphic relocation support:
+
+```c++
+template<class T>
+class poly_box {
+    // Only allow polymorphic storage if the type supports safe slicing
+    static_assert(std::has_virtual_slicing_function_v<T>,
+        "poly_box requires a type with a virtual slicing function");
+    // ...
+};
+```
+
 For all new type traits, the inline constexpr boolean template variable counterparts
 are also proposed. For instance we propose to introduce:
 ```c++
