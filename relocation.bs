@@ -5034,12 +5034,20 @@ template <class T>
 std::remove_cv_t<T> reloc_and_reclaim(T* src);
 ```
 
-Both functions construct a new object by calling either
-the virtual slicing function, the relocation constructor, the move constructor
-or the copy constructor (in that order),
-using `*src` as parameter while ignoring its cv-qualifiers, and return it.
-They also ensure the end-of-life of the source object: if the move or copy
-constructor is called then the destructor of `*src` is called afterwards.
+Both functions construct a new object of type `std::remove_cv_t<T>` from `*src`
+(ignoring its cv-qualifiers) and return it, ensuring the end-of-life of the
+source object. The constructor and destruction strategy is selected as follows,
+in priority order:
+
+1. If `T` has a [virtual slicing function](#virtual-slicing): invoke it.
+    The slicing function handles both construction of the result and
+    destruction of the source object (including the derived portion).
+1. Otherwise, if `T` has a virtual destructor: move-construct the result
+    as if by `std::remove_cv_t<T>(std::move(*src))`, then destroy `*src`
+    through the virtual destructor.
+1. Otherwise, if `T` has an eligible relocation constructor: invoke it.
+1. Otherwise: move-construct or copy-construct the result (whichever is
+    viable, preferring move), then invoke the destructor of `*src`.
 
 `reloc_and_uninitialize` leaves the memory that was occupied by `src` in an
 destructed state (uninitialized memory).  Even if it leaves with an exception,
