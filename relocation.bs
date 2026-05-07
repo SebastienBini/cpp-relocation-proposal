@@ -3590,9 +3590,12 @@ if:
 * `T` has no virtual base classes, and
 * `T` is not a polymorphic type, and
 * for each direct base class and direct non-static data member of class type or array thereof,
-    the relocation operation (which may be a relocation constructor or
-    synthesized from copy/move constructor plus destructor) selected
-    to relocate that base or member is trivial.
+    the relocation operation selected to relocate that base or member is trivial.
+    The selected operation is the relocation constructor if the subobject
+    declares one; otherwise it is the operation synthesized from the
+    move constructor (or copy constructor if no eligible move constructor
+    exists) and the destructor, which is trivial when both the selected
+    constructor and the destructor are trivial.
 
 Note that implementations are allowed to benefit from the trivial relocation
 optimization (i.e. identical to a `memcpy` call) if the class-type is not trivially
@@ -3607,7 +3610,7 @@ C++26 defines **trivial relocatability**. We amend this definition to account
 for the relocation constructor.
 A *trivially relocatable class* is one which:
 * has a trivial, eligible relocation constructor, or ;
-* does not have a relocation constructor (including one that is deleted),
+* has no relocation constructor, or has a deleted one,
     and is *trivially relocatable* according to C++26.
 
 Note: *eligible* is defined in
@@ -3615,6 +3618,12 @@ Note: *eligible* is defined in
 
 Scalar types, trivially relocatable class types, and arrays and cv-qualified versions
 thereof are *trivially relocatable*.
+
+Note: The trait `std::is_trivially_relocation_constructible<T>` ([§](#std-type_traits-header))
+reflects whether `T`'s relocation constructor is trivial (the constructor-level
+property defined above). The trait `std::is_trivially_relocatable<T>` reflects
+the class-level property defined immediately above (which also covers
+classes without a relocation constructor, via the C++26 fallback).
 
 Advisement: We also tighten the definition of "trivial class" (and thus "trivial") to
 require that the class in question be trivially relocatable as well as trivially
@@ -5125,7 +5134,9 @@ are interpreted through these traits for the exact cv-qualified type supplied.
 
 - `std::is_relocation_constructible<T>`: same as `std::is_constructible<T, T>` ;
 - `std::is_trivially_relocation_constructible<T>`: same as
-    `std::is_trivially_constructible<T, T>` ;
+    `std::is_trivially_constructible<T, T>`.
+    See [trivial relocation](#trivial-relocation) for the definition of
+    when a relocation constructor is trivial ;
 - `std::is_nothrow_relocation_constructible<T>` same as
     `std::is_nothrow_constructible<T, T>` ;
 - `std::is_relocation_assignable<T>`: same as `std::is_assignable<T, T>` ;
@@ -5135,7 +5146,8 @@ are interpreted through these traits for the exact cv-qualified type supplied.
     `std::is_nothrow_assignable<T, T>` ;
 
 The existing trait `std::is_trivially_relocatable<T>` shall be amended to take
-into account the [updated definition](#trivial-relocation).
+into account the updated definition of
+[*trivially relocatable class*](#trivial-relocation).
 
 Additionally, we propose a structural trait to detect the presence of the
 [virtual slicing function](#virtual-slicing):
