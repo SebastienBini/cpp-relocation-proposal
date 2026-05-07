@@ -2,11 +2,10 @@
 // when non-virtual bases exist both before and after the virtual base.
 //
 // Hierarchy: T : PreV (non-virtual), virtual V, PostV (non-virtual)
-// All have snooping fields. Slicing T* -> V* should destroy in this order:
-//   1. T's fields (reverse decl order)
-//   2. All non-virtual bases (reverse base-specifier order: PostV, PreV)
-//   3. Move-construct V into dest, destroy moved-from V
-// This matches the destructor's subobject destruction order.
+// All have snooping fields. Slicing T* -> V* (virtual base shortcut):
+//   1. Move-construct V into dest (from virtual base subobject)
+//   2. Destroy *this completely (Dtor_Complete): T's fields, NV bases, moved-from V
+// This matches the proposal: "Construct U from std::move(*this), destroy this."
 
 #include <iostream>
 #include <memory>
@@ -77,14 +76,14 @@ int main() {
 // T() 0x7
 // --- constructed ---
 // ---slice T* to V* (V-is-virtual shortcut)---
+// v1(v1&&) 0x8 <- 0x1
+// V(move) 0x9 <- 0x2
 // ~t2() 0x6
 // ~t1() 0x5
 // ~PostV() 0x4
 // ~post() 0x4
 // ~PreV() 0x3
 // ~pre() 0x3
-// v1(v1&&) 0x8 <- 0x1
-// V(move) 0x9 <- 0x2
 // ~v1() 0x1
 // result.v1=v1
 // ---end---

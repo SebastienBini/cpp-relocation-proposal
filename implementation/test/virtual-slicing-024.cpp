@@ -62,7 +62,7 @@ int main() {
         std::cout << "---slice C* to A*---" << std::endl;
         A* bp = obj1;
         A bres = std::reloc_and_uninitialize(bp);
-        std::cout << "b1=" << bres.a1.name << std::endl;
+        std::cout << "a1=" << bres.a1.name << std::endl;
     }
 
     // Test 2: Slice C* → B* (direct virtual base)
@@ -95,12 +95,12 @@ int main() {
 // c1() 0x5
 // C() 0x6
 // ---slice C* to A*---
-// ~c1() 0x5
-// ~b1() 0x3
 // a1(a1&&) 0x7 <- 0x1
 // A(move) 0x8 <- 0x2
+// ~c1() 0x5
+// ~b1() 0x3
 // ~a1() 0x1
-// b1=a1
+// a1=a1
 // ~a1() 0x7
 // ---construct---
 // a1() 0x9
@@ -110,11 +110,11 @@ int main() {
 // c1() 0x13
 // C() 0x14
 // ---slice C* to B*---
-// ~c1() 0x13
 // a1(a1&&) 0x15 <- 0x9
 // A(move) 0x16 <- 0x10
 // b1(b1&&) 0x17 <- 0x11
 // B(move) 0x18 <- 0x12
+// ~c1() 0x13
 // ~b1() 0x11
 // ~a1() 0x9
 // b1=b1
