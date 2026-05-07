@@ -289,9 +289,9 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 ---
 
-## Known gap — virtual slicing function ⚠️ Not yet implemented
+## Known gap — virtual slicing function ✅ Fully implemented (Phase 12)
 
-**Description:** A hidden virtual function implicitly declared when a class has both an explicit relocation constructor and a virtual destructor (§"virtual slicing function"). Used by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` to prevent object slicing. No implementation exists.
+**Description:** A hidden virtual function implicitly declared when a class has both an explicit relocation constructor and a virtual destructor (§"virtual slicing function"). Used by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` to prevent object slicing. Fully implemented: implicit declaration, vtable integration, codegen (tag comparison, match/decompose paths, virtual base handling, diamond inheritance), exception handling, `__builtin_reloc_and_uninitialize`, implicit reloc ctor relaxation. See Phase 12 section below for details.
 
 ---
 
@@ -978,7 +978,7 @@ All five stages landed:
 
 ---
 
-## Phase 12 — Virtual slicing function (in progress)
+## Phase 12 — Virtual slicing function ✅ `b102808480dd`–`4e36a3e3ff34`
 
 **Scope:** Hidden virtual function for safe polymorphic relocation.
 
@@ -1008,52 +1008,76 @@ Single vtable slot per class. The tag-comparison approach avoids O(depth) vtable
 
 | # | Sub-phase | Scope | Status |
 |---|---|---|---|
-| **12a** | AST declaration & Sema | Implicitly declare the slicing function; ill-formed checks | ⚠️ In progress |
-| **12b** | Vtable integration | Add slot, mangling, override semantics | ❌ Planned |
-| **12c** | CodeGen: body emission | Generate the compare-tag / relocate / recurse / cleanup body | ❌ Planned |
-| **12d** | `std::reloc_and_uninitialize` builtin | `__builtin_reloc_and_uninitialize(ptr)` lowering | ❌ Planned |
-| **12e** | Relax implicit reloc ctor suppression | Allow implicit reloc ctor when virtual dtor has a slicing fn | ❌ Planned |
-| **12f** | Tests | Sema + CodeGen lit tests, runtime tests | ❌ Planned |
+| **12a** | AST declaration & Sema | Implicitly declare the slicing function; ill-formed checks | ✅ `b102808480dd` |
+| **12b** | Vtable integration | Add slot, mangling, override semantics | ✅ `bbbbf0f64644` |
+| **12c** | CodeGen: body emission | Generate the compare-tag / relocate / recurse / cleanup body | ✅ `9de0dea3ab65` |
+| **12d** | `std::reloc_and_uninitialize` builtin | `__builtin_reloc_and_uninitialize(ptr)` lowering | ✅ `c2242c636ceb` |
+| **12e** | Relax implicit reloc ctor suppression | Allow implicit reloc ctor when virtual dtor has a slicing fn | ✅ `654cea41c6e8` |
+| **12f** | Tests | Sema + CodeGen lit tests, runtime tests | ✅ |
 
-### Phase 12a — AST declaration & Sema
+### Phase 12a — AST declaration & Sema ✅ `b102808480dd`
 
-1. `CXXRecordDecl` additions: `hasVirtualSlicingFunction()`, `getVirtualSlicingFunction()`
-2. In `AddImplicitlyDeclaredMembersToClass`: after reloc ctor is resolved, check: explicit (non-deleted) reloc ctor + virtual dtor → declare slicing function
-3. Inherited case: if base provides slicing fn and derived has explicit reloc ctor → derived also gets one
-4. Ill-formed definition checks (emit diagnostic if):
-   - Destructor is **user-provided** (not just user-declared)
-   - No eligible reloc/move/copy ctor
-   - Inaccessible base slicing function
-   - Inaccessible subobject destructor
-5. Access: same as destructor
-6. Virtual destructor suppresses implicit reloc ctor (existing behavior is correct for now — relaxed in 12e)
+- ✅ `CXXRecordDecl` additions: `hasVirtualSlicingFunction()`, `getVirtualSlicingFunction()`; `HasVirtualSlicingFunction` and `VirtualSlicingFunctionIsIllFormed` definition-data bits
+- ✅ `AddImplicitlyDeclaredMembersToClass`: after reloc ctor is resolved, check: explicit (non-deleted) reloc ctor + virtual dtor → declare slicing function
+- ✅ Inherited case: if base provides slicing fn and derived has explicit reloc ctor → derived also gets one
+- ✅ Ill-formed definition checks (emit diagnostic if):
+  - Destructor is **user-provided** (not just user-declared) — `err_slicing_fn_user_provided_dtor`
+  - No eligible reloc/move/copy ctor — `err_slicing_fn_no_eligible_ctor`
+  - Inaccessible base slicing function
+  - Inaccessible subobject destructor
+- ✅ Access: same as destructor
+- ✅ Virtual destructor suppresses implicit reloc ctor (relaxed in 12e)
+- ✅ `CXXMethodDecl::isVirtualSlicingFunction()` query
 
-### Phase 12b — Vtable integration
+### Phase 12b — Vtable integration ✅ `bbbbf0f64644`
 
-- Mangling: `__vs` vendor extension
-- Vtable slot: new component type placed after existing virtual functions
-- Override: derived class's slicing function overrides base's slot
-- Thunks: this-adjustment for non-primary bases
+- ✅ Mangling: `__cxx_slicing_fn` name with Itanium mangling
+- ✅ Vtable slot: `VTableComponent::CK_SlicingFunction` placed after existing virtual functions
+- ✅ Override: derived class's slicing function overrides base's slot (single slot per hierarchy)
+- ✅ Thunks: this-adjustment for non-primary bases
+- ✅ Virtual diamond inheritance: single final overrider via `__cxx_slicing_fn` lookup (`5fe59f68fa1c`)
 
-### Phase 12c — CodeGen: body emission
+### Phase 12c — CodeGen: body emission ✅ `9de0dea3ab65`
 
 Per-class type tag: `@__slicing_tag._ZN4BaseE = linkonce_odr constant i8 0`
 
 Body algorithm for `Derived::__slicing_fn(this, dest, tag)`:
-1. If `tag == &__slicing_tag._ZN7DerivedE` → relocate `*this` to `dest` (reloc ctor > move > copy; if non-reloc used, destroy `*this`)
-2. Otherwise: decompose `*this`, invoke base's slicing function, destroy remaining subobjects
+1. **Match case (no virtual bases or single-inheritance):** if `tag == &__slicing_tag._ZN7DerivedE` → relocate `*this` to `dest` via eligible ctor (reloc > move > copy); if non-reloc ctor used, destroy `*this` afterward
+2. **Match case (virtual bases, complete variant):** if `tag` matches and class has virtual bases → move-construct virtual base subobjects from `*this` to `dest`, then relocate the non-virtual portion
+3. **Decomposition (no-match):** decompose `*this`; invoke base's slicing function on the most-derived virtual base candidate (V); destroy remaining subobjects (fields in reverse-decl order, then non-V bases in reverse-spec order)
+4. **Virtual base as V:** when V is a virtual base of the current class, a runtime tag-matching loop over virtual base candidates dispatches to the correct base's slicing function (`7a8048a8b635`)
+5. **Exception handling** (`4e36a3e3ff34`): all constructor invocations use `EmitCallOrInvoke`; EH cleanups destroy source (match case) or partially-constructed dest + remaining subobjects (decomposition case) on exception
 
-### Phase 12d — `std::reloc_and_uninitialize`
+### Phase 12d — `__builtin_reloc_and_uninitialize` ✅ `c2242c636ceb`
 
-Prototype builtin: `__builtin_reloc_and_uninitialize<T>(ptr)`:
-- If `T` has a slicing function: emit virtual call `ptr->__slicing_fn(dest, &__slicing_tag._ZN1TE)`
-- Else: call reloc ctor / move ctor / copy ctor + dtor fallback
+- ✅ Sema: `__builtin_reloc_and_uninitialize(ptr)` — type-safe builtin taking `T*`; validates `T` has virtual slicing function or eligible reloc/move/copy ctor
+- ✅ CodeGen: if `T` has a slicing function → emit virtual call `ptr->__slicing_fn(dest, &__slicing_tag._ZN1TE)`; else → direct reloc ctor / move ctor / copy ctor + dtor fallback
 
-### Phase 12e — Relax implicit reloc ctor suppression
+### Phase 12e — Relax implicit reloc ctor suppression ✅ `654cea41c6e8`
 
-Change `needsImplicitRelocConstructor()`:
-- Current: `!hasUserDeclaredDestructor()` (blanket block)
-- New: allow implicit reloc ctor if all bases with virtual dtors also provide a slicing function
+- ✅ `needsImplicitRelocConstructor()` updated: allow implicit reloc ctor if all bases with virtual dtors also provide a slicing function (i.e., the hierarchy is "relocation-safe")
+- ✅ Mutual: if a base provides a slicing function but the derived class can still have an implicit reloc ctor, it does
+
+### Phase 12 — Exception handling ✅ `4e36a3e3ff34`
+
+The slicing function is NOT `noexcept` — constructor invocations in the body can throw. Full EH cleanup support:
+
+- ✅ **Match case (complete, no-vbases):** if the reloc/move/copy ctor throws, source is destroyed via `Dtor_Complete`
+- ✅ **Match case (base subobject):** if the reloc/move/copy ctor throws, source is destroyed via `Dtor_Base`
+- ✅ **Complete variant (virtual base move):** if the move ctor for a virtual base throws, `*this` is destroyed via `Dtor_Complete` (virtual bases still intact)
+- ✅ **Decomposition (V's slicing call):** V has a deactivatable EH cleanup; if the recursive slicing call (via `EmitCallOrInvoke`) throws before dest is constructed, V is destroyed
+- ✅ **Decomposition (post-V, pre-V-base destruction):** dest gets an EH cleanup after the slicing call returns; pre-V bases are destroyed in a nested scope with dest protected; if a pre-V base destructor throws, dest is also destroyed
+
+### Tests
+
+- ✅ 6 lit test files:
+  - `clang/test/SemaCXX/p2785-virtual-slicing-function.cpp` (implicit declaration, ill-formed checks, inherited)
+  - `clang/test/SemaCXX/p2785-virtual-slicing-diamond.cpp` (diamond Sema validation)
+  - `clang/test/CodeGenCXX/p2785-virtual-slicing-body.cpp` (body IR: tag compare, reloc, decompose)
+  - `clang/test/CodeGenCXX/p2785-virtual-slicing-vtable.cpp` (vtable slot, thunks)
+  - `clang/test/CodeGenCXX/p2785-virtual-slicing-diamond.cpp` (diamond codegen)
+  - `clang/test/CodeGenCXX/p2785-virtual-slicing-eh.cpp` (EH invoke + landing pad patterns)
+- ✅ 31 runtime tests (`P2785/implementation/test/virtual-slicing-*.cpp`): basic slicing, multi-level hierarchies, diamond inheritance, virtual bases, exception handling scenarios
 
 **Proposal coverage:** §"virtual slicing function"
 
@@ -1072,10 +1096,17 @@ Change `needsImplicitRelocConstructor()`:
 - `libcxx/include/CMakeLists.txt` (registration)
 - `libcxx/include/module.modulemap.in` (module entry)
 
+### `std::reloc_and_uninitialize` ✅ `f7c2d0abade3`
+
+`std::reloc_and_uninitialize<T>(T* ptr)` added to `<memory>` — invokes the virtual slicing function (via `__builtin_reloc_and_uninitialize`) for polymorphic types with a slicing function, or falls back to direct relocation for non-polymorphic types.
+
+- `libcxx/include/__memory/reloc_and_uninitialize.h` (new)
+- `libcxx/include/memory` (include + synopsis)
+
 ### Remaining
 
 - `std::construct_at` overload taking `T` by value (`::new (p) T{reloc src}`) — §"std::construct_at"
-- `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` — §"std::reloc_and_uninitialize and std::reloc_and_reclaim"
+- `std::reloc_and_reclaim` — §"std::reloc_and_reclaim"
 - Type traits: `std::is_relocation_constructible<T>`, `std::is_nothrow_relocation_constructible<T>`, `std::is_trivially_relocation_constructible<T>`, and assignment variants — §"type traits header"
 - Concepts: `std::relocation_constructible<T>`, `std::relocatable<T>`, `std::trivially_relocatable<T>` — §"concepts header"
 - `std::relocate` amended to support relocation constructors — §"std::relocate"
@@ -1120,7 +1151,7 @@ Change `needsImplicitRelocConstructor()`:
 
 599 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 23 lit test files pass (2 pre-existing failures in `p2785-reloc-elision.cpp` and `p2785-reloc-operator.cpp` due to CHECK patterns not yet updated for twin emission rework):
+Additionally, 33 lit test files pass (2 pre-existing failures in `p2785-reloc-elision.cpp` and `p2785-reloc-operator.cpp` due to CHECK patterns not yet updated for twin emission rework):
 - `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
@@ -1135,6 +1166,10 @@ Additionally, 23 lit test files pass (2 pre-existing failures in `p2785-reloc-el
 - `clang/test/CodeGenCXX/p2785-reloc-twin-addr-taken.cpp` (.Vreloc_twin emission on address-taken)
 - `clang/test/CodeGenCXX/p2785-reloc-twin-direct-only.cpp` (direct call uses canonical entry, not twin)
 - `clang/test/CodeGenCXX/p2785-virtual-base-cleanup.cpp` (VBA ctor variants, base dtor with VTT)
+- `clang/test/CodeGenCXX/p2785-virtual-slicing-body.cpp` (slicing function body: tag compare, reloc, decompose)
+- `clang/test/CodeGenCXX/p2785-virtual-slicing-diamond.cpp` (diamond inheritance codegen for slicing fn)
+- `clang/test/CodeGenCXX/p2785-virtual-slicing-eh.cpp` (EH invoke + landing pad in slicing fn)
+- `clang/test/CodeGenCXX/p2785-virtual-slicing-vtable.cpp` (vtable slot for slicing function)
 - `clang/test/SemaCXX/p2785-constexpr-indirect.cpp` (constexpr indirect-call test for decomposing functions)
 - `clang/test/SemaCXX/p2785-decomposed-reject.cpp` (decomposition rejection diagnostics)
 - `clang/test/SemaCXX/p2785-decomposing-function.cpp` (decomposing-function declaration checks)
@@ -1144,8 +1179,10 @@ Additionally, 23 lit test files pass (2 pre-existing failures in `p2785-reloc-el
 - `clang/test/SemaCXX/p2785-unsequenced-reloc.cpp` (unsequenced reloc + use diagnostics)
 - `clang/test/SemaCXX/p2785-use-after-reloc.cpp` (CFG-based use-after-reloc diagnostics)
 - `clang/test/SemaCXX/p2785-virtual-call-decomposed-base.cpp` (virtual call on decomposed base)
+- `clang/test/SemaCXX/p2785-virtual-slicing-diamond.cpp` (diamond inheritance Sema for slicing fn)
+- `clang/test/SemaCXX/p2785-virtual-slicing-function.cpp` (slicing fn implicit declaration, ill-formed checks)
 
-214 runtime tests pass (`P2785/implementation/test/`).
+245 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests.
 
 Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
 - Scalar types: int, pointer, enum, double, bool (constexpr-001)
@@ -1179,8 +1216,7 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 
 | Area | Status | Notes |
 |---|---|---|
-| **Phase 12** — virtual slicing function | ❌ Planned | Hidden virtual implicitly declared when class has explicit reloc ctor + virtual dtor. Required by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim`. |
-| **Phase 13** — standard library additions | ⚠️ Partial | `std::decomposition_pack` added. Remaining: `std::construct_at` overload, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. Includes Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`. |
+| **Phase 13** — standard library additions | ⚠️ Partial | `std::decomposition_pack` and `std::reloc_and_uninitialize` added. Remaining: `std::construct_at` overload, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. Includes Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`. |
 | Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ❌ Planned | E.g. `B b = getD();` implicitly decomposes the `D` temporary. Independent of Phase 11. |
 | NRVO-style elision for `return reloc x;` | ❌ Deferred | Largely redundant per proposal line 3680 (`return x;` already gets NRVO via end-of-life optimization). |
 
@@ -1210,6 +1246,11 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 | Mandatory relocation elision for decomposed members | `a0d77a3f1340` | §reloc-elision-mandatory bullet 2: `reloc obj.member` initialiser aliases member storage. |
 | Suppress caller-side dtor for decomposed explicit object param | `a4046f6c8839` | `EmitCallArg`: mark aggregate slot externally-destructed when callee param `isDecomposedByReloc()`. |
 | Fix overload resolution: prefer reference for xvalue args | `073fca7da55f` | [over.ics.rank]/3.2.3 bullet 4: reference binding beats by-value for non-prvalue arguments. |
+| Phase 12: DefinitionData init + destroy non-target subobjects | `6e8ae0bee501` | Initialize slicing-fn bits; destroy non-target bases in decomposition path. |
+| Phase 12: Fix ambiguous final overrider in virtual diamond | `5fe59f68fa1c` | Single final overrider via `__cxx_slicing_fn` lookup for diamond hierarchies. |
+| Phase 12: V-is-virtual runtime tag-matching loop | `7a8048a8b635` | When V is a virtual base, loop over vbase candidates to dispatch correctly. |
+| Phase 12: Ill-formed check for no eligible ctor | `715881852041` | `err_slicing_fn_no_eligible_ctor` when class has no reloc/move/copy ctor. |
+| Phase 12: Exception handling in slicing function | `4e36a3e3ff34` | Non-noexcept slicing fn; EH cleanups for all throw paths in match/decomposition. |
 
 ---
 
