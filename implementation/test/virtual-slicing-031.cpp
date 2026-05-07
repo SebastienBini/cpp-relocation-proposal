@@ -87,6 +87,7 @@ int main() {
 // Base() 0x2
 // d1() 0x3
 // td() 0x4
+// ThrowingDtor() 0x4
 // d2() 0x5
 // Derived() 0x2
 // ---arm and slice Derived* to Base*---

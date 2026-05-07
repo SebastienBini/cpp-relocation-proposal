@@ -96,6 +96,7 @@ int main() {
 // ---construct---
 // vb() 0x1
 // thr() 0x2
+// Thrower() 0x2
 // VBase() 0x3
 // e() 0x4
 // Extra() 0x4
