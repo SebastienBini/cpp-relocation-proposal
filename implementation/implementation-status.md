@@ -1105,14 +1105,44 @@ The slicing function is NOT `noexcept` — constructor invocations in the body c
 
 ### Remaining
 
-- `std::construct_at` overload taking `T` by value (`::new (p) T{reloc src}`) — §"std::construct_at"
-- `std::reloc_and_reclaim` — §"std::reloc_and_reclaim"
-- Type traits: `std::is_relocation_constructible<T>`, `std::is_nothrow_relocation_constructible<T>`, `std::is_trivially_relocation_constructible<T>`, and assignment variants — §"type traits header"
-- Concepts: `std::relocation_constructible<T>`, `std::relocatable<T>`, `std::trivially_relocatable<T>` — §"concepts header"
-- `std::relocate` amended to support relocation constructors — §"std::relocate"
-- Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`
+| # | Sub-phase | Scope | Status |
+|---|---|---|---|
+| **13a** | Type traits | `is_relocation_constructible`, `is_trivially_relocation_constructible`, `is_nothrow_relocation_constructible`, assignment variants, `has_virtual_slicing_function`; all `_v` templates | ✅ |
+| **13b** | Concepts | `relocation_constructible`, `trivially_relocatable`, `relocatable` | ✅ |
+| **13c** | `std::reloc_and_reclaim` | Relocate + deallocate via `::operator delete` or class-specific; 4-step algorithm | ❌ |
+| **13d** | `std::construct_at` overload | `T* construct_at(T* p, T src)` — equivalent to `::new (p) T{reloc src}` | ❌ |
+| **13e** | `std::relocate` amendment | Prefer reloc ctor over move ctor for non-trivially-relocatable types with nothrow reloc ctor | ❌ |
+| **13f** | `operator reloc[]` for `std::tuple` / `std::array` | Stage 4c: return `std::decomposition_pack` from `operator reloc[](this tuple reloc self)` | ❌ |
 
-**Proposal coverage:** §"memory header", §"type traits header", §"concepts header"
+### Phase 13a — Type traits ✅
+
+Added to `<type_traits>` (C++26, gated on `_LIBCPP_STD_VER >= 26`):
+
+- `std::is_relocation_constructible<T>` / `_v` — wraps `__is_constructible(T, T)`
+- `std::is_trivially_relocation_constructible<T>` / `_v` — wraps `__is_trivially_constructible(T, T)`
+- `std::is_nothrow_relocation_constructible<T>` / `_v` — wraps `__is_nothrow_constructible(T, T)`
+- `std::is_relocation_assignable<T>` / `_v` — wraps `__is_assignable(T&, T)`
+- `std::is_trivially_relocation_assignable<T>` / `_v` — wraps `__is_trivially_assignable(T&, T)`
+- `std::is_nothrow_relocation_assignable<T>` / `_v` — wraps `__is_nothrow_assignable(T&, T)`
+- `std::has_virtual_slicing_function<T>` / `_v` — wraps `__has_virtual_slicing_function(T)`
+
+Files:
+- `libcxx/include/__type_traits/is_relocation_constructible.h` (new)
+- `libcxx/include/__type_traits/is_relocation_assignable.h` (new)
+- `libcxx/include/__type_traits/has_virtual_slicing_function.h` (new)
+
+### Phase 13b — Concepts ✅
+
+Added to `<concepts>` (C++26, gated on `_LIBCPP_STD_VER >= 26`):
+
+- `std::relocation_constructible<T>` — `is_relocation_constructible_v<T>`
+- `std::trivially_relocatable<T>` — `__libcpp_is_trivially_relocatable<T>::value`
+- `std::relocatable<T>` — `relocation_constructible<T> && is_relocation_assignable_v<T>`
+
+Files:
+- `libcxx/include/__concepts/relocatable.h` (new)
+
+**Proposal coverage:** §"type traits header", §"concepts header"
 
 ---
 
