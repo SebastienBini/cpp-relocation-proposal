@@ -3,7 +3,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base {
     snoop bx{"bx"};
@@ -33,7 +32,7 @@ int main() {
     auto* d = new Derived();
     std::cout << "---relocate full Derived---" << std::endl;
     {
-    Derived result = reloc_uninit_and_delete(d);
+    Derived result = std::reloc_and_reclaim(d);
     std::cout << "bx=" << result.bx.name << " by=" << result.by.name
               << " dz=" << result.dz.name << " dw=" << result.dw.name << std::endl;
     }
@@ -41,7 +40,7 @@ int main() {
     auto* d2 = new Derived();
     std::cout << "---" << std::endl;
     Base* bp = d2;
-    Base bres = reloc_uninit_and_delete(bp);
+    Base bres = std::reloc_and_reclaim(bp);
     std::cout << "bx=" << bres.bx.name << " by=" << bres.by.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

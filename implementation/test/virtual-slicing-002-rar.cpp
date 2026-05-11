@@ -5,7 +5,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base : snoop {
     snoop a1{"a1"};
@@ -44,7 +43,7 @@ int main() {
         Leaf* l = new Leaf();
         std::cout << "---" << std::endl;
         Base* bp = l;
-        Base result = reloc_uninit_and_delete(bp);
+        Base result = std::reloc_and_reclaim(bp);
         std::cout << "a1=" << result.a1.name << " a2=" << result.a2.name << std::endl;
     }
     std::cout << "---slice to Mid---" << std::endl;
@@ -52,14 +51,14 @@ int main() {
         Leaf* l = new Leaf();
         std::cout << "---" << std::endl;
         Mid* mp = l;
-        Mid result = reloc_uninit_and_delete(mp);
+        Mid result = std::reloc_and_reclaim(mp);
         std::cout << "m1=" << result.m1.name << " m2=" << result.m2.name << std::endl;
     }
     std::cout << "---full Leaf---" << std::endl;
     {
         Leaf* l = new Leaf();
         std::cout << "---" << std::endl;
-        Leaf result = reloc_uninit_and_delete(l);
+        Leaf result = std::reloc_and_reclaim(l);
         std::cout << "l1=" << result.l1.name << " l2=" << result.l2.name << std::endl;
     }
     std::cout << "---end---" << std::endl;

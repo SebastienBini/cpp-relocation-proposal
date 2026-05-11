@@ -15,7 +15,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 // --- Hierarchy 1: deep non-virtual chain ---
 struct Base {
@@ -85,7 +84,7 @@ int main() {
         Leaf* lf = new Leaf();
         std::cout << "---slice Leaf* to Base*---" << std::endl;
         Base* bp = lf;
-        Base bres = reloc_uninit_and_delete(bp);
+        Base bres = std::reloc_and_reclaim(bp);
         std::cout << "b1=" << bres.b1.name << std::endl;
     }
     // Test 2: Slice Leaf* → Mid* (1-level non-virtual recursion)
@@ -94,7 +93,7 @@ int main() {
         Leaf* lf2 = new Leaf();
         std::cout << "---slice Leaf* to Mid*---" << std::endl;
         Mid* mp = lf2;
-        Mid mres = reloc_uninit_and_delete(mp);
+        Mid mres = std::reloc_and_reclaim(mp);
         std::cout << "m1=" << mres.m1.name << std::endl;
     }
     // Test 3: Slice VDerived* → VBase* (V-is-virtual shortcut with extra NV base)
@@ -103,7 +102,7 @@ int main() {
         VDerived* vd = new VDerived();
         std::cout << "---slice VDerived* to VBase*---" << std::endl;
         VBase* vbp = vd;
-        VBase vbres = reloc_uninit_and_delete(vbp);
+        VBase vbres = std::reloc_and_reclaim(vbp);
         std::cout << "vb1=" << vbres.vb1.name << std::endl;
     }
     return 0;

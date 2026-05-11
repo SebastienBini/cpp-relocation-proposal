@@ -3,7 +3,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base {
     snoop b1{"b1"};
@@ -52,7 +51,7 @@ int main() {
         D* obj2 = new D();
         std::cout << "---slice D* to L*---" << std::endl;
         L* lp = obj2;
-        L lres = reloc_uninit_and_delete(lp);
+        L lres = std::reloc_and_reclaim(lp);
         std::cout << "l1=" << lres.l1.name << std::endl;
     }
 
@@ -61,7 +60,7 @@ int main() {
     {
         D* obj3 = new D();
         std::cout << "---relocate exact D*---" << std::endl;
-        D dres = reloc_uninit_and_delete(obj3);
+        D dres = std::reloc_and_reclaim(obj3);
         std::cout << "d1=" << dres.d1.name << std::endl;
     }
     return 0;

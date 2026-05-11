@@ -5,7 +5,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Widget {
     snoop w1{"w1"};
@@ -21,7 +20,7 @@ int main() {
     std::cout << "---construct---" << std::endl;
     Widget* w = new Widget();
     std::cout << "---relocate (exact type)---" << std::endl;
-    Widget result = reloc_uninit_and_delete(w);
+    Widget result = std::reloc_and_reclaim(w);
     std::cout << "w1=" << result.w1.name << " w2=" << result.w2.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

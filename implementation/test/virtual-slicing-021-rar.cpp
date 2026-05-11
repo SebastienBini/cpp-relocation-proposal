@@ -9,7 +9,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base {
     snoop b1{"b1"};
@@ -48,7 +47,7 @@ int main() {
         std::cout << "--- constructed ---" << std::endl;
         Mid* bp = d;
         std::cout << "---slice Derived* to Mid*---" << std::endl;
-        Mid result = reloc_uninit_and_delete(bp);
+        Mid result = std::reloc_and_reclaim(bp);
         std::cout << "result.m1=" << result.m1.name << std::endl;
     }
     {
@@ -57,7 +56,7 @@ int main() {
         std::cout << "--- constructed ---" << std::endl;
         Base* bp = d;
         std::cout << "---slice Derived* to Base* via virtual base---" << std::endl;
-        Base result = reloc_uninit_and_delete(bp);
+        Base result = std::reloc_and_reclaim(bp);
         std::cout << "result.b1=" << result.b1.name << std::endl;
     }
     return 0;

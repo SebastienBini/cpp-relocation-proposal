@@ -4,7 +4,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Holder {
     snoop h1{"h1"};
@@ -14,7 +13,7 @@ struct Holder {
         std::cout << "Holder(reloc)" << std::endl;
     }
     virtual ~Holder() = default;
-    virtual void print() const { std::cout << "Holder" << std::endl; }
+    virtual void print() const = 0;
 };
 
 struct IntHolder : Holder {
@@ -49,78 +48,36 @@ int main() {
     std::cout << "---int holder exact---" << std::endl;
     auto* ih = new IntHolder();
     ih->print();
-    IntHolder ih2 = reloc_uninit_and_delete(ih);
+    IntHolder ih2 = std::reloc_and_reclaim(ih);
     ih2.print();
 
     std::cout << "---double holder exact---" << std::endl;
     auto* dh = new DoubleHolder();
     dh->print();
-    DoubleHolder dh2 = reloc_uninit_and_delete(dh);
+    DoubleHolder dh2 = std::reloc_and_reclaim(dh);
     dh2.print();
 
     std::cout << "---slice int holder to base---" << std::endl;
     auto* ih3 = new IntHolder();
     Holder* bp = ih3;
-    Holder hres = reloc_uninit_and_delete(bp);
-    std::cout << "h1=" << hres.h1.name << " h2=" << hres.h2.name << std::endl;
-    hres.print();
+    std::reloc_and_reclaim(bp);
     std::cout << "---end---" << std::endl;
     return 0;
 }
 
-////// BUILD SUCCESS
-// ---int holder exact---
-// h1() 0x1
-// h2() 0x2
-// Holder()
-// iv() 0x3
-// iw() 0x4
-// IntHolder()
-// IntHolder iv=iv
-// h1(h1 reloc) 0x5 <- 0x1
-// h2(h2 reloc) 0x6 <- 0x2
-// Holder(reloc)
-// iv(iv reloc) 0x7 <- 0x3
-// iw(iw reloc) 0x8 <- 0x4
-// IntHolder(reloc)
-// IntHolder iv=iv
-// ---double holder exact---
-// h1() 0x1
-// h2() 0x2
-// Holder()
-// dv() 0x3
-// dw() 0x4
-// DoubleHolder()
-// DoubleHolder dv=dv
-// h1(h1 reloc) 0x9 <- 0x1
-// h2(h2 reloc) 0x10 <- 0x2
-// Holder(reloc)
-// dv(dv reloc) 0x11 <- 0x3
-// dw(dw reloc) 0x12 <- 0x4
-// DoubleHolder(reloc)
-// DoubleHolder dv=dv
-// ---slice int holder to base---
-// h1() 0x1
-// h2() 0x2
-// Holder()
-// iv() 0x3
-// iw() 0x4
-// IntHolder()
-// ~iw() 0x4
-// ~iv() 0x3
-// h1(h1 reloc) 0x13 <- 0x1
-// h2(h2 reloc) 0x14 <- 0x2
-// Holder(reloc)
-// h1=h1 h2=h2
-// Holder
-// ---end---
-// ~h2() 0x14
-// ~h1() 0x13
-// ~dw() 0x12
-// ~dv() 0x11
-// ~h2() 0x10
-// ~h1() 0x9
-// ~iw() 0x8
-// ~iv() 0x7
-// ~h2() 0x6
-// ~h1() 0x5
+////// BUILD FAILURE
+// virtual-slicing-017-rar.cpp:12:12: error: parameter type 'Holder' is an abstract class
+//    12 |     Holder(Holder reloc src) : h1(reloc src.h1), h2(reloc src.h2) {
+//       |            ^
+// virtual-slicing-017-rar.cpp:16:18: note: unimplemented pure virtual method 'print' in 'Holder'
+//    16 |     virtual void print() const = 0;
+//       |                  ^
+// In file included from virtual-slicing-017-rar.cpp:5:
+// In file included from /workspace/llvm-project/build-make/include/c++/v1/memory:982:
+// /workspace/llvm-project/build-make/include/c++/v1/__memory/reloc_and_reclaim.h:24:40: error: return type 'remove_cv_t<Holder>' (aka 'Holder') is an abstract class
+//    24 | _LIBCPP_HIDE_FROM_ABI remove_cv_t<_Tp> reloc_and_reclaim(_Tp* __src) {
+//       |                                        ^
+// virtual-slicing-017-rar.cpp:63:10: note: in instantiation of function template specialization 'std::reloc_and_reclaim<Holder>' requested here
+//    63 |     std::reloc_and_reclaim(bp);
+//       |          ^
+// 2 errors generated.

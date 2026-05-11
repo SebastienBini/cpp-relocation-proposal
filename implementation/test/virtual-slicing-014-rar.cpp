@@ -1,10 +1,9 @@
 // virtual-slicing-014: Polymorphic container - relocating objects of different
-// dynamic types through a common base pointer using reloc_uninit_and_delete.
+// dynamic types through a common base pointer using std::reloc_and_reclaim.
 
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Animal {
     snoop a1{"a1"};
@@ -47,9 +46,9 @@ int main() {
     std::cout << "cat constructed" << std::endl;
 
     std::cout << "---relocate exact types---" << std::endl;
-    Dog dog2 = reloc_uninit_and_delete(dog);
+    Dog dog2 = std::reloc_and_reclaim(dog);
     std::cout << "dog relocated" << std::endl;
-    Cat cat2 = reloc_uninit_and_delete(cat);
+    Cat cat2 = std::reloc_and_reclaim(cat);
     std::cout << "cat relocated" << std::endl;
 
     std::cout << "---verify---" << std::endl;

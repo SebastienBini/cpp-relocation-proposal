@@ -4,7 +4,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base {
     snoop s1{"s1"};
@@ -33,7 +32,7 @@ int main() {
     std::cout << "---construct---" << std::endl;
     auto* d = new DerivedDefaulted();
     std::cout << "---relocate---" << std::endl;
-    DerivedDefaulted result = reloc_uninit_and_delete(d);
+    DerivedDefaulted result = std::reloc_and_reclaim(d);
     std::cout << "d1=" << result.d1.name << " d2=" << result.d2.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

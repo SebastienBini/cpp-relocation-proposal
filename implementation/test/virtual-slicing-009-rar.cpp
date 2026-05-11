@@ -4,7 +4,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Poly1 {
     snoop p1a{"p1a"};
@@ -45,14 +44,14 @@ int main() {
     Multi* m = new Multi();
     std::cout << "---relocate exact type---" << std::endl;
     {
-        Multi result = reloc_uninit_and_delete(m);
+        Multi result = std::reloc_and_reclaim(m);
         std::cout << "mc=" << result.mc.name << " md=" << result.md.name << std::endl;
     }
     std::cout << "---slice to Poly1---" << std::endl;
     Multi* m2 = new Multi();
     std::cout << "---" << std::endl;
     Poly1* p1 = m2;
-    Poly1 p1result = reloc_uninit_and_delete(p1);
+    Poly1 p1result = std::reloc_and_reclaim(p1);
     std::cout << "p1a=" << p1result.p1a.name << " p1b=" << p1result.p1b.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

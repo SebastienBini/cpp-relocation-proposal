@@ -1,10 +1,9 @@
 // virtual-slicing-016: No slicing function without virtual dtor.
-// reloc_uninit_and_delete uses the direct reloc ctor path (no vtable dispatch).
+// std::reloc_and_reclaim uses the direct reloc ctor path (no vtable dispatch).
 
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct NonPoly {
     snoop np1{"np1"};
@@ -22,7 +21,7 @@ int main() {
     std::cout << "---construct---" << std::endl;
     NonPoly* p = new NonPoly();
     std::cout << "---relocate---" << std::endl;
-    NonPoly result = reloc_uninit_and_delete(p);
+    NonPoly result = std::reloc_and_reclaim(p);
     std::cout << "np1=" << result.np1.name << " np2=" << result.np2.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

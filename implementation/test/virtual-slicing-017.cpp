@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
+#include "reloc_uninit_delete.h"
 
 struct Holder {
     snoop h1{"h1"};
@@ -48,36 +49,46 @@ int main() {
     std::cout << "---int holder exact---" << std::endl;
     auto* ih = new IntHolder();
     ih->print();
-    IntHolder ih2 = std::reloc_and_uninitialize(ih);
+    IntHolder ih2 = reloc_uninit_and_delete(ih);
     ih2.print();
 
     std::cout << "---double holder exact---" << std::endl;
     auto* dh = new DoubleHolder();
     dh->print();
-    DoubleHolder dh2 = std::reloc_and_uninitialize(dh);
+    DoubleHolder dh2 = reloc_uninit_and_delete(dh);
     dh2.print();
 
     std::cout << "---slice int holder to base---" << std::endl;
     auto* ih3 = new IntHolder();
     Holder* bp = ih3;
-    std::reloc_and_uninitialize(bp);
+    reloc_uninit_and_delete(bp);
     std::cout << "---end---" << std::endl;
     return 0;
 }
 
 ////// BUILD FAILURE
-// virtual-slicing-017.cpp:12:12: error: parameter type 'Holder' is an abstract class
-//    12 |     Holder(Holder reloc src) : h1(reloc src.h1), h2(reloc src.h2) {
+// virtual-slicing-017.cpp:13:12: error: parameter type 'Holder' is an abstract class
+//    13 |     Holder(Holder reloc src) : h1(reloc src.h1), h2(reloc src.h2) {
 //       |            ^
-// virtual-slicing-017.cpp:16:18: note: unimplemented pure virtual method 'print' in 'Holder'
-//    16 |     virtual void print() const = 0;
+// virtual-slicing-017.cpp:17:18: note: unimplemented pure virtual method 'print' in 'Holder'
+//    17 |     virtual void print() const = 0;
 //       |                  ^
+// In file included from virtual-slicing-017.cpp:7:
+// /workspace/llvm-project/P2785/implementation/test/reloc_uninit_delete.h:18:21: error: return type 'std::remove_cv_t<Holder>' (aka 'Holder') is an abstract class
+//    18 | std::remove_cv_t<T> reloc_uninit_and_delete(T* src) {
+//       |                     ^
+// virtual-slicing-017.cpp:64:5: note: in instantiation of function template specialization 'reloc_uninit_and_delete<Holder>' requested here
+//    64 |     reloc_uninit_and_delete(bp);
+//       |     ^
 // In file included from virtual-slicing-017.cpp:5:
-// In file included from /workspace/llvm-project/build-make/include/c++/v1/memory:982:
+// In file included from /workspace/llvm-project/build-make/include/c++/v1/memory:983:
 // /workspace/llvm-project/build-make/include/c++/v1/__memory/reloc_and_uninitialize.h:25:40: error: return type 'remove_cv_t<Holder>' (aka 'Holder') is an abstract class
 //    25 | _LIBCPP_HIDE_FROM_ABI remove_cv_t<_Tp> reloc_and_uninitialize(_Tp* __src) {
 //       |                                        ^
-// virtual-slicing-017.cpp:63:10: note: in instantiation of function template specialization 'std::reloc_and_uninitialize<Holder>' requested here
-//    63 |     std::reloc_and_uninitialize(bp);
-//       |          ^
-// 2 errors generated.
+// /workspace/llvm-project/P2785/implementation/test/reloc_uninit_delete.h:32:17: note: in instantiation of function template specialization 'std::reloc_and_uninitialize<Holder>' requested here
+//    32 |     return std::reloc_and_uninitialize(src);
+//       |                 ^
+// virtual-slicing-017.cpp:64:5: note: in instantiation of function template specialization 'reloc_uninit_and_delete<Holder>' requested here
+//    64 |     reloc_uninit_and_delete(bp);
+//       |     ^
+// 3 errors generated.

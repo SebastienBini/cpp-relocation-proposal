@@ -10,7 +10,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct V {
     snoop v1{"v1"};
@@ -58,7 +57,7 @@ int main() {
 
     V* vp = obj;
     std::cout << "---slice T* to V* (V-is-virtual shortcut)---" << std::endl;
-    V result = reloc_uninit_and_delete(vp);
+    V result = std::reloc_and_reclaim(vp);
     std::cout << "result.v1=" << result.v1.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

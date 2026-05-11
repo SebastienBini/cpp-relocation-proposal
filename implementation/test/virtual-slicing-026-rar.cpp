@@ -18,7 +18,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct A {
     snoop a1{"a1"};
@@ -68,7 +67,7 @@ int main() {
         D* obj1 = new D();
         std::cout << "---slice D* to B*---" << std::endl;
         B* bp = obj1;
-        B bres = reloc_uninit_and_delete(bp);
+        B bres = std::reloc_and_reclaim(bp);
         std::cout << "b1=" << bres.b1.name << std::endl;
     }
     // Test 2: Relocate exact D* → D
@@ -76,7 +75,7 @@ int main() {
     {
         D* obj2 = new D();
         std::cout << "---relocate exact D*---" << std::endl;
-        D dres = reloc_uninit_and_delete(obj2);
+        D dres = std::reloc_and_reclaim(obj2);
         std::cout << "d1=" << dres.d1.name << std::endl;
     }
     return 0;

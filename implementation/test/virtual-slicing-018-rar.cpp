@@ -4,7 +4,6 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Holder {
     snoop h1{"h1"};
@@ -49,19 +48,19 @@ int main() {
     std::cout << "---int holder exact---" << std::endl;
     auto* ih = new IntHolder();
     ih->print();
-    IntHolder ih2 = reloc_uninit_and_delete(ih);
+    IntHolder ih2 = std::reloc_and_reclaim(ih);
     ih2.print();
 
     std::cout << "---double holder exact---" << std::endl;
     auto* dh = new DoubleHolder();
     dh->print();
-    DoubleHolder dh2 = reloc_uninit_and_delete(dh);
+    DoubleHolder dh2 = std::reloc_and_reclaim(dh);
     dh2.print();
 
     std::cout << "---slice int holder to base---" << std::endl;
     auto* ih3 = new IntHolder();
     Holder* bp = ih3;
-    Holder hres = reloc_uninit_and_delete(bp);
+    Holder hres = std::reloc_and_reclaim(bp);
     std::cout << "h1=" << hres.h1.name << " h2=" << hres.h2.name << std::endl;
     hres.print();
     std::cout << "---end---" << std::endl;

@@ -1,11 +1,10 @@
-// virtual-slicing-001: Basic polymorphic slicing via reloc_uninit_and_delete.
+// virtual-slicing-001: Basic polymorphic slicing via std::reloc_and_reclaim.
 // When called with a Base*, the slicing function relocates just the Base
 // subobject into the result (proper safe slicing).
 
 #include <iostream>
 #include <memory>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 struct Base : snoop {
     snoop s1{"s1"};
@@ -34,13 +33,13 @@ int main() {
         std::cout << "--- constructed ---" << std::endl;
         Base* bp = d;
         std::cout << "---relocate via base pointer (slices to Base)---" << std::endl;
-        Base result = reloc_uninit_and_delete(bp);
+        Base result = std::reloc_and_reclaim(bp);
         std::cout << "result.s1=" << result.s1.name << " result.s2=" << result.s2.name << std::endl;
     }
     std::cout << "---relocate derived directly (no slicing)---" << std::endl;
     Derived* d2 = new Derived();
     std::cout << "--- constructed ---" << std::endl;
-    Derived dresult = reloc_uninit_and_delete(d2);
+    Derived dresult = std::reloc_and_reclaim(d2);
     std::cout << "dresult.d1=" << dresult.d1.name << " dresult.d2=" << dresult.d2.name << std::endl;
     std::cout << "---end---" << std::endl;
     return 0;

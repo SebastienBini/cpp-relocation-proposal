@@ -31,6 +31,8 @@ DEFAULT_LIBCXX_LIB = DEFAULT_LLVM_ROOT / "build-make" / "lib"
 
 # Matches a hex address like 0x7ffd3b3815c0
 HEX_ADDR_RE = re.compile(r"0x[0-9a-fA-F]+")
+# Matches a *normalized* address like 0x1, 0x12 (decimal digits only)
+NORM_ADDR_RE = re.compile(r"0x[0-9]+")
 
 
 def normalize_addresses(text: str) -> str:
@@ -372,7 +374,18 @@ def run_test(cpp_path: Path, cxx_flags: list[str], bless: bool = False, compiler
     norm_expected = "\n".join(expected_lines).rstrip()
     norm_actual   = normalize_output(actual_output_raw, cpp_path).rstrip()
 
-    if norm_actual != norm_expected:
+    # Under valgrind the allocator reuses memory differently, so the
+    # normalized address indices (0x1, 0x2, …) may differ while the
+    # rest of the output is identical.  Mask all normalized addresses
+    # before comparing so that only structural differences are flagged.
+    if valgrind is not None:
+        cmp_expected = NORM_ADDR_RE.sub("0x_", norm_expected)
+        cmp_actual   = NORM_ADDR_RE.sub("0x_", norm_actual)
+    else:
+        cmp_expected = norm_expected
+        cmp_actual   = norm_actual
+
+    if cmp_actual != cmp_expected:
         return (
             name,
             False,

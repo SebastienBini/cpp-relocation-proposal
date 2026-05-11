@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include "snoop.h"
+#include "reloc_uninit_delete.h"
 
 struct Base {
     snoop b1{"b1"};
@@ -50,7 +51,7 @@ int main() {
         D* obj1 = new D();
         std::cout << "---slice D* to Base* (via L)---" << std::endl;
         Base* bp = static_cast<L*>(obj1);  // L's Base subobject
-        Base bres = std::reloc_and_uninitialize(bp);
+        Base bres = reloc_uninit_and_delete(bp);
         std::cout << "b1=" << bres.b1.name << std::endl;
     }
 
@@ -60,7 +61,7 @@ int main() {
         D* obj2 = new D();
         std::cout << "---slice D* to L*---" << std::endl;
         L* lp = obj2;
-        L lres = std::reloc_and_uninitialize(lp);
+        L lres = reloc_uninit_and_delete(lp);
         std::cout << "l1=" << lres.l1.name << std::endl;
     }
 
@@ -69,7 +70,7 @@ int main() {
     {
         D* obj3 = new D();
         std::cout << "---relocate exact D*---" << std::endl;
-        D dres = std::reloc_and_uninitialize(obj3);
+        D dres = reloc_uninit_and_delete(obj3);
         std::cout << "d1=" << dres.d1.name << std::endl;
     }
     return 0;
@@ -95,50 +96,50 @@ int main() {
 // b1=b1
 // ~b1() 0x8
 // ---construct d2---
-// b1() 0x10
-// Base() 0x11
-// l1() 0x12
-// L() 0x13
-// r1() 0x14
-// R() 0x15
-// d1() 0x16
-// D() 0x13
+// b1() 0x1
+// Base() 0x2
+// l1() 0x3
+// L() 0x4
+// r1() 0x5
+// R() 0x6
+// d1() 0x7
+// D() 0x4
 // ---slice D* to L*---
-// ~d1() 0x16
-// ~r1() 0x14
-// b1(b1&&) 0x17 <- 0x10
-// Base(&&) 0x18 <- 0x11
-// l1(l1 reloc) 0x19 <- 0x12
-// L(reloc) 0x20 <- 0x13
-// ~b1() 0x10
+// ~d1() 0x7
+// ~r1() 0x5
+// b1(b1&&) 0x10 <- 0x1
+// Base(&&) 0x11 <- 0x2
+// l1(l1 reloc) 0x12 <- 0x3
+// L(reloc) 0x13 <- 0x4
+// ~b1() 0x1
 // l1=l1
-// ~l1() 0x19
-// ~b1() 0x17
+// ~l1() 0x12
+// ~b1() 0x10
 // ---construct d3---
-// b1() 0x21
-// Base() 0x22
-// l1() 0x23
-// L() 0x24
-// r1() 0x25
-// R() 0x26
-// d1() 0x27
-// D() 0x24
+// b1() 0x1
+// Base() 0x2
+// l1() 0x3
+// L() 0x4
+// r1() 0x5
+// R() 0x6
+// d1() 0x7
+// D() 0x4
 // ---relocate exact D*---
-// b1(b1&&) 0x28 <- 0x21
-// Base(&&) 0x29 <- 0x22
-// b1(b1&&) 0x30 <- 0x21
-// Base(&&) 0x31 <- 0x22
-// l1(l1 reloc) 0x32 <- 0x23
-// L(reloc) 0x33 <- 0x24
-// b1(b1&&) 0x34 <- 0x21
-// Base(&&) 0x35 <- 0x22
-// r1(r1 reloc) 0x30 <- 0x25
-// R(reloc) 0x31 <- 0x26
-// d1(d1 reloc) 0x35 <- 0x27
-// D(reloc) 0x33 <- 0x24
-// ~b1() 0x21
+// b1(b1&&) 0x14 <- 0x1
+// Base(&&) 0x15 <- 0x2
+// b1(b1&&) 0x16 <- 0x1
+// Base(&&) 0x17 <- 0x2
+// l1(l1 reloc) 0x18 <- 0x3
+// L(reloc) 0x19 <- 0x4
+// b1(b1&&) 0x20 <- 0x1
+// Base(&&) 0x21 <- 0x2
+// r1(r1 reloc) 0x16 <- 0x5
+// R(reloc) 0x17 <- 0x6
+// d1(d1 reloc) 0x21 <- 0x7
+// D(reloc) 0x19 <- 0x4
+// ~b1() 0x1
 // d1=d1
-// ~d1() 0x35
-// ~r1() 0x30
-// ~l1() 0x32
-// ~b1() 0x28
+// ~d1() 0x21
+// ~r1() 0x16
+// ~l1() 0x18
+// ~b1() 0x14

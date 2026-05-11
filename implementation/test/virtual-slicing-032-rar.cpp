@@ -20,15 +20,13 @@
 ///   4. Destroy pre-V bases: ThrowingBase → dtor THROWS
 ///
 /// At step 4, the returned value (dest) IS fully constructed.
-/// The exception leaks through reloc_and_uninitialize. Per proposal,
+/// The exception leaks through reloc_and_reclaim. Per proposal,
 /// both source and returned value must be properly handled.
 
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
-#include "reloc_uninit_delete.h"
 
 static bool arm_throw = false;
 
@@ -75,7 +73,7 @@ int main() {
     arm_throw = true;
     Target* tp = dp;
     try {
-        Target tres = reloc_uninit_and_delete(tp);
+        Target tres = std::reloc_and_reclaim(tp);
         std::cout << "ERROR: should not reach here" << std::endl;
     } catch (std::exception const& e) {
         std::cout << "caught: " << e.what() << std::endl;

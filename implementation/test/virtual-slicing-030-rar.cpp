@@ -26,7 +26,6 @@
 #include <memory>
 #include <stdexcept>
 #include "snoop.h"
-#include "reloc_uninit_delete.h"
 
 static bool arm_throw = false;
 
@@ -84,7 +83,7 @@ int main() {
     arm_throw = true;
     VBase* vbp = dp;
     try {
-        VBase vres = reloc_uninit_and_delete(vbp);
+        VBase vres = std::reloc_and_reclaim(vbp);
         std::cout << "ERROR: should not reach here" << std::endl;
     } catch (std::exception const& e) {
         std::cout << "caught: " << e.what() << std::endl;
