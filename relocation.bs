@@ -4074,30 +4074,31 @@ there must be:
 - the object to slice, which is the `this` parameter ;
 - the target type of the object to construct, which we will call `U`.
     `U` is by construction, either `T` or a (maybe non-direct) base class of `T`
-    which provides a slicing function.
-    `U` may be a template parameter (in which case the slicing function is
-    a template function, possibly causing multiple vtable entries), or a
-    type information supplied at run-time.
+    which provides a slicing function. The type of `U` is implementation-defined.
 - the address where it is to be constructed, which we will call `u`.
-- a flag indicating whether the slicing function should deallocate the source
-    memory after destruction.
+- a way for the caller to request whether the slicing function should
+    deallocate the source memory after destruction.
+
+The mechanism by which the caller controls deallocation is
+*implementation-defined*. Implementations may use a runtime parameter
+(a boolean flag), separate vtable entries — analogous to the Itanium ABI's
+deleting-destructor (D0) / complete-destructor (D1) split — or any
+equivalent mechanism.
 
 The slicing function handles the destruction of its `this` object. Upon exit
 (normally or through an exception), the `this` object is destroyed.
 The destruction of subobjects must honor the same order as the destructor of `T`.
-If the deallocation flag is set, then the source memory is also deallocated after
+When deallocation is requested, the source memory is also deallocated after
 destruction, including on the exceptional path. The deallocation function
 is looked up as if by `delete this` in the context of the most-derived class.
 
-The deallocation flag is necessary because for polymorphic types,
-the correct deallocation function (class-specific `operator delete` or global
-`::operator delete`) can only be determined by the dynamic type. Once the
-object has been destroyed, this dynamic-type information is lost. By combining
-destruction and deallocation within the same virtual dispatch, the slicing
-function can call the correct `operator delete` for the most-derived type
-before the vtable pointer is invalidated. This is analogous to how the
-Itanium ABI's deleting destructor (D0) combines destruction and deallocation
-in a single virtual call.
+Combining destruction and deallocation within the same virtual dispatch is
+necessary because for polymorphic types, the correct deallocation function
+(class-specific `operator delete` or global `::operator delete`) can only be
+determined by the dynamic type. Once the object has been destroyed, this
+dynamic-type information is lost. This is analogous to how the Itanium ABI's
+deleting destructor (D0) combines destruction and deallocation in a single
+virtual call.
 
 The slicing function is defined in the same translation units as the destructor.
 If the destructor is inline, then so is the slicing function.
@@ -5072,8 +5073,8 @@ in priority order:
 1. If `T` has a [virtual slicing function](#virtual-slicing): invoke it.
     The slicing function handles both construction of the result and
     destruction of the source object (including the derived portion).
-    The slicing function deallocation flag is off for `reloc_and_uninitialize`,
-    and on for `reloc_and_reclaim`.
+    `reloc_and_uninitialize` requests no deallocation;
+    `reloc_and_reclaim` requests deallocation.
 1. Otherwise, if `T` has a virtual destructor: move-construct the result
     as if by `std::remove_cv_t<T>(std::move(*src))`. Then `reloc_and_uninitialize`
     destroys `*src`
@@ -5099,7 +5100,7 @@ the source object in a destructed state and to have deallocated its memory.
 
 NOTE: For polymorphic types (steps 1 and 2), correct deallocation requires
 virtual dispatch: only the most-derived type knows its `operator delete`. This
-is why step 1 uses the slicing function's deallocation flag and
+is why step 1 requests deallocation through the slicing function and
 step 2 uses the deleting destructor, rather than separating destruction from
 deallocation.
 
