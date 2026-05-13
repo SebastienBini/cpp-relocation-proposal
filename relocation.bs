@@ -4080,31 +4080,69 @@ there must be:
     deallocate the source memory after destruction.
 
 The mechanism by which the caller controls deallocation is
-*implementation-defined*. Implementations may use a runtime parameter
-(a boolean flag), separate vtable entries — analogous to the Itanium ABI's
-deleting-destructor (D0) / complete-destructor (D1) split — or any
-equivalent mechanism.
+*implementation-defined* (a runtime flag, separate vtable entries analogous
+to Itanium's D0/D1 split, or any equivalent). Deallocation must be part of
+the same virtual dispatch because the correct deallocation function can only
+be determined by the dynamic type, which is lost once the object is destroyed.
 
-The slicing function handles the destruction of its `this` object. Upon exit
-(normally or through an exception), the `this` object is destroyed.
-The destruction of subobjects must honor the same order as the destructor of `T`.
-When deallocation is requested, the source memory is also deallocated after
-destruction, including on the exceptional path. The deallocation function
-is looked up as if by `delete this` in the context of the most-derived class.
+The slicing function of `T` invoked with target type `U` and destination
+address `u` has the following observable behavior:
 
-Combining destruction and deallocation within the same virtual dispatch is
-necessary because for polymorphic types, the correct deallocation function
-(class-specific `operator delete` or global `::operator delete`) can only be
-determined by the dynamic type. Once the object has been destroyed, this
-dynamic-type information is lost. This is analogous to how the Itanium ABI's
-deleting destructor (D0) combines destruction and deallocation in a single
-virtual call.
+1.  An object of type `U` is constructed at `u`. The constructor used is
+    the first eligible, non-deleted constructor in the following priority
+    order: relocation constructor, move constructor, copy constructor.
+    The relocation constructor is discarded if `U` is a virtual base of `T`,
+    or a base of a virtual base of `T`.
+    The source of the construction is the `U` subobject of `*this`:
+    1.  If the relocation constructor is discarded, then the `U` subobject is
+        move-constructed (or copy-constructed if
+        no eligible move constructor exists) from `*this`.
+        The destructor of `T` is then invoked on `this`.
+    1.  Otherwise, the slicing function recursively decomposes `*this` and
+        all the bases on the inheritance
+        path to `U`, until the `U` base is considered as a complete object.
+        The selected constructor is invoked on the `U` subobject to initialize `u`.
+        If the move or copy constructor was selected, then the `U` base is destroyed
+        immediately after.
+        The destruction of all subobjects (except `U`) shall respect the same
+        destruction order of the destructor of `T`. The selected constructor
+        evaluation order relative to the subobject destruction order is
+        *implementation-defined*.
+1.  When deallocation is requested, the source memory is deallocated
+    after destruction, including on the exceptional path. The
+    deallocation function is looked up as if by `delete this` in the
+    context of the most-derived class.
+
+If the constructor in step 1 exits by throwing an exception, no object
+is constructed at `u` and the remaining subobjects of `*this` are
+destroyed in destructor order.
+
+Note that `U` is expected to be a base of `T` with a virtual slicing function,
+otherwise the slicing function has undefined behavior. In practice this is
+always the case, as the slicing function is invoked through virtual dispatch
+from a `U` pointer.
 
 The slicing function is defined in the same translation units as the destructor.
 If the destructor is inline, then so is the slicing function.
-The slicing function odr-uses whichever constructor is selected
-(relocation, move, or copy — in that priority order, choosing the first that
-is eligible and not deleted).
+
+The virtual slicing function of `T` is implicitly `constexpr` if all of
+the following are `constexpr`:
+
+- the virtual slicing functions of all direct bases of `T` that declare one ;
+- the relocation constructor of `T` ; or, if `T` has no eligible relocation
+    constructor, the move or copy constructor and the destructor of `T` ;
+- if `T` has any virtual base with a virtual slicing function, then `T`'s
+  destructor, as well as the move or
+  copy constructor of all such virtual bases of `T` and of their bases
+  that provide a virtual slicing function ;
+- the destructors of all direct subobjects of `T` ;
+- the deallocation function.
+
+During constant evaluation, the dynamic type of `*this` is always known,
+so virtual dispatch resolves statically. The implementation-defined parameter
+encoding and deallocation mechanism are not observable: the constant evaluator
+knows both the most-derived type and the target type `U`, and can determine
+the correct deallocation function directly.
 
 ##### Possible implementation ##### {#virtual-slicing-impl}
 
@@ -5060,9 +5098,9 @@ header to perform relocation through a pointer:
 
 ```c++
 template <class T>
-std::remove_cv_t<T> reloc_and_uninitialize(T* src);
+constexpr std::remove_cv_t<T> reloc_and_uninitialize(T* src);
 template <class T>
-std::remove_cv_t<T> reloc_and_reclaim(T* src);
+constexpr std::remove_cv_t<T> reloc_and_reclaim(T* src);
 ```
 
 Both functions construct a new object of type `std::remove_cv_t<T>` from `*src`
@@ -5103,6 +5141,15 @@ virtual dispatch: only the most-derived type knows its `operator delete`. This
 is why step 1 requests deallocation through the slicing function and
 step 2 uses the deleting destructor, rather than separating destruction from
 deallocation.
+
+Both functions are `constexpr`. During constant evaluation, virtual dispatch
+(steps 1 and 2) resolves statically since the dynamic type is known to the
+evaluator. All operations involved — construction, destruction, and
+deallocation — are individually permitted in constant expressions since C++20.
+For `reloc_and_uninitialize`, the source memory remains allocated but
+uninitialized after the call; the caller must deallocate or reuse it before
+constant evaluation ends, consistent with the treatment of `std::destroy_at`
+in constant expressions.
 
 `reloc_and_uninitialize` is intended to be used by library authors to enable relocation
 from a memory address. For instance, extracting a value out of an optional just
