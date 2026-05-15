@@ -1508,6 +1508,10 @@ the relocation constructor, move constructor, or copy constructor
 **shall not be called**. The target object occupies the same storage
 as the source object. No temporary is materialized.
 
+This rule does not apply when the target object is the result object
+of a `return` statement; that case is governed by
+[optional relocation elision](#reloc-elision-optional).
+
 NOTE: For decomposed function parameters, the direct subobjects are owned
 by the callee (see [§](#decompose-value-param)). Mandatory elision therefore
 applies to their subobjects as well.
@@ -1545,6 +1549,11 @@ void sink(S);
 void g() {
     S s(10);
     sink(reloc s);   // mandatory elision: reloc ctor is not called
+}
+
+S ret() {
+    S s(10);
+    return reloc s;  // NOT mandatory — optional (NRVO) elision
 }
 
 void h(std::pair<std::string, int> reloc p) {
