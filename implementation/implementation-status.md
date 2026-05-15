@@ -224,9 +224,9 @@ Added `BindsToPRValue` bit to `StandardConversionSequence` (in `Overload.h`) to 
 
 ---
 
-## Known gap — `constexpr` / constant-evaluation support ✅ Implemented
+## Known gap — `constexpr` / constant-evaluation support ✅ Fully implemented
 
-**Description:** The proposal explicitly permits `reloc` in constexpr functions (§"reloc in constexpr") and object decomposition in constant-evaluated expressions (§"decomposition in constexpr"). Implemented in Phase 10 (`885717f87cf7`). See Phase 10 section for details.
+**Description:** The proposal explicitly permits `reloc` in constexpr functions (§"reloc in constexpr") and object decomposition in constant-evaluated expressions (§"decomposition in constexpr"). Implemented in Phase 10 (`885717f87cf7`). Constexpr support for `__builtin_reloc_and_uninitialize` and `__builtin_reloc_and_reclaim` added in `f8839f0120e1`; VSF implicitly constexpr determination added in the same commit. See Phase 10 and Phase 13 sections for details.
 
 ---
 
@@ -277,9 +277,50 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 ---
 
-## Known gap — implicit decomposition of temporaries ⚠️ Not yet implemented
+## Known gap — implicit decomposition of temporaries ✅ Implemented
 
-**Description:** Temporary objects can be implicitly decomposed to allow relocations (§"implicit decomposition of temporaries"), e.g. `B b = getD();` implicitly decomposes the `D` temporary and relocates the `B` base. No implementation exists.
+**Description:** When a subobject of a temporary (prvalue) is used to initialize an object, instead of materializing the temporary, binding the subobject as an xvalue, and move-constructing from it, the compiler decomposes the temporary — relocating the desired subobject and destroying the rest (§"implicit decomposition of temporaries").
+
+```cpp
+D getD();
+B b = getD();
+// Today:     D tmp = getD(); B b = B(std::move(tmp)); ~D(tmp);
+// With P2785: D reloc tmp = getD(); B b = reloc tmp.base<B>;  // rest destroyed per-subobject
+
+std::string s = getPair().first;
+// Equivalent to: auto reloc p = getPair(); std::string s = reloc p.first;
+```
+
+### Trigger contexts (all implemented)
+
+The proposal limits implicit decomposition to the contexts enumerated in [class.temporary]/6 — the standard's existing rules for when a subobject of a temporary has its lifetime extended or is converted:
+
+1. **[6.2] Data member access:** `std::string s = getPair().first;` — member access on a temporary. The pair is decomposed; `.first` is relocated; `.second` is destroyed. (`f99ec96d548d`)
+2. **[6.1] Base class cast:** `B b = getD();` — derived-to-base conversion on a temporary. The `D` temporary is decomposed; the `B` base subobject is relocated; `D`-specific members are destroyed. (`b60869f0ee08`)
+3. **[6.3] C-array element access:** `int x = getArray()[2];` — array subscript on a temporary whose type has a C-array member. Each element becomes a complete object; only the accessed element is relocated. (`9b03984fc7e7`)
+4. **[6.5] Pointer-to-data-member access:** `std::string s = getT().*pmf;` — but **only** if the pointer is constant-evaluated (so the compiler can statically determine which member). If not constant-evaluated, no implicit decomposition. (`07b81604760b`)
+
+### Well-formedness conditions (silent fallback)
+
+If any condition fails, implicit decomposition does **not** happen — no error, just falls back to xvalue/move semantics:
+
+- All subobjects of the complete type must be **accessible** (destructors must be callable for non-relocated subobjects).
+- The eligible destructor must **not be user-provided**. Unlike explicit decomposition, private access privilege does NOT bypass this.
+- No **virtual bases** in the decomposition path.
+
+### Implementation details
+
+**Sema** (`SemaInit.cpp` + `SemaRelocation.cpp`):
+- Two hooks in `SemaInit.cpp`: (1) xvalue path — detects `MemberExpr`, `ArraySubscriptExpr`, or `BinaryOperator(BO_PtrMemD)` on a `MaterializeTemporaryExpr`; (2) prvalue+derived-to-base path — detects base cast on a prvalue temporary.
+- `TryImplicitDecompositionOfTemporary()` in `SemaRelocation.cpp`: shared entry point for all 4 trigger contexts. Calls `isImplicitDecompositionWellFormed()` (union check, user-provided dtor, accessibility), `lookupRelocOrMoveOrCopyCtor()` (reloc > move > copy preference), and `findMTEInMemberBase()` (peel implicit casts/parens to find `MaterializeTemporaryExpr`).
+- Phase 4 (PMD): `resolveConstPtrMemField()` resolves a constexpr pointer-to-data-member to a `FieldDecl`, then builds a synthetic `MemberExpr` so Phase 1 codegen handles it.
+- On success: marks the MTE's variable as decomposed, builds `CXXRelocExpr` targeting the subobject, replaces the initialization source.
+
+**Codegen** (`CGExprCXX.cpp`):
+- `EmitImplicitDecompositionReloc`: dispatcher — routes to Phase 2 (`EmitImplicitDecompositionBaseSlice`), Phase 3 (`EmitImplicitDecompositionArrayElement`), or Phase 1/4 (`EmitImplicitDecompositionMemberAccess`).
+- Phase 1/4: relocates the target member, pushes `MemberDestroyCleanup` for each non-relocated member.
+- Phase 2: relocates the base subobject via `EmitImplicitDecompositionBaseSlice`, destroys derived-specific members.
+- Phase 3: relocates the accessed array element via `EmitImplicitDecompositionArrayElement`, destroys remaining elements via `DestroyArraySkippingElement` cleanup.
 
 ---
 
@@ -289,9 +330,9 @@ If `~T()` is `noexcept` (the default since C++11), the discarded `reloc a;` cann
 
 ---
 
-## Known gap — virtual slicing function ✅ Fully implemented (Phase 12)
+## Known gap — virtual slicing function ✅ Fully implemented (Phase 12 + 13c)
 
-**Description:** A hidden virtual function implicitly declared when a class has both an explicit relocation constructor and a virtual destructor (§"virtual slicing function"). Used by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` to prevent object slicing. Fully implemented: implicit declaration, vtable integration, codegen (tag comparison, match/decompose paths, virtual base handling, diamond inheritance), exception handling, `__builtin_reloc_and_uninitialize`, implicit reloc ctor relaxation. See Phase 12 section below for details.
+**Description:** A hidden virtual function implicitly declared when a class has both an explicit relocation constructor and a virtual destructor (§"virtual slicing function"). Used by `std::reloc_and_uninitialize` / `std::reloc_and_reclaim` to prevent object slicing. Fully implemented: implicit declaration, vtable integration, codegen (tag comparison, match/decompose paths, virtual base handling, diamond inheritance), exception handling, `__builtin_reloc_and_uninitialize`, `__builtin_reloc_and_reclaim` with deallocation (`1dd230d0d078`), class-specific delete dispatch (`917b3d215e43`), implicit reloc ctor relaxation, constexpr evaluation (`f8839f0120e1`). See Phase 12 and Phase 13 sections for details.
 
 ---
 
@@ -339,9 +380,9 @@ err_decomposed_user_provided_dtor
 
 ### Not yet implemented (Phase 5d and later)
 
-- Implicit decomposition of temporaries (§"implicit decomposition of temporaries")
+- ~~Implicit decomposition of temporaries (§"implicit decomposition of temporaries")~~ — **done** (`f99ec96d548d`, `b60869f0ee08`, `9b03984fc7e7`, `07b81604760b`)
 - ~~Lambda closure decomposition (§"decomposition of a lambda closure type")~~ — **done** (`864cae7`)
-- `constexpr` decomposition (§"decomposition in constexpr")
+- ~~`constexpr` decomposition (§"decomposition in constexpr")~~ — **done** (Phase 10, `885717f87cf7`)
 
 **Proposal coverage:** §"object decomposition" (core data-member and parameter sub-sections)
 
@@ -1107,12 +1148,12 @@ The slicing function is NOT `noexcept` — constructor invocations in the body c
 
 | # | Sub-phase | Scope | Status |
 |---|---|---|---|
-| **13a** | Type traits | `is_relocation_constructible`, `is_trivially_relocation_constructible`, `is_nothrow_relocation_constructible`, assignment variants, `has_virtual_slicing_function`; all `_v` templates | ✅ |
-| **13b** | Concepts | `relocation_constructible`, `trivially_relocatable`, `relocatable` | ✅ |
-| **13c** | `std::reloc_and_reclaim` | Relocate + deallocate via `::operator delete` or class-specific; 4-step algorithm | ❌ |
-| **13d** | `std::construct_at` overload | `T* construct_at(T* p, T src)` — equivalent to `::new (p) T{reloc src}` | ❌ |
-| **13e** | `std::relocate` amendment | Prefer reloc ctor over move ctor for non-trivially-relocatable types with nothrow reloc ctor | ❌ |
-| **13f** | `operator reloc[]` for `std::tuple` / `std::array` | Stage 4c: return `std::decomposition_pack` from `operator reloc[](this tuple reloc self)` | ❌ |
+| **13a** | Type traits | `is_relocation_constructible`, `is_trivially_relocation_constructible`, `is_nothrow_relocation_constructible`, assignment variants, `has_virtual_slicing_function`; all `_v` templates | ✅ `3157bb3bf3f4` |
+| **13b** | Concepts | `relocation_constructible`, `trivially_relocatable`, `relocatable` | ✅ `3157bb3bf3f4` |
+| **13c** | `std::reloc_and_reclaim` | Relocate + deallocate via `::operator delete` or class-specific; 4-step algorithm | ✅ `1dd230d0d078` |
+| **13d** | `std::construct_at` overload | `T* construct_at(T* p, T src)` — equivalent to `::new (p) T{reloc src}` | ✅ |
+| **13e** | `std::relocate` amendment | Prefer reloc ctor over move ctor for non-trivially-relocatable types with nothrow reloc ctor | ✅ |
+| **13f** | `operator reloc[]` for `std::tuple` / `std::array` | Stage 4c: return `std::decomposition_pack` from `operator reloc[](this tuple reloc self)` | ✅ |
 
 ### Phase 13a — Type traits ✅
 
@@ -1143,6 +1184,78 @@ Files:
 - `libcxx/include/__concepts/relocatable.h` (new)
 
 **Proposal coverage:** §"type traits header", §"concepts header"
+
+### `std::reloc_and_reclaim` ✅ `1dd230d0d078`
+
+`std::reloc_and_reclaim<T>(T* ptr)` added to `<memory>` — relocates the object at `ptr` to a new location and deallocates the source memory. Extends the virtual slicing function with a 4th parameter (`should_dealloc`) so polymorphic types can perform correct dynamic-type deallocation through virtual dispatch.
+
+- `libcxx/include/__memory/reloc_and_reclaim.h` (updated)
+- `Builtins.td`: `__builtin_reloc_and_reclaim` definition
+- `SemaDeclCXX.cpp`: slicing function extended to 4 params `(dest, tag, is_base, should_dealloc)`
+- `CGBuiltin.cpp`: unified handling for both builtins with `ShouldDealloc` flag; class-specific `operator delete` lookup for non-polymorphic types, `Dtor_Deleting` for virtual-dtor types, conditional deallocation via slicing function for polymorphic types with slicing functions
+- `CGClass.cpp`: `EmitSlicingFunctionBody` reads 4th param, conditionally deallocates at all return points; recursive calls forward `should_dealloc=0`
+
+### Phase 12/13 fix — Virtual destructor dispatch and class-specific delete ✅ `917b3d215e43`
+
+Two compliance fixes:
+1. Step 2 (virtual dtor, no slicing function) now uses vtable dispatch for both `reloc_and_reclaim` (D0/deleting) and `reloc_and_uninitialize` (D1/complete), instead of direct calls
+2. `EmitConditionalDealloc` in the slicing function body now looks up class-specific `operator delete`, falling back to global `_ZdlPv` only if none is found
+
+### Constexpr support for `reloc_and_uninitialize` and `reloc_and_reclaim` ✅ `f8839f0120e1`
+
+- `ExprConstant.cpp`: `HandleBuiltinRelocAndUninitialize()` evaluates both builtins during constant evaluation — handles scalar types, trivially relocatable records, non-trivial reloc/move/copy ctors, and polymorphic types
+- `SemaDeclCXX.cpp`: VSF implicitly constexpr when: base VSFs constexpr, T's reloc ctor (or move/copy + dtor) constexpr, virtual base handling, direct subobject dtors constexpr, deallocation function constexpr
+- `libcxx`: `constexpr` specifier added to both `std::reloc_and_uninitialize` and `std::reloc_and_reclaim`
+
+### Phase 13d — `std::construct_at` relocating overload ✅
+
+`std::construct_at<T>(T* p, T src)` added to `<memory>` — a non-variadic overload that placement-relocates `src` into `*p` via `::new (p) T(reloc src)`. Equivalent to direct placement-new with relocation, but usable in constant-evaluated expressions.
+
+- `libcxx/include/__memory/construct_at.h`: new overload gated on `_LIBCPP_STD_VER >= 26 && defined(__cpp_relocation)`
+- `clang/lib/Frontend/InitPreprocessor.cpp`: `__cpp_relocation` feature-test macro defined when `-frelocation` is active (`LangOpts.Relocation`)
+
+### `__cpp_relocation` feature-test macro ✅
+
+`__cpp_relocation` (value `202502L`) is predefined when `-frelocation` is passed. This allows library headers and user code to conditionally compile P2785-dependent code:
+
+```cpp
+#ifdef __cpp_relocation
+// P2785 features available
+#endif
+```
+
+### Phase 13e — `std::relocate` amendment ✅
+
+Amended `__uninitialized_allocator_relocate` in `<__memory/uninitialized_algorithms.h>` to prefer the relocation constructor over the move constructor for non-trivially-relocatable types with nothrow reloc constructors.
+
+The amendment adds a new code path between the existing trivial-memcpy fast path and the move-constructor fallback:
+
+1. **Trivial relocation** (existing): `__builtin_memcpy` when `__libcpp_is_trivially_relocatable<T>` and allocator has trivial move-construct/destroy
+2. **Relocation constructor** (NEW): when `__is_nothrow_constructible(T, T)` and allocator has trivial move-construct/destroy, uses `__builtin_reloc_and_uninitialize` per element + `construct_at`. Source objects' lifetimes end during relocation — no separate destroy pass needed.
+3. **Move constructor** (existing fallback): `std::move_if_noexcept` + destroy
+
+Gated on `_LIBCPP_STD_VER >= 26 && defined(__cpp_relocation)`.
+
+### Phase 13f — `operator reloc[]` for `std::tuple` / `std::array` ✅
+
+Added `operator reloc[](this T reloc self)` to `std::array` and `std::tuple`, returning `std::decomposition_pack<...>`. This enables structured bindings via the customized decomposition protocol (`auto [a, b, c] = reloc my_tuple`), supporting relocate-only types (deleted move/copy ctors).
+
+**`std::array`** (`libcxx/include/array`):
+- Primary template: decomposes the C-array member `__elems_` into a pack, then relocates each element into a `decomposition_pack`.
+- Zero-size specialization: returns `decomposition_pack<>{}`.
+
+**`std::tuple`** (`libcxx/include/tuple`):
+- Added `__reloc_value(this __tuple_leaf reloc __self)` to both `__tuple_leaf` specializations (non-EBO: relocates `__value_` member; EBO: relocates `__remove_cv_t<_Hp>` base subobject).
+- Added `__to_decomposition_pack(this __tuple_impl reloc __self)` that relocates each `__tuple_leaf` base via `reloc __self.base<__tuple_leaf<I, T>>` and calls `__reloc_value()`.
+- `tuple::operator reloc[]` relocates `self.__base_` and calls `__to_decomposition_pack()`.
+- Empty specialization `tuple<>`: returns `decomposition_pack<>{}`.
+
+Both headers include `<__utility/decomposition_pack.h>`. All implementations gated on `_LIBCPP_STD_VER >= 26 && defined(__cpp_relocation)`.
+
+Files:
+- `libcxx/include/array` (modified — added `operator reloc[]` to both specializations, added `decomposition_pack.h` include)
+- `libcxx/include/tuple` (modified — added `__reloc_value` to `__tuple_leaf`, `__to_decomposition_pack` to `__tuple_impl`, `operator reloc[]` to `tuple` and `tuple<>`, added `decomposition_pack.h` include)
+- `clang/test/SemaCXX/p2785-stdlib-operator-reloc-subscript.cpp` (new lit test)
 
 ---
 
@@ -1181,7 +1294,7 @@ Files:
 
 599 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 33 lit test files pass (2 pre-existing failures in `p2785-reloc-elision.cpp` and `p2785-reloc-operator.cpp` due to CHECK patterns not yet updated for twin emission rework):
+Additionally, 38 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
@@ -1210,11 +1323,17 @@ Additionally, 33 lit test files pass (2 pre-existing failures in `p2785-reloc-el
 - `clang/test/SemaCXX/p2785-use-after-reloc.cpp` (CFG-based use-after-reloc diagnostics)
 - `clang/test/SemaCXX/p2785-virtual-call-decomposed-base.cpp` (virtual call on decomposed base)
 - `clang/test/SemaCXX/p2785-virtual-slicing-diamond.cpp` (diamond inheritance Sema for slicing fn)
+- `clang/test/SemaCXX/p2785-constexpr-reloc-builtins.cpp` (constexpr eval of `__builtin_reloc_and_uninitialize` / `__builtin_reloc_and_reclaim`: scalar, record, move-only, copy-only, polymorphic, multi-alloc)
+- `clang/test/SemaCXX/p2785-constexpr-vsf.cpp` (VSF constexpr-ness conditions: hierarchy, member dtors, move fallback)
+- `clang/test/SemaCXX/p2785-construct-at-reloc.cpp` (P2785 `std::construct_at` relocating overload: scalar, trivial, reloc ctor, move-only, polymorphic, `__cpp_relocation` macro)
+- `clang/test/SemaCXX/p2785-relocate-amendment.cpp` (P2785 `std::relocate` amendment: reloc ctor preference, simulated relocate loop, move fallback, nothrow traits)
+- `clang/test/SemaCXX/p2785-stdlib-operator-reloc-subscript.cpp` (P2785 `operator reloc[]` for `std::tuple`/`std::array`: array decomposition, tuple leaf+impl+base chain, relocate-only types, empty specializations)
+- `clang/test/SemaCXX/p2785-reloc-ctor-virtual-dtor-relaxed.cpp` (relaxed reloc ctor with virtual dtor + slicing fn)
 - `clang/test/SemaCXX/p2785-virtual-slicing-function.cpp` (slicing fn implicit declaration, ill-formed checks)
 
-245 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests.
+286 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests and 12 implicit-decomposition tests.
 
-Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
+Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
 - Scalar types: int, pointer, enum, double, bool (constexpr-001)
 - Trivial defaulted reloc ctor (constexpr-002)
 - User-provided reloc ctor with side-effect (constexpr-003)
@@ -1237,6 +1356,10 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 - `consteval` function (constexpr-020)
 - Constexpr event-log test: mandatory elision and non-elision with cxlog (constexpr-021)
 - Constexpr chained reloc with cxlog: local → function param → reloc param (constexpr-022)
+- Constexpr `__builtin_reloc_and_uninitialize` on scalar, record, polymorphic types (constexpr-023)
+- Constexpr `__builtin_reloc_and_uninitialize` on non-trivial reloc ctor, move-only, copy-only (constexpr-024)
+- Constexpr `__builtin_reloc_and_reclaim` on scalar, record, polymorphic types (constexpr-025)
+- Constexpr `__builtin_reloc_and_reclaim` with class-specific `operator delete` (constexpr-026)
 
 ---
 
@@ -1246,8 +1369,8 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 
 | Area | Status | Notes |
 |---|---|---|
-| **Phase 13** — standard library additions | ⚠️ Partial | `std::decomposition_pack` and `std::reloc_and_uninitialize` added. Remaining: `std::construct_at` overload, `std::reloc_and_reclaim`, type traits, concepts, `std::relocate` amendment. Includes Phase 11 Stage 4c: `operator reloc[]` for `std::tuple` / `std::array`. |
-| Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ❌ Planned | E.g. `B b = getD();` implicitly decomposes the `D` temporary. Independent of Phase 11. |
+| **Phase 13** — standard library additions | ✅ Done | `std::decomposition_pack`, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::construct_at` relocating overload, `std::relocate` amendment, `operator reloc[]` for `std::tuple`/`std::array`. `__cpp_relocation` feature-test macro defined under `-frelocation`. |
+| Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ✅ Done | All 4 trigger contexts: [6.2] data member (`f99ec96d548d`), [6.1] derived-to-base (`b60869f0ee08`), [6.3] C-array element (`9b03984fc7e7`), [6.5] pointer-to-data-member (`07b81604760b`). Silent fallback to xvalue/move if ill-formed. |
 | NRVO-style elision for `return reloc x;` | ❌ Deferred | Largely redundant per proposal line 3680 (`return x;` already gets NRVO via end-of-life optimization). |
 
 ### ABI gaps in the prototype
@@ -1268,11 +1391,20 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 
 | Fix | Commit | Notes |
 |---|---|---|
+| Implicit decomposition Phase 1: data member access [6.2] | `f99ec96d548d` | `TryImplicitDecompositionOfTemporary` in SemaRelocation.cpp; `EmitImplicitDecompositionReloc` / `EmitImplicitDecompositionMemberAccess` in CGExprCXX.cpp; hooks in SemaInit.cpp. |
+| Implicit decomposition Phase 2: derived-to-base cast [6.1] | `b60869f0ee08` | `EmitImplicitDecompositionBaseSlice` in CGExprCXX.cpp; base-slice detection in Sema. |
+| Implicit decomposition Phase 3: C-array element access [6.3] | `9b03984fc7e7` | `EmitImplicitDecompositionArrayElement` with `DestroyArraySkippingElement` cleanup in CGExprCXX.cpp. |
+| Implicit decomposition Phase 4: pointer-to-data-member [6.5] | `07b81604760b` | Constexpr PMD resolved via `resolveConstPtrMemField()`; synthetic `MemberExpr` reuses Phase 1 codegen. Sema-only. |
 | Synthesize PMF bridge for virtual decomposing fns | `538771eb1df4` | `.Vreloc_pmf_bridge`; PMF formation for virtual decomposing fns. |
 | Honor §decompose-value-param-direct rules 1+2 for direct calls | `9dc467296db0` | Split `getDirectCallTarget` vs `getRawFunctionPointer`; suppress caller-side cleanup when the callee param is `reloc`-decomposed. |
 | Decomposed objects: destroy in [class.dtor] order | `761c0b50c040` | Inverted EHStack push order so members pop first, then non-virtual bases (reverse spec), then virtual bases. |
 | Apply rule 1 to the CXXRelocExpr fallback arg path | `f26f4de630d4` | Suppress caller-side D1 on `reloc.arg.tmp` when callee param is decomposed (e.g. `sink_b(reloc d.base<B>)`). |
 | Fix twin emission and array reloc decomposition codegen | `6005dffd9894` | Correct twin emission for decomposing functions; fix array structured decomposition codegen. |
+| Implement `__builtin_reloc_and_reclaim` with deallocation flag | `1dd230d0d078` | Extend slicing fn to 4 params (dest, tag, is_base, should_dealloc); class-specific delete; D0/D1 vtable dispatch. |
+| Phase 13a+13b: type traits and concepts | `3157bb3bf3f4` | `is_relocation_constructible`, `is_relocation_assignable`, `has_virtual_slicing_function`, `_v` templates; `relocation_constructible`, `trivially_relocatable`, `relocatable` concepts. |
+| Fix virtual destructor dispatch and class-specific delete | `917b3d215e43` | Step 2 uses vtable dispatch (not direct calls) for both builtins; `EmitConditionalDealloc` uses class-specific `operator delete`. |
+| Fix twin emission (second round) | `9b95eb657b5f` | Post-reclaim twin emission and array reloc decomposition codegen fix. |
+| Constexpr support for VSF, reloc_and_uninitialize, reloc_and_reclaim | `f8839f0120e1` | `HandleBuiltinRelocAndUninitialize` in ExprConstant.cpp; VSF implicit constexpr determination; `constexpr` on libcxx wrappers. |
 | Mandatory relocation elision for decomposed members | `a0d77a3f1340` | §reloc-elision-mandatory bullet 2: `reloc obj.member` initialiser aliases member storage. |
 | Suppress caller-side dtor for decomposed explicit object param | `a4046f6c8839` | `EmitCallArg`: mark aggregate slot externally-destructed when callee param `isDecomposedByReloc()`. |
 | Fix overload resolution: prefer reference for xvalue args | `073fca7da55f` | [over.ics.rank]/3.2.3 bullet 4: reference binding beats by-value for non-prvalue arguments. |
@@ -1308,13 +1440,13 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 | `clang/lib/AST/StmtPrinter.cpp` | `VisitCXXRelocExpr`, `VisitCXXDecomposedBaseExpr`, `VisitCXXDecomposedThisExpr` |
 | `clang/lib/AST/StmtProfile.cpp` | `VisitCXXRelocExpr`, `VisitCXXDecomposedBaseExpr`, `VisitCXXDecomposedThisExpr` |
 | `clang/lib/CodeGen/CGCleanup.cpp` | `ConditionallyDeactivateCleanup` — sets runtime `cleanup.isactive` flag without `setActive(false)`; keeps cleanup logically active for conditional-branch correctness |
-| `clang/lib/CodeGen/CGExprCXX.cpp` | `EmitCXXRelocExpr`; `MemberDestroyCleanup` per-member destructor cleanup; `DeactivateSourceCleanup` lambda; temp materialization for discarded reloc on caller-destroy params |
+| `clang/lib/CodeGen/CGExprCXX.cpp` | `EmitCXXRelocExpr`; `MemberDestroyCleanup` per-member destructor cleanup; `DeactivateSourceCleanup` lambda; temp materialization for discarded reloc on caller-destroy params; implicit decomposition codegen: `EmitImplicitDecompositionReloc` (dispatcher), `EmitImplicitDecompositionMemberAccess` (Phase 1/4), `EmitImplicitDecompositionBaseSlice` (Phase 2), `EmitImplicitDecompositionArrayElement` (Phase 3) |
 | `clang/lib/CodeGen/CGCall.cpp` | `EmitDelegateCallArg`: skip `CalleeDestructedParamCleanups` for decomposed params (§decompose-value-param) |
 | `clang/lib/CodeGen/CGDecl.cpp` | `EmitParmDecl`: silent relocation of decomposed params to local storage for caller-destroy ABIs (§decompose-value-param) |
 | `clang/lib/CodeGen/CGExpr.cpp` | `EmitLValue` case for `CXXDecomposedBaseExpr` |
 | `clang/lib/CodeGen/CGExprScalar.cpp` | `VisitCXXDecomposedThisExpr` (emits alloca address as `void cv*`) |
 | `clang/lib/CodeGen/CodeGenFunction.cpp` | Early-destructible source lifetime suppression |
-| `clang/lib/CodeGen/CodeGenFunction.h` | Declaration of `ConditionallyDeactivateCleanup`; `EmittingRelocAssignEliding`, `CallingRelocAssignOperator` flags (Phase 9) |
+| `clang/lib/CodeGen/CodeGenFunction.h` | Declaration of `ConditionallyDeactivateCleanup`; `EmittingRelocAssignEliding`, `CallingRelocAssignOperator` flags (Phase 9); `EmitImplicitDecompositionReloc`, `EmitImplicitDecompositionMemberAccess`, `EmitImplicitDecompositionBaseSlice`, `EmitImplicitDecompositionArrayElement` declarations |
 | `libcxx/include/__utility/decomposition_pack.h` | `std::decomposition_pack<Ts...>` aggregate carrier for `operator reloc[]` return type (Phase 13) |
 | `clang/lib/Driver/ToolChains/Clang.cpp` | `-frelocation` driver flag |
 | `clang/lib/Frontend/CompilerInvocation.cpp` | `LangOpts.Relocation` mapping |
@@ -1326,9 +1458,9 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 | `clang/lib/Sema/SemaCast.cpp` | `BuildCXXNamedCast` calls `DiagDecomposedVarUsedAsValue` (Phase 5e) |
 | `clang/lib/Sema/SemaExprCXX.cpp` | `IgnoredValueConversions` calls `DiagDecomposedVarUsedAsValue`; `BuildDecltypeType` enforcement (Phase 5e); `CheckPointerToMemberOperands` P2785 constant-eval check |
 | `clang/lib/Sema/SemaExprMember.cpp` | Reject qualified member access on decomposed objects; reject non-static member-function calls; permit static member calls via instance syntax; lambda capture name resolution via `getCaptureFields()` for decomposed closures |
-| `clang/lib/Sema/SemaInit.cpp` | `PerformCopyInitialization` calls `DiagDecomposedVarUsedAsValue` (Phase 5e) |
+| `clang/lib/Sema/SemaInit.cpp` | `PerformCopyInitialization` calls `DiagDecomposedVarUsedAsValue` (Phase 5e); implicit decomposition hooks: xvalue path and prvalue+derived-to-base path call `TryImplicitDecompositionOfTemporary` |
 | `clang/lib/Sema/SemaType.cpp` | `BuildDecltypeType` parenthesised-decomposed-var enforcement (Phase 5e) |
-| `clang/lib/Sema/SemaRelocation.cpp` | All reloc Sema logic; Phase 4/4b analysis; `CheckDecomposedVarDecl`; `CheckDecomposedParams`; `ActOnDecomposedBaseAccess`; `ActOnDecomposedThisAccess`; `resolveConstPtrMemField` for `.*` flow analysis |
+| `clang/lib/Sema/SemaRelocation.cpp` | All reloc Sema logic; Phase 4/4b analysis; `CheckDecomposedVarDecl`; `CheckDecomposedParams`; `ActOnDecomposedBaseAccess`; `ActOnDecomposedThisAccess`; `resolveConstPtrMemField` for `.*` flow analysis; `TryImplicitDecompositionOfTemporary`, `isImplicitDecompositionWellFormed`, `lookupRelocOrMoveOrCopyCtor`, `findMTEInMemberBase` for implicit decomposition of temporaries |
 | `clang/lib/Sema/SemaOverload.cpp` | P2785 overload resolution tie-breakers in `CompareStandardConversionSequences` (gated behind `-frelocation`); lvalue tiebreaker (const T& beats T by-value for lvalue args) |
 | `clang/lib/Sema/SemaTemplateInstantiate.cpp` | `SubstParmVarDecl` preserves `isDecomposedByReloc()` during instantiation |
 | `clang/lib/Sema/SemaTemplateInstantiateDecl.cpp` | `RebuildTypeSourceInfoForDefaultSpecialMembers` filter for `RelocConstructor` and `RelocAssignment` |
@@ -1343,5 +1475,6 @@ Additionally, 22 constexpr runtime tests pass (`P2785/implementation/test/conste
 | `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` | FileCheck IR tests for EH cleanup ordering (reloc ctor throw, VBase cleanup) |
 | `clang/lib/Sema/SemaLookup.cpp` | `ForceDeclarationOfImplicitMembers`, `LookupSpecialMember`, `AddMethodCandidate`/`AddMethodTemplateCandidate` for reloc assign |
 | `clang/lib/Sema/SemaExpr.cpp` | `MarkFunctionReferenced`: reloc assign before copy assign ordering |
+| `clang/test/SemaCXX/p2785-implicit-decomp.cpp` | Sema lit tests: implicit decomposition of temporaries — all 4 trigger contexts ([6.1] base cast, [6.2] member access, [6.3] array element, [6.5] PMD), well-formedness fallback (user-provided dtor, private members, virtual bases) |
 | `clang/test/SemaCXX/p2785-reloc-operator.cpp` | Sema lit tests: reloc operator validity, noexcept exception specification |
 | `clang/unittests/AST/CXXRelocExprTest.cpp` | 492 unit tests |
