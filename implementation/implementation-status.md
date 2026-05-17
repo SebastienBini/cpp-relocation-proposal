@@ -322,6 +322,83 @@ If any condition fails, implicit decomposition does **not** happen — no error,
 - Phase 2: relocates the base subobject via `EmitImplicitDecompositionBaseSlice`, destroys derived-specific members.
 - Phase 3: relocates the accessed array element via `EmitImplicitDecompositionArrayElement`, destroys remaining elements via `DestroyArraySkippingElement` cleanup.
 
+### Optional relocation elision for implicit decomposition ✅
+
+When the expression being implicitly decomposed is `reloc d` where `d` is a local variable (not a function parameter), the Derived temporary materialization is skipped. The subobject extraction (base relocation, member relocation, element destruction) operates directly on `d`'s storage. This is authorized by §reloc-elision-optional:
+
+> the temporary created by the `reloc` expression may not be materialized if the implementation can ensure that the source object shares the same address as the one to be occupied by the target object.
+
+Implemented for all three implicit decomposition phases (member access, base slice, array element). The variable's scope-exit destructor cleanup is conditionally deactivated. Elision does NOT fire for function parameters (they may not be early-destructible).
+
+Lit test: `clang/test/CodeGenCXX/p2785-implicit-decomp-reloc-elision.cpp` (4 test cases: Phase 2 elision, prvalue baseline, Phase 1 elision, parameter negative test).
+
+### Diagnostic notes for failed implicit decomposition ✅
+
+When implicit decomposition is attempted but the well-formedness conditions fail, the compiler now emits a `note` diagnostic explaining why, helping users understand the silent fallback to xvalue/move semantics:
+
+```
+note: implicit decomposition of 'Derived' is not possible because its destructor is user-provided
+note: implicit decomposition of 'T' is not possible because member 'm' is inaccessible
+note: implicit decomposition of 'T' is not possible because it is not a class type
+```
+
+### Known divergences from proposal
+
+The implementation differs from the proposal's mandatory elision rules in the implicit decomposition path. The differences are documented below; they are semantic but not observable in terms of correctness — only in terms of optimization level.
+
+#### 1. Mandatory elision not fully applied to implicit decomposition subobject extraction
+
+**Proposal (mandatory elision, §reloc-elision-mandatory):** When implicit decomposition decomposes a temporary from `reloc d` (local variable), the semantic model is equivalent to:
+
+```cpp
+auto reloc tmp = reloc d;          // mandatory elision: tmp IS d
+Base b = reloc tmp.base<Base>;     // mandatory elision: b IS d.base<Base>
+```
+
+Two mandatory elision steps apply: (1) the Derived temporary shares storage with `d`, and (2) `b` aliases `d`'s Base subobject directly. The result: **no constructor called at all**. `b` occupies `d`'s Base storage. This holds regardless of which constructors Base provides.
+
+**Implementation:** The implementation applies **optional** elision for step (1) — the Derived temporary materialization is skipped, so `d`'s storage is used directly. However, step (2) still calls Base's relocation (or move/copy) constructor to copy `d`'s Base subobject into `b`'s separately-allocated storage. The result: one constructor call (Base's reloc/move/copy ctor) instead of zero.
+
+Fully implementing mandatory elision for step (2) would require the compiler to allocate `b` at the same address as `d`'s Base subobject at variable-declaration time (analogous to how NRVO allocates a local in the return slot). This is a valid future optimization but is not currently implemented.
+
+#### 2. Impact on different Base constructor configurations
+
+The table below summarizes behavior for `Derived d; Base b = reloc d;` with `Base` having only public data members:
+
+**When Derived has NO user-provided destructor (implicit decomposition available):**
+
+| Base has | Proposal (mandatory elision) | Implementation |
+|----------|------------------------------|----------------|
+| reloc ctor | No ctor, `b` = `d.base` | `Base(Base reloc)` from d |
+| reloc + move | No ctor, `b` = `d.base` | `Base(Base reloc)` from d |
+| move only | No ctor, `b` = `d.base` | `Base(Base&&)` from d |
+| copy only | No ctor, `b` = `d.base` | `Base(const Base&)` from d |
+
+**When Derived HAS a user-provided destructor (implicit decomposition unavailable):**
+
+| Base has | Proposal | Implementation |
+|----------|----------|----------------|
+| reloc + move | `Base(Base&&)` + Derived dtor | `Base(Base&&)` + Derived dtor |
+| reloc only | **ill-formed** | **ill-formed** |
+| move only | `Base(Base&&)` + Derived dtor | `Base(Base&&)` + Derived dtor |
+| copy only | `Base(const Base&)` + Derived dtor | `Base(const Base&)` + Derived dtor |
+
+When implicit decomposition is unavailable, the implementation matches the proposal exactly: standard slicing via Base's move or copy constructor from the Derived xvalue. The Derived destructor fires at end of full-expression. Base's relocation constructor is not viable in this path because it requires a Base prvalue, which cannot be produced from a Derived xvalue without implicit decomposition.
+
+#### 3. Comparison with vanilla C++
+
+For reference, vanilla C++ `Base b = std::move(d);` with `d` a local Derived:
+
+| Base has | Vanilla C++ |
+|----------|-------------|
+| move ctor | `Base(Base&&)` + Derived dtor at scope end |
+| copy only | `Base(const Base&)` + Derived dtor at scope end |
+| reloc only | **ill-formed** (no reloc in vanilla C++) |
+
+The P2785 implementation is strictly better than vanilla C++ in all cases:
+- When implicit decomposition applies: one fewer constructor call (optional elision skips Derived temp), and the Derived dtor is NOT called (decomposed instead — subobjects destroyed individually).
+- When implicit decomposition does not apply: same constructor called, but Derived dtor fires at end of full-expression (earlier cleanup) instead of at scope end.
+
 ---
 
 ## Known gap — relocation assignment operator ✅ Fully implemented
@@ -1294,7 +1371,7 @@ Files:
 
 599 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 38 lit test files pass:
+Additionally, 40 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
@@ -1305,6 +1382,8 @@ Additionally, 38 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-reloc-decomp-this-no-caller-dtor.cpp` (caller-side dtor suppression for decomposed explicit object parameter)
 - `clang/test/CodeGenCXX/p2785-reloc-elision-member.cpp` (mandatory elision for decomposed member initialisation)
 - `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` (relocation elision for reference binding)
+- `clang/test/CodeGenCXX/p2785-implicit-decomp-reloc-elision.cpp` (optional reloc elision in implicit decomposition: Phase 1/2 elision, prvalue baseline, parameter negative test)
+- `clang/test/SemaCXX/p2785-implicit-decomp.cpp` (diagnostic notes for failed implicit decomposition)
 - `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` (EH cleanup for reloc ctor throw, VBase cleanup ordering)
 - `clang/test/CodeGenCXX/p2785-reloc-twin-addr-taken.cpp` (.Vreloc_twin emission on address-taken)
 - `clang/test/CodeGenCXX/p2785-reloc-twin-direct-only.cpp` (direct call uses canonical entry, not twin)
@@ -1331,7 +1410,7 @@ Additionally, 38 lit test files pass:
 - `clang/test/SemaCXX/p2785-reloc-ctor-virtual-dtor-relaxed.cpp` (relaxed reloc ctor with virtual dtor + slicing fn)
 - `clang/test/SemaCXX/p2785-virtual-slicing-function.cpp` (slicing fn implicit declaration, ill-formed checks)
 
-286 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests and 12 implicit-decomposition tests.
+290 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests and 16 implicit-decomposition tests.
 
 Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
 - Scalar types: int, pointer, enum, double, bool (constexpr-001)
