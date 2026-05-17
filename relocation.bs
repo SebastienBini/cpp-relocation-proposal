@@ -2620,8 +2620,7 @@ resulting behavior remains consistent with the existing `typeid` model.
 An *implicit decomposition* of an object of type `T` is ill-formed
 if any of the following conditions is not satisfied:
 
-- all subobjects of `T` are accessible. They all need to be
-    since their destructor will be called if not relocated ;
+- all subobjects of `T` have an accessible destructor ;
 - `T`'s eligible destructor is not user-provided.
     Unlike in the [explicit decomposition](#ill-formed-decomposition), private
     access privilege does not allow to bypass this check.
@@ -2648,8 +2647,8 @@ U getU();
 std::pair<std::string, std::string> getPair();
 
 
-std::string a = getT()._pub; /* implicit decomposition is ill-formed
-    because T has a private member, move constructor is used */
+std::string a = getT()._pub; /* implicit decomposition is well-formed;
+    std::string's relocation constructor is used; _priv is destroyed */
 std::string b = getU()._pub[2]; /* implicit decomposition is well-formed
     std::string's relocation constructor is used; _pub[0] to _pub[4] but _pub[2]
     are destroyed */
@@ -2664,12 +2663,10 @@ public:
     static std::string GetDefaultName()
     {
         return V()._name; /* implicit decomposition is ill-formed
-            because T has a user-defined destructor.
+            because V has a user-provided destructor.
             V()._name remains an xvalue.
-            Note that this code is valid today, and should
-            implicit decomposition be legal in that case (because of the private
-            access privilege), then the expression
-            would not have the same effect as ~V would not be invoked. */
+            Note that this code is valid today; implicit decomposition
+            would bypass ~V(), so this is correctly rejected. */
     }
 private:
     std::string _name;
