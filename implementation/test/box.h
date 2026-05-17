@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <memory>
 
 template <class T>
 class box
@@ -31,6 +32,7 @@ public:
     T* get() const { return _ptr; }
 
     T* release(this box reloc self) { return self._ptr; }
+    T extract(this box reloc self) { return std::reloc_and_reclaim(self._ptr); }
 
 private:
     box(std::nullptr_t) : _ptr{} {}

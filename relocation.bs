@@ -2587,10 +2587,21 @@ the resulting expression can be converted to a prvalue with *implicit decomposit
     If the pointer is not constant evaluated, then no implicit decomposition
     can happen.
 
-The *implicit decomposition* materializes the temporary complete object.
-Further implicitly decompositions occur for each data member access
+The *implicit decomposition* decomposes the result object of the temporary.
+Further implicit decompositions occur for each data member access
 (or array element access for array-types) or cast to a base class,
-to extract the desired subobject.
+to extract the desired subobject as a prvalue.
+Optional relocation elision ([§](#reloc-elision-optional)) applies to the
+extraction: the target object may occupy the same storage as the selected
+subobject within the temporary, eliding the temporary materialization of
+the subobject.
+
+All subobjects introduced by the decomposition that are not extracted
+are destroyed in the same order as the destructor of the decomposed type
+would destroy them. Their destruction still happens at the end of the full
+expression evaluation. The relative order between the extraction of the
+desired subobject and the destruction of the remaining subobjects is
+*implementation-defined*.
 
 If any *implicit decomposition* is illegal, then it does not cause the program
 to be ill-formed, the expression simply cannot be converted
