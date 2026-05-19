@@ -743,6 +743,16 @@ with automatic storage are *early destructible*.
 A class type is *relocatable non-movable* if it has an eligible relocation
 constructor and no eligible move constructor.
 
+NOTE: This property is intrinsic to the type and does not depend on the
+context in which it is evaluated. Eligibility
+(<a href="http://wg21.link/special#def:special_member_function,eligible">[special]</a>)
+is determined by deletion status and constraint satisfaction, neither of
+which depends on access. Constraint satisfaction is evaluated in the
+context of the constrained declaration
+(<a href="https://eel.is/c++draft/temp.constr.atomic">[temp.constr.atomic]</a>),
+not in the context of the use site. Therefore caller and callee always
+agree on whether a type is *relocatable non-movable*.
+
 When a value parameter of *relocatable non-movable* type is the operand of
 `reloc`, the implementation must guarantee that the relocation constructor is
 selected. In practice this means the
@@ -1515,6 +1525,12 @@ of a `return` statement; that case is governed by
 NOTE: For decomposed function parameters, the direct subobjects are owned
 by the callee (see [§](#decompose-value-param)). Mandatory elision therefore
 applies to their subobjects as well.
+
+NOTE: Array elements are not covered by this rule. The qualifying source
+objects are data members and direct bases — not array elements. When an
+array element is relocated (e.g. via
+[implicit decomposition](#implicit-decomposition) of a C-array member),
+only [optional elision](#reloc-elision-optional) may apply.
 
 This rule parallels <a href="https://eel.is/c++draft/class.temporary#3">[class.temporary]/3</a>
 (mandatory copy/move elision for prvalues in C++17), adapted to the `reloc` context.
