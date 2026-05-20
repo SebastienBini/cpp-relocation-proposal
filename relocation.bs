@@ -1505,46 +1505,73 @@ void do_something_05(non_null<shared_ptr<int>> copyOnlyObj)
 
 #### Mandatory relocation elision #### {#reloc-elision-mandatory}
 
-When a `reloc` expression produces a prvalue that directly initializes
-an object of the same cv-unqualified type, and the source object is:
+This rule is analogous to
+<a href="https://eel.is/c++draft/class.temporary#3">[class.temporary]/3</a>
+(mandatory copy/move elision for prvalues), adapted to `reloc`.
 
-- a local variable that is not a function parameter ; or
-- a direct subobject of a [decomposed object](#decomposed-object)
-    (data member or direct base),
-    provided the source is not a [*VBA*](#decompose-virtual-aliasing-object)
-    object ;
+**Rule:** When the initializer of a local variable or of a value parameter of a 
+called function is either:
 
-the relocation constructor, move constructor, or copy constructor
-**shall not be called**. The target object occupies the same storage
-as the source object. No temporary is materialized.
+1.  a (possibly parenthesized) `reloc` expression of the same
+    cv-unqualified type as the target, and the source object is one of:
+    - a local variable that is not a function parameter ; or
+    - a value function parameter whose type is
+        *[relocatable non-movable](#relocatable-non-movable)* ; or
+    - a direct subobject of a [decomposed object](#decomposed-object)
+        (data member or direct base),
+        provided the source is not a [*VBA*](#decompose-virtual-aliasing-object)
+        object.
+1. a (possibly parenthesized) [implicit decomposition](#implicit-decomposition)
+    of a temporary that extracts a statically-identified subobject (data member,
+    non-virtual base, or constant-index array element) of the same
+    cv-unqualified type as the target.
 
-This rule does not apply when the target object is the result object
-of a `return` statement; that case is governed by
+then mandatory elision occurs: no relocation, move, or copy constructor is
+called; the target object occupies the same storage as the source object
+and no temporary is materialized.
+Mandatory elision also applies during constant evaluation.
+
+NOTE: This rule does not apply when the initializer is a composite expression
+(e.g. a conditional or comma expression) that merely contains a `reloc`
+expression or an implicit decomposition as a subexpression. It also does not
+apply when the target object is created by a *new-expression* or is the
+result object of a `return` statement; those cases are governed by
 [optional relocation elision](#reloc-elision-optional).
 
-NOTE: For decomposed function parameters, the direct subobjects are owned
-by the callee (see [§](#decompose-value-param)). Mandatory elision therefore
-applies to their subobjects as well.
+**Destruction:** Because source and target are the same object at the
+same address, no separate destructor invocation occurs for the source.
+The single object is destroyed according to the usual rules for the
+target's storage context:
 
-NOTE: Array elements are not covered by this rule. The qualifying source
-objects are data members and direct bases — not array elements. When an
-array element is relocated (e.g. via
-[implicit decomposition](#implicit-decomposition) of a C-array member),
-only [optional elision](#reloc-elision-optional) may apply.
+- If the target is a local variable: destroyed at scope exit.
+- If the target is a value parameter with callee-destroy convention:
+    destroyed by the callee; no destructor is invoked at the call site.
+- If the target is a value parameter with caller-destroy convention:
+    destroyed at the call site, at the end of the full-expression.
 
-This rule parallels <a href="https://eel.is/c++draft/class.temporary#3">[class.temporary]/3</a>
-(mandatory copy/move elision for prvalues in C++17), adapted to the `reloc` context.
+Exactly one destructor invocation occurs in all cases.
 
-Mandatory relocation elision also applies during constant evaluation.
+**Scope of applicability:**
 
-NOTE: This rule is implementable on all known ABIs. Non-trivial types are
-passed by invisible reference (Itanium, MSVC, ARM AAPCS): the caller
-allocates storage, constructs the argument, and passes a pointer. With
-mandatory elision, the caller simply passes the address of the source
-object — no constructor is invoked, regardless of whether the callee or
-caller is responsible for destruction. For types that are trivial for the
-purposes of calls (passed in registers), all constructors and destructors
-are no-ops, so elision is unobservable and imposes no implementation burden.
+- Ordinary (non-*relocatable non-movable*) function parameters are
+    excluded because their lifetime ownership is *implementation-defined*;
+    the implementation cannot guarantee that the source's address is
+    usable as the target's storage in all calling conventions.
+    *Relocatable non-movable* parameters are included because
+    callee-destroy is guaranteed for them
+    (see [§](#reloc-with-function-param)).
+- Decomposed function parameters: the direct subobjects are owned by the
+    callee (see [§](#decompose-value-param)), so mandatory elision applies
+    to their subobjects.
+
+**Implementability:** Non-trivial types are passed by invisible reference
+on all known ABIs (Itanium, MSVC, ARM AAPCS): the caller allocates
+storage, constructs the argument, and passes a pointer. With mandatory
+elision the caller simply passes the address of the source object —
+no constructor is invoked, regardless of which side is responsible for
+destruction. For types that are trivial for the purposes of calls
+(passed in registers), constructors and destructors are no-ops, so
+elision is unobservable.
 
 ```c++
 struct S {
@@ -1565,6 +1592,7 @@ void sink(S);
 void g() {
     S s(10);
     sink(reloc s);   // mandatory elision: reloc ctor is not called
+                     // dtor timing depends on sink's calling convention
 }
 
 S ret() {
@@ -1573,8 +1601,21 @@ S ret() {
 }
 
 void h(std::pair<std::string, int> reloc p) {
-    std::string s = reloc p.first;  // mandatory elision
-    int n = reloc p.second;         // mandatory elision
+    std::string s = reloc p.first;  // mandatory elision (decomposed subobj)
+    int n = reloc p.second;         // mandatory elision (decomposed subobj)
+}
+
+// Relocatable non-movable parameter: mandatory elision applies
+void forward_box(box<int> b) {
+    sink_box(reloc b);  // mandatory elision: reloc ctor is not called
+                        // b is RNM => callee-destroy is guaranteed
+}
+
+// Implicit decomposition of temporaries: mandatory elision applies
+std::pair<std::string, int> getPair();
+void implicit_decomp() {
+    std::string s = getPair().first;  // mandatory elision
+    // equivalent to: auto reloc p = getPair(); auto s = reloc p.first;
 }
 ```
 
@@ -2607,10 +2648,13 @@ The *implicit decomposition* decomposes the result object of the temporary.
 Further implicit decompositions occur for each data member access
 (or array element access for array-types) or cast to a base class,
 to extract the desired subobject as a prvalue.
-Optional relocation elision ([§](#reloc-elision-optional)) applies to the
-extraction: the target object may occupy the same storage as the selected
-subobject within the temporary, eliding the temporary materialization of
-the subobject.
+When the extracted subobject is statically identified (data member,
+non-virtual base, or constant-index array element),
+[mandatory relocation elision](#reloc-elision-mandatory) applies: the
+target object occupies the same storage as the selected subobject and no
+constructor is called.
+For array elements accessed with a runtime index, only
+[optional relocation elision](#reloc-elision-optional) may apply.
 
 All subobjects introduced by the decomposition that are not extracted
 are destroyed in the same order as the destructor of the decomposed type
