@@ -5794,7 +5794,7 @@ ABIs and object lifetime ownerships:
 - If `obj` is not *early destructible* and `sink` is callee-destroy: this
     configuration cannot happen in practice.
 
-Likewise, we can observe when elisions are possible given the following
+Likewise, we can observe what happens given the following
 function `void xvsink(T&&)`, invoked through the `xvsink(reloc obj)` expression:
 
 - If `obj` is *early destructible*:
@@ -5809,6 +5809,51 @@ function `void xvsink(T&&)`, invoked through the `xvsink(reloc obj)` expression:
 
 The same kind of elision will happen with an `lvsink(T const&)` function:
 elision can only happen when the source object is *early destructible*.
+
+#### Reference parameters and prvalue materialization #### {#reloc-elision-reference}
+
+When `reloc obj` is passed to a reference parameter (`T const&` or `T&&`),
+the situation is fundamentally different from the value-parameter case.
+No relocation elision is involved; what happens is ordinary prvalue
+materialization, following the same rules as C++17.
+
+`reloc obj` produces a prvalue that occupies `obj`'s storage.
+When this prvalue binds to a reference, temporary materialization
+([conv.rval]) creates a temporary object from the prvalue. Since the prvalue
+already occupies `obj`'s storage, the temporary is at `obj`'s address.
+**No relocation, move, or copy constructor is called** — this is not elision
+but simply how prvalue materialization works.
+
+```c++
+void lsink(T const&);
+void xsink(T&&);
+
+T a, b;
+lsink(reloc a);  // no ctor: prvalue materializes at a's address
+xsink(reloc b);  // no ctor: prvalue materializes at b's address
+// a and b cannot be reused (early end of scope)
+// the temporaries are destroyed at end of full-expression
+```
+
+This is analogous to `lsink(T{})` or `xsink(T{})` in C++17, where the
+prvalue materializes into a temporary and the reference binds to it with
+no copy/move constructor involved.
+
+The net effect of `xsink(reloc b)` is therefore semantically similar to:
+
+```c++
+xsink(std::move(b)); /* then destroy b at end of full-expression */
+```
+
+...except that no move constructor is called (the function receives a
+reference to `b`'s existing storage), and `b`'s destruction occurs at
+end of full-expression rather than at scope exit.
+
+NOTE: Because the target of a reference-binding is a materialized temporary
+(not a local variable or value parameter of a called function), mandatory
+relocation elision does not apply. Optional relocation elision is likewise
+not relevant: there is no constructor to elide, since prvalue
+materialization does not involve one.
 
 ### Achieving 0-copy transfer with a cooperative ABI ### {#0-copy}
 
