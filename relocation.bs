@@ -932,23 +932,40 @@ We believe a language solution is best suited here:
 
 ## D2839R1: Nontrivial Relocation via a New *owning reference* Type by Brian Bi and Joshua Berne ## {#compare-D2839}
 
-[[D2839R1]] is very close in spirit and mechanism to this paper. We consider the
-addition of an "owning reference" to be an unnecessary complication to the type
-system that would impose a burden throughout library code. We refute the claim
-that a prvalue occupying storage constitutes a fourth value category; in our
-model, the lvalue that previously occupied that storage ceases to exist and a
-new prvalue is formed, which may come to occupy that storage (if relocation is
-elided) or distinct storage (in the general case).
+[[D2839R1]] is very close in spirit and mechanism to this paper. It proposes an
+"owning reference" — essentially a new value category for an expression that
+refers to a named object while carrying ownership of it. The key claim is that
+a prvalue occupying pre-existing storage constitutes a fourth value category and
+warrants a dedicated reference type.
 
-We are intrigued by the claim that an owning reference can provide superior
-performance when passing a variable up the stack, compared to repeatedly relocating
-it from caller to callee, but believe that in practice such gains would be minimal
-and liable to be eliminated via optimization, while our model offers the possibility
-of improved locality, since the relocated object will reside directly in the leafmost
-function's stack as opposed to being accessible only via indirection.
-Alternatively, this concern can be regarded as an implementation choice.
-Implementations where only the address of the object is
-passed down from caller to callee are [still possible with our model](#0-copy).
+We disagree. In our model, the lvalue that previously occupied that storage
+ceases to exist and a new prvalue is formed, which may come to occupy that
+same storage (if relocation is [elided](#reloc-elision-mandatory)) or distinct
+storage (in the general case). This is not a new value category — it is the
+existing prvalue category applied to an object whose identity is being
+relinquished. We think of this as an extension of prvalues.
+
+**Why prvalues are sufficient:**
+
+A C++17 prvalue is identity-less, whereas `reloc obj` produces a prvalue backed
+by storage at a known address. We argue this extension is coherent because
+no new reference type is needed: an owning reference would require new
+deduction rules, new overload-resolution interactions, and new template
+argument handling. With our model, existing signatures (`void sink(T)`,
+`void f(T&&)`, `void g(T const&)`) all accept a `reloc` expression
+without modification. Our [mandatory elision rule](#reloc-elision-mandatory)
+precisely bounds when source and target share storage; reference binding
+requires no special machinery (see [§](#reloc-elision-reference)); and
+the user model remains simple — users never reason about a new value category.
+
+**Performance:**
+
+[[D2839R1]] claims that an owning reference avoids repeated relocation when
+passing a variable up the stack. Our model achieves the same with
+[0-copy parameter passing](#0-copy): for *relocatable non-movable* types,
+only the address is passed from caller to callee — no relocation occurs at
+any level. For other types, the implementation may choose the same strategy
+as an optimization.
 
 Otherwise, the paper has some minor differences in naming (e.g. `std::force_relocate`
 for what we call `std::reloc_and_uninitialize`) that could easily be reconciled in either
