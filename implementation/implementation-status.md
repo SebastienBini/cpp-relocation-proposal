@@ -304,7 +304,7 @@ The proposal limits implicit decomposition to the contexts enumerated in [class.
 
 If any condition fails, implicit decomposition does **not** happen — no error, just falls back to xvalue/move semantics:
 
-- All subobjects of the complete type must be **accessible** (destructors must be callable for non-relocated subobjects).
+- All subobjects of the complete type must have an **accessible destructor** (destructors must be callable for non-relocated subobjects).
 - The eligible destructor must **not be user-provided**. Unlike explicit decomposition, private access privilege does NOT bypass this.
 - No **virtual bases** in the decomposition path.
 
@@ -344,60 +344,16 @@ note: implicit decomposition of 'T' is not possible because it is not a class ty
 
 ### Known divergences from proposal
 
-The implementation differs from the proposal's mandatory elision rules in the implicit decomposition path. The differences are documented below; they are semantic but not observable in terms of correctness — only in terms of optimization level.
-
-#### 1. Mandatory elision not fully applied to implicit decomposition subobject extraction
-
-**Proposal (mandatory elision, §reloc-elision-mandatory):** When implicit decomposition decomposes a temporary from `reloc d` (local variable), the semantic model is equivalent to:
-
-```cpp
-auto reloc tmp = reloc d;          // mandatory elision: tmp IS d
-Base b = reloc tmp.base<Base>;     // mandatory elision: b IS d.base<Base>
-```
-
-Two mandatory elision steps apply: (1) the Derived temporary shares storage with `d`, and (2) `b` aliases `d`'s Base subobject directly. The result: **no constructor called at all**. `b` occupies `d`'s Base storage. This holds regardless of which constructors Base provides.
-
-**Implementation:** The implementation applies **optional** elision for step (1) — the Derived temporary materialization is skipped, so `d`'s storage is used directly. However, step (2) still calls Base's relocation (or move/copy) constructor to copy `d`'s Base subobject into `b`'s separately-allocated storage. The result: one constructor call (Base's reloc/move/copy ctor) instead of zero.
-
-Fully implementing mandatory elision for step (2) would require the compiler to allocate `b` at the same address as `d`'s Base subobject at variable-declaration time (analogous to how NRVO allocates a local in the return slot). This is a valid future optimization but is not currently implemented.
-
-#### 2. Impact on different Base constructor configurations
-
-The table below summarizes behavior for `Derived d; Base b = reloc d;` with `Base` having only public data members:
-
-**When Derived has NO user-provided destructor (implicit decomposition available):**
+~~The implementation differs from the proposal's mandatory elision rules in the implicit decomposition path.~~ **Resolved** (`26c26e7a6c64`): mandatory relocation elision is now fully implemented for implicit decomposition. When a variable is initialized from a subobject of a decomposed temporary, no constructor is called — the target object aliases the source subobject's storage directly. The tables below now reflect the current implementation.
 
 | Base has | Proposal (mandatory elision) | Implementation |
 |----------|------------------------------|----------------|
-| reloc ctor | No ctor, `b` = `d.base` | `Base(Base reloc)` from d |
-| reloc + move | No ctor, `b` = `d.base` | `Base(Base reloc)` from d |
-| move only | No ctor, `b` = `d.base` | `Base(Base&&)` from d |
-| copy only | No ctor, `b` = `d.base` | `Base(const Base&)` from d |
+| reloc ctor | No ctor, `b` = `d.base` | No ctor, `b` = `d.base` ✅ |
+| reloc + move | No ctor, `b` = `d.base` | No ctor, `b` = `d.base` ✅ |
+| move only | No ctor, `b` = `d.base` | No ctor, `b` = `d.base` ✅ |
+| copy only | No ctor, `b` = `d.base` | No ctor, `b` = `d.base` ✅ |
 
-**When Derived HAS a user-provided destructor (implicit decomposition unavailable):**
-
-| Base has | Proposal | Implementation |
-|----------|----------|----------------|
-| reloc + move | `Base(Base&&)` + Derived dtor | `Base(Base&&)` + Derived dtor |
-| reloc only | **ill-formed** | **ill-formed** |
-| move only | `Base(Base&&)` + Derived dtor | `Base(Base&&)` + Derived dtor |
-| copy only | `Base(const Base&)` + Derived dtor | `Base(const Base&)` + Derived dtor |
-
-When implicit decomposition is unavailable, the implementation matches the proposal exactly: standard slicing via Base's move or copy constructor from the Derived xvalue. The Derived destructor fires at end of full-expression. Base's relocation constructor is not viable in this path because it requires a Base prvalue, which cannot be produced from a Derived xvalue without implicit decomposition.
-
-#### 3. Comparison with vanilla C++
-
-For reference, vanilla C++ `Base b = std::move(d);` with `d` a local Derived:
-
-| Base has | Vanilla C++ |
-|----------|-------------|
-| move ctor | `Base(Base&&)` + Derived dtor at scope end |
-| copy only | `Base(const Base&)` + Derived dtor at scope end |
-| reloc only | **ill-formed** (no reloc in vanilla C++) |
-
-The P2785 implementation is strictly better than vanilla C++ in all cases:
-- When implicit decomposition applies: one fewer constructor call (optional elision skips Derived temp), and the Derived dtor is NOT called (decomposed instead — subobjects destroyed individually).
-- When implicit decomposition does not apply: same constructor called, but Derived dtor fires at end of full-expression (earlier cleanup) instead of at scope end.
+When implicit decomposition is unavailable (user-provided destructor, inaccessible destructor, virtual bases), the implementation falls back to standard slicing via Base's move or copy constructor from the Derived xvalue. The Derived destructor fires at end of full-expression.
 
 ---
 
@@ -1369,9 +1325,9 @@ Files:
 | Additional Sema correctness (vptr, PMF, return, inaccessible, decomposing-fn decl, implicit return reloc) | *counted in above* |
 | **Total** | **599** |
 
-599 unit tests pass. All tests run cleanly in a single invocation.
+608 unit tests pass. All tests run cleanly in a single invocation.
 
-Additionally, 40 lit test files pass:
+Additionally, 44 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-decompose-destruction-order.cpp` ([class.dtor] order for decomposed locals/params)
 - `clang/test/CodeGenCXX/p2785-decompose-vptr-reset.cpp` (vptr reset after base decomposition)
 - `clang/test/CodeGenCXX/p2785-pmf-virtual-decomposing.cpp` (virtual-PMF bridge for decomposing fns)
@@ -1383,6 +1339,9 @@ Additionally, 40 lit test files pass:
 - `clang/test/CodeGenCXX/p2785-reloc-elision-member.cpp` (mandatory elision for decomposed member initialisation)
 - `clang/test/CodeGenCXX/p2785-reloc-elision-refbind.cpp` (relocation elision for reference binding)
 - `clang/test/CodeGenCXX/p2785-implicit-decomp-reloc-elision.cpp` (optional reloc elision in implicit decomposition: Phase 1/2 elision, prvalue baseline, parameter negative test)
+- `clang/test/CodeGenCXX/p2785-implicit-decomp-mandatory-elision.cpp` (mandatory relocation elision for implicit decomposition of temporaries)
+- `clang/test/CodeGenCXX/p2785-implicit-decomp-indirect-base.cpp` (indirect base decomposition codegen: multi-hop path, intermediate destruction)
+- `clang/test/CodeGenCXX/p2785-implicit-decomp-array-elision.cpp` (optional relocation elision for array element extraction with constant index)
 - `clang/test/SemaCXX/p2785-implicit-decomp.cpp` (diagnostic notes for failed implicit decomposition)
 - `clang/test/CodeGenCXX/p2785-reloc-throw-cleanup.cpp` (EH cleanup for reloc ctor throw, VBase cleanup ordering)
 - `clang/test/CodeGenCXX/p2785-reloc-twin-addr-taken.cpp` (.Vreloc_twin emission on address-taken)
@@ -1409,8 +1368,12 @@ Additionally, 40 lit test files pass:
 - `clang/test/SemaCXX/p2785-stdlib-operator-reloc-subscript.cpp` (P2785 `operator reloc[]` for `std::tuple`/`std::array`: array decomposition, tuple leaf+impl+base chain, relocate-only types, empty specializations)
 - `clang/test/SemaCXX/p2785-reloc-ctor-virtual-dtor-relaxed.cpp` (relaxed reloc ctor with virtual dtor + slicing fn)
 - `clang/test/SemaCXX/p2785-virtual-slicing-function.cpp` (slicing fn implicit declaration, ill-formed checks)
+- `clang/test/SemaCXX/p2785-constexpr-implicit-decomp.cpp` (constexpr evaluation of implicit decomposition of temporaries)
+- `clang/test/CodeGenCXX/p2785-reloc-elision.cpp` (relocation elision: call-site, MemberExpr, recursive, aliased reloc-assign)
+- `clang/test/CodeGenCXX/p2785-reloc-operator.cpp` (scalar/pointer/class/base/decomposition/discard/conditional/silent relocation codegen)
+- `clang/test/CodeGenCXX/p2785-reloc-and-uninitialize.cpp` (builtin reloc_and_uninitialize codegen)
 
-290 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests and 16 implicit-decomposition tests.
+289 runtime tests pass (`P2785/implementation/test/`), including 31 virtual-slicing tests and 14 implicit-decomposition tests.
 
 Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/constexpr-*.cpp`):
 - Scalar types: int, pointer, enum, double, bool (constexpr-001)
@@ -1449,7 +1412,7 @@ Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/conste
 | Area | Status | Notes |
 |---|---|---|
 | **Phase 13** — standard library additions | ✅ Done | `std::decomposition_pack`, `std::reloc_and_uninitialize`, `std::reloc_and_reclaim`, type traits, concepts, `std::construct_at` relocating overload, `std::relocate` amendment, `operator reloc[]` for `std::tuple`/`std::array`. `__cpp_relocation` feature-test macro defined under `-frelocation`. |
-| Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ✅ Done | All 4 trigger contexts: [6.2] data member (`f99ec96d548d`), [6.1] derived-to-base (`b60869f0ee08`), [6.3] C-array element (`9b03984fc7e7`), [6.5] pointer-to-data-member (`07b81604760b`). Silent fallback to xvalue/move if ill-formed. |
+| Implicit decomposition of temporaries (§implicit decomposition of temporaries) | ✅ Done | All 4 trigger contexts: [6.2] data member (`f99ec96d548d`), [6.1] derived-to-base (`b60869f0ee08`), [6.3] C-array element (`9b03984fc7e7`), [6.5] pointer-to-data-member (`07b81604760b`). Mandatory relocation elision (`26c26e7a6c64`), indirect bases (`2b9b015b777a`), optional array-element elision (`8a11e1213aa0`), constexpr support (`6116aa308329`). Silent fallback to xvalue/move if ill-formed. |
 | NRVO-style elision for `return reloc x;` | ❌ Deferred | Largely redundant per proposal line 3680 (`return x;` already gets NRVO via end-of-life optimization). |
 
 ### ABI gaps in the prototype
@@ -1492,6 +1455,12 @@ Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/conste
 | Phase 12: V-is-virtual runtime tag-matching loop | `7a8048a8b635` | When V is a virtual base, loop over vbase candidates to dispatch correctly. |
 | Phase 12: Ill-formed check for no eligible ctor | `715881852041` | `err_slicing_fn_no_eligible_ctor` when class has no reloc/move/copy ctor. |
 | Phase 12: Exception handling in slicing function | `4e36a3e3ff34` | Non-noexcept slicing fn; EH cleanups for all throw paths in match/decomposition. |
+| Improve implicit decomposition diagnostics + optional reloc elision | `b77ab63d2797` | Diagnostic notes for decomposition failure; optional relocation elision for `Base b = reloc d;` (skip intermediate temp, relocate base directly from local's storage). |
+| Check accessible destructor (not public subobjects) for implicit decomposition | `c1f991138262` | Well-formedness now checks accessible destructor per §implicit-decomposition-ill-formed; private member with public dtor no longer blocks decomposition. |
+| Mandatory relocation elision for implicit decomposition | `26c26e7a6c64` | §reloc-elision-mandatory bullet 2 for implicit decomposition: target variable aliases source subobject's storage; no constructor called. Base/member/array element all supported. |
+| Support indirect bases in implicit decomposition | `2b9b015b777a` | `findNonVirtualPathToBase()` accepts indirect (non-direct) bases when all intermediate types are well-formed; multi-hop path walking for GEP and destruction. |
+| Optional relocation elision for array element extraction | `8a11e1213aa0` | Detect `ArraySubscriptExpr` with constant index on MTE member; alias variable to element storage; destroy remaining elements individually. |
+| Constexpr implicit decomposition of temporaries | `6116aa308329` | Constexpr evaluation of implicit decomposition in ExprConstant.cpp; new lit test `p2785-constexpr-implicit-decomp.cpp`. |
 
 ---
 
@@ -1556,4 +1525,4 @@ Additionally, 26 constexpr runtime tests pass (`P2785/implementation/test/conste
 | `clang/lib/Sema/SemaExpr.cpp` | `MarkFunctionReferenced`: reloc assign before copy assign ordering |
 | `clang/test/SemaCXX/p2785-implicit-decomp.cpp` | Sema lit tests: implicit decomposition of temporaries — all 4 trigger contexts ([6.1] base cast, [6.2] member access, [6.3] array element, [6.5] PMD), well-formedness fallback (user-provided dtor, private members, virtual bases) |
 | `clang/test/SemaCXX/p2785-reloc-operator.cpp` | Sema lit tests: reloc operator validity, noexcept exception specification |
-| `clang/unittests/AST/CXXRelocExprTest.cpp` | 492 unit tests |
+| `clang/unittests/AST/CXXRelocExprTest.cpp` | 608 unit tests |
